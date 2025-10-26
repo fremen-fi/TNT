@@ -1,2 +1,6 @@
 .nova
 .DS_Store
+ffmpeg.exe
+ffmpegLinuxAmd64
+ffmpegLinuxArm64
+ffmpegMacM

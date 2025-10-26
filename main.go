@@ -1,10 +1,14 @@
 package main
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"image/color"
 	"io/fs"
+	"math"
+	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -12,7 +16,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"math"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -21,6 +24,57 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
+
+type VersionInfo struct {
+	Version      string `json:"version"`
+	DownloadURL  string `json:"download_url"`
+	ReleaseNotes string `json:"release_notes"`
+}
+
+func checkForUpdates(currentVersion string, window fyne.Window) {
+	resp, err := http.Get("https://software.collins.fi/tnt-version.json")
+	if err != nil {
+		return // Silently fail if can't reach server
+	}
+	defer resp.Body.Close()
+	
+	var versionInfo VersionInfo
+	if err := json.NewDecoder(resp.Body).Decode(&versionInfo); err != nil {
+		return
+	}
+	
+	if compareVersions(versionInfo.Version, currentVersion) > 0 {
+		dialog.ShowConfirm(
+			"Update Available",
+			fmt.Sprintf("Version %s is available!\n\n%s", versionInfo.Version, versionInfo.ReleaseNotes),
+			func(download bool) {
+				if download {
+					exec.Command("open", versionInfo.DownloadURL).Start()
+				}
+			},
+			window,
+		)
+	}
+}
+
+func compareVersions(v1, v2 string) int {
+	return strings.Compare(v1, v2)
+}
+
+func extractFFmpeg() string {
+	// Extract to temp location
+	tmpDir := os.TempDir()
+	ffmpegPath := filepath.Join(tmpDir, "ffmpeg")
+	
+	os.WriteFile(ffmpegPath, ffmpegBinary, 0755)
+	return ffmpegPath
+}
+
+var ffmpegPath string
+
+func init() {
+	ffmpegPath = extractFFmpeg()
+}
 
 type AudioNormalizer struct {
 	window       fyne.Window
@@ -53,6 +107,7 @@ type AudioNormalizer struct {
 	loudnormCustomCheck *widget.Check
 	IsSpeechCheck *widget.Check
 	writeTags *widget.Check
+	noTranscode *widget.Check
 	
 	mutex sync.Mutex
 }
@@ -66,6 +121,7 @@ type ProcessConfig struct {
 	CustomLoudnorm bool
 	IsSpeech bool
 	writeTags bool
+	noTranscode bool
 }
 
 var codecMap = map[string]string{
@@ -79,10 +135,10 @@ var codecMap = map[string]string{
 }
 
 func main() {
-	a := app.NewWithID("com.audionormalizer.app")
+	a := app.NewWithID("com.collinsgroup.tnt")
 	a.Settings().SetTheme(&appleTheme{})
 	
-	w := a.NewWindow("Audio Normalizer")
+	w := a.NewWindow("TNT - Transcode, Normalize, Tag")
 	w.Resize(fyne.NewSize(650, 600))
 	
 	norm := &AudioNormalizer{
@@ -91,6 +147,10 @@ func main() {
 	}
 	
 	norm.setupUI()
+	
+	const currentVersion = "1.0.1"
+	go checkForUpdates(currentVersion, w)
+	
 	w.ShowAndRun()
 }
 
@@ -139,25 +199,34 @@ func (n *AudioNormalizer) setupUI() {
 	n.normalizeTargetTp.SetText("-1")
 	
 	n.writeTags = widget.NewCheck("Write ReplayGain tags", func(checked bool) {
-		if checked {
+		if checked  && n.checkPCM(){
+			n.loudnormCheck.Disable()
+			n.noTranscode.Disable()
+			n.noTranscode.SetChecked(false)
+		} else if checked {
 			n.loudnormCheck.Disable()
 			n.loudnormCheck.SetChecked(false)
+			n.noTranscode.Enable()
 		} else {
 			n.loudnormCheck.Enable()
 		}
 	})
 	n.writeTags.SetChecked(false)
+	n.writeTags.Disable()
 	
-	n.loudnormCustomCheck = widget.NewCheck("Use custom loudness values (also for RG tags) and normalize OR write tags", func(checked bool) {
+	n.noTranscode = widget.NewCheck("Do not transcode", nil) 
+	n.noTranscode.SetChecked(false)
+	n.noTranscode.Disable()
+	
+	n.loudnormCustomCheck = widget.NewCheck("Custom loudness", func(checked bool) {
 		if n.loudnormCustomCheck.Checked {
 			n.normalizeTarget.Enable()
 			n.normalizeTargetTp.Enable()
-			n.loudnormCheck.Disable()
-			n.loudnormCheck.SetChecked(false)
-		} else if n.writeTags.Checked {
-			
 		} else {
-			n.loudnormCheck.Enable()
+			n.normalizeTarget.Disable()
+			n.normalizeTargetTp.Disable()
+			n.normalizeTarget.SetText("-23")
+			n.normalizeTargetTp.SetText("-1")
 		}
 	})
 	n.loudnormCustomCheck.SetChecked(false)
@@ -180,6 +249,7 @@ func (n *AudioNormalizer) setupUI() {
 		container.NewBorder(nil, nil, normalizeTpLabel, nil, n.normalizeTargetTp),
 		n.loudnormCustomCheck,
 		n.writeTags,
+		n.noTranscode,
 	)
 	
 	n.IsSpeechCheck = widget.NewCheck("The content is speech, use Opus", func(checked bool){
@@ -210,7 +280,7 @@ func (n *AudioNormalizer) setupUI() {
 			n.writeTags.Enable()
 		}
 	})
-	n.loudnormCheck.SetChecked(true)
+	n.loudnormCheck.SetChecked(false)
 	
 	// File selection
 	selectFilesBtn := widget.NewButton("Select Files", n.selectFiles)
@@ -228,15 +298,85 @@ func (n *AudioNormalizer) setupUI() {
 	n.statusLog = widget.NewMultiLineEntry()
 	n.statusLog.Disable()
 	n.statusLog.SetPlaceHolder("Processing log will appear here...")
+		
+	helpBtn := widget.NewButton("Help", func() {
+			
+			menuGettingStarted := widget.NewLabel(				
+`This tool is designed for broadcast houses to make the workflows as efficient as possible. This tool allows you to transcode (change formats), normalize (make sure the loudness is just right) and tag (give instructions to players as to what volume should the file be played at). 
+
+The tool has two modes. The Simple mode allows you to change format to one of the three pre-selected formats. It also allows you to normalize the audio file to EBU R128. Processing one or more files requires four clicks, and the program can be left running in background. Ready files will appear to the selected output folder once they're ready (one by one).
+
+Advanced mode lets you choose what encoding format to use and what encoding values should be used. It also lets you set custom targets for loudness normalization, and it lets you choose whether you want to normalize or set ReplayGain tags. (there's no point in normalizing AND tagging)
+
+'Select Files' selects files to process.
+
+'Select Folder' selects folder full of files to process.
+
+'Output Folder' chooses directory to output the processed audio files.
+
+For more information visit collinsgroup.fi/en/software/tnt`)
+			menuGettingStarted.Wrapping = fyne.TextWrapWord
+			
+			menuSimpleTab := widget.NewLabel(`
+Choose the end format, minimal options.
+
+Checkbox 'Normalize' allows you to normalize the audio file to EBU R128 standard.`)
+			menuSimpleTab.Wrapping = fyne.TextWrapWord
+			
+			menuAdvancedTab := widget.NewLabel(
+`Choose format out of AAC, Opus, MP3 and PCM (Wave).
+
+Sample rate and bit depth are disabled for all codecs except for PCM.
+
+Birate is available for codecs other than PCM. Minimum is 12 kbps and maximum is set by the encoder.
+
+Target in LUFS and TP limit in dB are for either custom normalization or ReplayGain tagging. To use these, check 'Use custom loudness...'
+
+Checkbox 'Custom loudness' allows you to configure custom target for LUFS I and TP. Values will always be parsed into negative values. Uncheck to use EBU R128 (if Normalize is selected).
+
+Checkbox 'Write RG tags' writes ReplayGain tags to the audio file metadata. It uses custom values, if above is checked, or EBU R128 if unchecked. This can not be checked with 'Normalize' or a PCM origin file.
+
+Checkbox 'Do not transcode' is an option for ReplayGain tagging. It does not alter the audio data, only writes metadata. This can only be used with the above checked, and if the original file is not PCM.
+
+Checkbox 'Normalize' normalizes the audio files to custom values, if relevant checkbox is checked, or to EBU R128 if no custom values are given. It uses BS.1770-5.
+
+Checkbox 'Speech' sets the codec to Opus and chooses data compression suitable for VoIP applications. If used with normalize, it uses normalization suited better for speech. Do not use with music.`)
+			menuAdvancedTab.Wrapping = fyne.TextWrapWord
+			
+			menuFormatsTab := widget.NewLabel(
+`AAC is a data compression method that at high bitrates can sound similar to a non-compressed file. In simple mode, the bitrate is set to 256 kbit/s, which gives very good results. The maximum bitrate for this encoder is 512 kbit/s. At 320 kbit/s the encoder tends to lose almost all of its encoding artifacts. Thirty seconds of audio encoded with 256 kbit/s results in approximately 1 MB filesize.
+
+Opus is a modern data compression method that can achieve very good results even with lower bitrates. Opus has a lower algorithmic delay, which makes it suitable for live applications. It's an open-source format. It's minimum bitrate is 6 kbit/s, though the UI limits the bitrate at 12 kbit/s at minimum. The maximum bitrate for this encoder is 510 kbit/s.
+
+MPEG-II Layer 3 (AKA mp3) is an older, but one of the most compatible encoder available. It isn't as capable at lower bitrates as the two encoders above, but at high bitrates (>320 kbit/s) it's usable. Use this if you know the end-user can't decode AAC or Opus. Filesize for mp3 at 160 kbit/s for 30 second audio file is 0.6 MB.
+
+PCM, or WAV in this tool is a pulse-code modulated, raw uncompressed audio stream. It's the highest quality, but it comes with a size-cost. This encoder doesn't have a bitrate setting, but has two other settings that result in a bitrate. First, samplerate (either 44.1, 48, 88.2, 96, 192 kHz) mean "how often the original data is converted into audio in a second". With 48 kHz the audio is sampled forty-eight thousand times in a second. Second, the bitrate controls "how precisely we want to have each sample". The options are either 16, 24, 32 or 64, of which the last two are floating-point and used in specific scenarions. The file size for a thirty-second audio with 48 kHz, 24-bit audio is 8.64 MB.`)
+			menuFormatsTab.Wrapping = fyne.TextWrapWord
+			
+			tabs := container.NewAppTabs(
+				container.NewTabItem("Getting started", container.NewScroll(menuGettingStarted)),
+				container.NewTabItem("Simple", container.NewScroll(menuSimpleTab)),
+				container.NewTabItem("Advanced", container.NewScroll(menuAdvancedTab)),
+				container.NewTabItem("Audio formats", container.NewScroll(menuFormatsTab)),			)
+			
+			tabs.SetTabLocation(container.TabLocationTop)
+			
+		helpWindow := fyne.CurrentApp().NewWindow("Help")
+		helpWindow.SetContent(tabs)
+		helpWindow.Resize(fyne.NewSize(600, 400))
+		helpWindow.Show()
+	})
+	
+	
 	
 	// Layout
 	settingsContainer := container.NewVBox(
+		helpBtn,
 		n.modeToggle,
 		widget.NewSeparator(),
 		n.simpleGroup,
 		n.advancedContainer,
 		n.loudnormCheck,
-		n.IsSpeechCheck,
 	)
 	
 	topButtons := container.NewHBox(selectFilesBtn, selectFolderBtn)
@@ -298,10 +438,15 @@ func (n *AudioNormalizer) updateAdvancedControls() {
 		n.bitDepth.Enable()
 		n.bitrateEntry.Hide()
 		n.writeTags.Disable()
-	} else {
+		n.writeTags.SetChecked(false)
+		n.noTranscode.SetChecked(false)
+		n.noTranscode.Disable()
+		n.loudnormCheck.Enable()
+	} else if n.loudnormCheck != nil && n.loudnormCheck.Checked {
 		n.sampleRate.Disable()
 		n.bitDepth.Disable()
 		n.bitrateEntry.Show()
+	} else {
 		n.writeTags.Enable()
 	}
 }
@@ -383,6 +528,30 @@ func (n *AudioNormalizer) selectOutputFolder() {
 	}, n.window)
 }
 
+func (n *AudioNormalizer) checkPCM() bool {
+	originIsPCM := false
+	for _, file := range n.files {
+		if strings.TrimPrefix(filepath.Ext(file), ".") == "wav" {
+			originIsPCM = true
+			break
+		}
+	}
+	fyne.Do(func() {
+		if originIsPCM {
+			n.noTranscode.Disable()
+			if n.formatSelect.Selected == "PCM" {
+				n.writeTags.Disable()
+				n.writeTags.SetChecked(false)
+				n.noTranscode.Disable()
+				n.noTranscode.SetChecked(false)
+			} else {
+				n.writeTags.Enable()
+			}
+		}
+	})
+	return originIsPCM
+}
+
 func (n *AudioNormalizer) addFile(path string) {
 	n.mutex.Lock()
 	defer n.mutex.Unlock()
@@ -397,7 +566,9 @@ func (n *AudioNormalizer) addFile(path string) {
 	fyne.Do(func() {
 		n.fileList.Refresh()
 		n.updateProcessButton()
+		n.checkPCM()
 	})
+	
 }
 
 func (n *AudioNormalizer) updateProcessButton() {
@@ -524,13 +695,24 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 	}
 	
 	outputPath := filepath.Join(n.outputDir, fmt.Sprintf("%s.normalized%s", baseName, ext))
+
+	if n.noTranscode.Checked {
+		outputPath = filepath.Join(n.outputDir, fmt.Sprintf("%s.tagged%s", baseName, ext))
+	}
 	
-	n.logStatus(fmt.Sprintf("Processing: %s", filepath.Base(inputPath)))
+	n.logStatus(fmt.Sprintf("Processing: %s, outputting to %s", filepath.Base(inputPath), outputPath))
 	
 	var measured map[string]string
 	
-	// Pass 1: Measure if loudnorm is enabled
-	if config.UseLoudnorm || config.writeTags {
+	if config.writeTags {
+		// Use accurate ebur128 for tagging
+		measured = n.measureLoudnessEbuR128(inputPath)
+		if measured == nil {
+			n.logStatus(fmt.Sprintf("✗ Failed to measure: %s", filepath.Base(inputPath)))
+			return false
+		}
+	} else if config.UseLoudnorm {
+		// Use loudnorm for normalization measurement
 		measured = n.measureLoudness(inputPath)
 		if measured == nil {
 			n.logStatus(fmt.Sprintf("✗ Failed to measure: %s", filepath.Base(inputPath)))
@@ -542,7 +724,9 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 	args := []string{"-i", inputPath}
 	
 	// Add format-specific arguments
-	if actualCodec == "PCM" {
+	if n.noTranscode.Checked {
+		args = append(args, "-c", "copy")
+	} else if actualCodec == "PCM" && !n.noTranscode.Checked {
 		args = append(args, "-ar", config.SampleRate)
 		
 		var codec string
@@ -557,7 +741,7 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 			codec = "pcm_f64le"
 		}
 		args = append(args, "-acodec", codec)
-	} else {
+	} else if !n.noTranscode.Checked {
 		
 		isMp3 := actualCodec == "libmp3lame"
 		
@@ -603,9 +787,9 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 	}
 	
 	// Add speech optimization for Opus
-	if config.IsSpeech && actualCodec == "libopus" {
+	if config.IsSpeech && actualCodec == "libopus" && !n.noTranscode.Checked {
 		args = append(args, "-application", "voip")
-	} else if !config.IsSpeech && actualCodec == "libopus" {
+	} else if !config.IsSpeech && actualCodec == "libopus" && !n.noTranscode.Checked {
 		args = append(args, "-application", "audio")
 	}
 	
@@ -631,7 +815,7 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 	} 
 	
 	// Add two-pass loudnorm filter if enabled
-	if config.UseLoudnorm && !config.writeTags {
+	if config.UseLoudnorm {
 		var filterChain string
 		if config.IsSpeech {
 			filterChain = fmt.Sprintf(
@@ -648,20 +832,27 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 		}
 		args = append(args, "-af", filterChain)
 	}
+	n.logStatus("input_tp from measurement: " + measured["input_tp"])
+	
 	rgTpFlt, err := strconv.ParseFloat(measured["input_tp"], 64)
 	if err != nil {
-		
+		n.logStatus("ERROR parsing peak: " + err.Error())
 	}
 	
 	rgTpInLin := math.Pow(10, rgTpFlt/20)
+	n.logStatus(fmt.Sprintf("Peak in linear: %.6f", rgTpInLin))
 	
 	if actualCodec == "libfdk_aac" && config.writeTags && measured != nil {
 		args = append(args, "-movflags", "use_metadata_tags")
 	}
 	
 	if config.writeTags && measured != nil {
+		inputI, _ := strconv.ParseFloat(measured["input_i"], 64)
+		targetFloat, _ := strconv.ParseFloat(target, 64)
+		gain := targetFloat - inputI
+		
 		args = append(args, 
-			"-metadata", "REPLAYGAIN_TRACK_GAIN=" + measured["target_offset"] + " dB",
+			"-metadata", fmt.Sprintf("REPLAYGAIN_TRACK_GAIN=%.2f dB", gain),
 			"-metadata", fmt.Sprintf("REPLAYGAIN_TRACK_PEAK=%.6f", rgTpInLin),
 			"-metadata", "REPLAYGAIN_REFERENCE_LOUDNESS=" + target + " LUFS",
 		)
@@ -669,10 +860,8 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 	
 	args = append(args, "-y", outputPath)
 	
-	cmd := exec.Command("/usr/local/bin/ffmpeg", args...)
+	cmd := exec.Command(ffmpegPath, args...)
 	
-	fullCmd := fmt.Sprintf("/usr/local/bin/ffmpeg %s", strings.Join(args, " "))
-	n.logStatus(fmt.Sprintf("Command: %s", fullCmd))
 	
 	if err := cmd.Run(); err != nil {
 		n.logStatus(fmt.Sprintf("✗ Failed: %s - %v", filepath.Base(inputPath), err))
@@ -680,7 +869,60 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 	}
 	
 	n.logStatus(fmt.Sprintf("✓ Success: %s", filepath.Base(inputPath)))
+	n.logStatus("")
+	n.logStatus(fmt.Sprintf("Your files can be found from %s. Thank you.", n.outputDir))
 	return true
+}
+
+func (n *AudioNormalizer) parseEBUR128Output(output string) map[string]string {
+	result := make(map[string]string)
+	
+	// Parse: "I:         -22.6 LUFS"
+	iRe := regexp.MustCompile(`I:\s+([-\d.]+)\s+LUFS`)
+	if match := iRe.FindStringSubmatch(output); len(match) > 1 {
+		result["input_i"] = match[1]
+	}
+	
+	// Parse: "LRA:         6.4 LU"
+	lraRe := regexp.MustCompile(`LRA:\s+([-\d.]+)\s+LU`)
+	if match := lraRe.FindStringSubmatch(output); len(match) > 1 {
+		result["input_lra"] = match[1]
+	}
+	
+	// Parse: "Threshold: -34.1 LUFS"
+	threshRe := regexp.MustCompile(`Threshold:\s+([-\d.]+)\s+LUFS`)
+	if match := threshRe.FindStringSubmatch(output); len(match) > 1 {
+		result["input_thresh"] = match[1]
+	}
+	
+	// Parse: "Peak: n.y dBFS"
+	pkRe := regexp.MustCompile(`Peak:\s+([-\d.]+)\s+dBFS`)
+	if match := pkRe.FindStringSubmatch(output); len(match) > 1 {
+		result["input_tp"] = match[1]
+	}
+		
+	n.logStatus(result["input_i"])
+	n.logStatus(result["input_lra"])
+	n.logStatus(result["input_thresh"])
+	
+	return result
+}
+
+func (n *AudioNormalizer) measureLoudnessEbuR128(inputPath string) map[string]string {
+	cmd := exec.Command(
+		ffmpegPath,
+		"-i", inputPath,
+		"-af", "ebur128=framelog=quiet:peak=true",
+		"-f", "null",
+		"-",
+	)
+	
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil
+	}
+	
+	return n.parseEBUR128Output(string(output))
 }
 
 func (n *AudioNormalizer) measureLoudness(inputPath string) map[string]string {
@@ -704,13 +946,12 @@ func (n *AudioNormalizer) measureLoudness(inputPath string) map[string]string {
 		} else {
 			targetTp = "-" + n.normalizeTargetTp.Text
 		}
-		targetTp = n.normalizeTargetTp.Text
 	} 
 	
 	cmd := exec.Command(
-		"/usr/local/bin/ffmpeg",
+		ffmpegPath,
 		"-i", inputPath,
-		"-af", fmt.Sprintf("loudnorm=I=%s:TP=%s:LRA=5:print_format=json", target, targetTp),
+		"-af", fmt.Sprintf("loudnorm=linear=false:I=%s:TP=%s:LRA=5:print_format=json", target, targetTp),
 		"-f", "null",
 		"-",
 	)

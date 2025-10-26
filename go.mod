@@ -1,4 +1,4 @@
-module normalizer
+module tnt
 
 go 1.25.3
 
