@@ -32,7 +32,7 @@ type VersionInfo struct {
 }
 
 func checkForUpdates(currentVersion string, window fyne.Window) {
-	resp, err := http.Get("https://software.collins.fi/tnt-version.json")
+	resp, err := http.Get("https://software.collinsgroup.fi/tnt-version.json")
 	if err != nil {
 		return // Silently fail if can't reach server
 	}
@@ -49,7 +49,16 @@ func checkForUpdates(currentVersion string, window fyne.Window) {
 			fmt.Sprintf("Version %s is available!\n\n%s", versionInfo.Version, versionInfo.ReleaseNotes),
 			func(download bool) {
 				if download {
-					exec.Command("open", versionInfo.DownloadURL).Start()
+					var cmd *exec.Cmd
+					switch runtime.GOOS {
+					case "windows":
+						cmd = exec.Command("cmd", "/c", "start", versionInfo.DownloadURL)
+					case "darwin":
+						cmd = exec.Command("open", versionInfo.DownloadURL)
+					case "linux":
+						cmd = exec.Command("xdg-open", versionInfo.DownloadURL)
+					}
+					cmd.Start()
 				}
 			},
 			window,
@@ -64,8 +73,15 @@ func compareVersions(v1, v2 string) int {
 func extractFFmpeg() string {
 	// Extract to temp location
 	tmpDir := os.TempDir()
-	ffmpegPath := filepath.Join(tmpDir, "ffmpeg")
 	
+	var name string
+	if runtime.GOOS == "windows" {
+		name = "ffmpeg.exe"
+	} else {
+		name = "ffmpeg"
+	}
+	
+	ffmpegPath := filepath.Join(tmpDir, name)
 	os.WriteFile(ffmpegPath, ffmpegBinary, 0755)
 	return ffmpegPath
 }
@@ -122,16 +138,7 @@ type ProcessConfig struct {
 	IsSpeech bool
 	writeTags bool
 	noTranscode bool
-}
-
-var codecMap = map[string]string{
-	"Opus": "libopus",
-	"AAC": "libfdk_aac",
-	"MPEG-II L3": "libmp3lame",
-	"PCM": "PCM",
-	"Small file (AAC 256kbps)": "libfdk_aac",
-	"Most compatible (MP3 160kbps)": "libmp3lame",
-	"Production (PCM 48kHz/24bit)": "PCM",
+	originIsAAC bool
 }
 
 func main() {
@@ -148,20 +155,43 @@ func main() {
 	
 	norm.setupUI()
 	
-	const currentVersion = "1.0.1"
+	const currentVersion = "1.0.0"
 	go checkForUpdates(currentVersion, w)
 	
 	w.ShowAndRun()
+}
+
+func (n *AudioNormalizer) removeFile(index int) {
+	n.mutex.Lock()
+	defer n.mutex.Unlock()
+	
+	n.files = append(n.files[:index], n.files[index+1:]...)
+	
+	fyne.Do(func() {
+		n.fileList.Refresh()
+		n.updateProcessButton()
+		n.checkPCM()
+	})
 }
 
 func (n *AudioNormalizer) setupUI() {
 	n.fileList = widget.NewList(
 		func() int { return len(n.files) },
 		func() fyne.CanvasObject {
-			return widget.NewLabel("template")
+			return container.NewBorder(nil, nil, nil, 
+				widget.NewButtonWithIcon("", theme.DeleteIcon(), nil),
+				widget.NewLabel("template"),
+			)
 		},
 		func(i widget.ListItemID, o fyne.CanvasObject) {
-			o.(*widget.Label).SetText(filepath.Base(n.files[i]))
+			border := o.(*fyne.Container)
+			label := border.Objects[0].(*widget.Label)
+			btn := border.Objects[1].(*widget.Button)
+			
+			label.SetText(filepath.Base(n.files[i]))
+			btn.OnTapped = func() {
+				n.removeFile(i)
+			}
 		},
 	)
 	
@@ -209,6 +239,8 @@ func (n *AudioNormalizer) setupUI() {
 			n.noTranscode.Enable()
 		} else {
 			n.loudnormCheck.Enable()
+			n.noTranscode.Disable()
+			n.noTranscode.SetChecked(false)
 		}
 	})
 	n.writeTags.SetChecked(false)
@@ -367,27 +399,25 @@ PCM, or WAV in this tool is a pulse-code modulated, raw uncompressed audio strea
 		helpWindow.Show()
 	})
 	
-	
+	topButtons := container.NewHBox(selectFilesBtn, selectFolderBtn)
+	outputSection := container.NewBorder(nil, nil, widget.NewLabel("Output:"), selectOutputBtn, n.outputLabel)
 	
 	// Layout
 	settingsContainer := container.NewVBox(
 		helpBtn,
 		n.modeToggle,
 		widget.NewSeparator(),
+		topButtons,
+		outputSection,
+		widget.NewSeparator(),
 		n.simpleGroup,
 		n.advancedContainer,
 		n.loudnormCheck,
 	)
 	
-	topButtons := container.NewHBox(selectFilesBtn, selectFolderBtn)
-	outputSection := container.NewBorder(nil, nil, widget.NewLabel("Output:"), selectOutputBtn, n.outputLabel)
-	
 	content := container.NewBorder(
 		container.NewVBox(
 			settingsContainer,
-			widget.NewSeparator(),
-			topButtons,
-			outputSection,
 			widget.NewSeparator(),
 		),
 		container.NewVBox(
@@ -552,6 +582,38 @@ func (n *AudioNormalizer) checkPCM() bool {
 	return originIsPCM
 }
 
+func (n *AudioNormalizer) checkNonTranscode() bool {
+	nonTranscoding := false
+	for _, file := range n.files {
+		if strings.TrimPrefix(filepath.Ext(file), ".") == "ogg" {
+			nonTranscoding = true
+			break
+		}
+	}
+	fyne.Do(func() {
+		if nonTranscoding {
+			n.noTranscode.Disable()
+		}
+	})
+	return nonTranscoding
+}
+
+func (n *AudioNormalizer) checkOriginAAC() bool {
+	originIsAAC := false
+	for _, file := range n.files {
+		if strings.TrimPrefix(filepath.Ext(file), ".") == "m4a" {
+			originIsAAC = true
+			break
+		}
+	}
+	fyne.Do(func() {
+		if originIsAAC {
+
+		}
+	})
+	return originIsAAC
+}
+
 func (n *AudioNormalizer) addFile(path string) {
 	n.mutex.Lock()
 	defer n.mutex.Unlock()
@@ -583,6 +645,7 @@ func (n *AudioNormalizer) getProcessConfig() ProcessConfig {
 	config := ProcessConfig{
 		UseLoudnorm: n.loudnormCheck.Checked,
 		IsSpeech: n.IsSpeechCheck.Checked,
+		originIsAAC: n.checkOriginAAC(),
 	}
 	
 	if n.advancedMode {
@@ -594,10 +657,10 @@ func (n *AudioNormalizer) getProcessConfig() ProcessConfig {
 	} else {
 		switch n.simpleGroup.Selected {
 		case "Small file (AAC 256kbps)":
-			config.Format = "libfdk_aac"
-			config.Bitrate = "256000"
+			config.Format = "AAC"
+			config.Bitrate = "256"
 		case "Most compatible (MP3 160kbps)":
-			config.Format = "libmp3lame"
+			config.Format = "MPEG-II L3"
 			config.Bitrate = "160"
 		case "Production (PCM 48kHz/24bit)":
 			config.Format = "PCM"
@@ -673,6 +736,7 @@ func (n *AudioNormalizer) process() {
 
 func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bool {
 	actualCodec := config.Format
+	
 	if codecMap[config.Format] != "" {
 		actualCodec = codecMap[config.Format]
 	}	
@@ -685,6 +749,8 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 	case "libopus":
 		ext = ".opus"
 	case "libfdk_aac":
+		ext = ".m4a"
+	case "aac":
 		ext = ".m4a"
 	case "libmp3lame":
 		ext = ".mp3"
@@ -721,7 +787,7 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 	}
 	
 	// Build ffmpeg command
-	args := []string{"-i", inputPath}
+	args := []string{"-i", inputPath, "-vn"}
 	
 	// Add format-specific arguments
 	if n.noTranscode.Checked {
@@ -752,7 +818,7 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 			args = append(args, "-c:a", actualCodec)
 		}
 		
-		needsFullNumber := (actualCodec == "libfdk_aac" || actualCodec == "libopus" || actualCodec == "libmp3lame")
+		needsFullNumber := (actualCodec == "libfdk_aac" || actualCodec == "aac" || actualCodec == "libopus" || actualCodec == "libmp3lame")
 		
 		bitrateStr := config.Bitrate
 		
@@ -832,17 +898,29 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 		}
 		args = append(args, "-af", filterChain)
 	}
-	n.logStatus("input_tp from measurement: " + measured["input_tp"])
 	
-	rgTpFlt, err := strconv.ParseFloat(measured["input_tp"], 64)
-	if err != nil {
-		n.logStatus("ERROR parsing peak: " + err.Error())
-	}
+	var rgTpInLin float64
 	
-	rgTpInLin := math.Pow(10, rgTpFlt/20)
-	n.logStatus(fmt.Sprintf("Peak in linear: %.6f", rgTpInLin))
+	if config.writeTags {
+		if measured["input_tp"] == "" {
+			n.logStatus("ERROR: input_tp is empty")
+			rgTpInLin = 1.0  // Default value
+		} else {
+			rgTpFlt, err := strconv.ParseFloat(measured["input_tp"], 64)
+			if err != nil {
+				n.logStatus("ERROR parsing peak: " + err.Error())
+				rgTpInLin = 1.0  // Default on parse error
+			} else {
+				rgTpInLin = math.Pow(10, rgTpFlt/20)
+				n.logStatus(fmt.Sprintf("Peak in linear: %.6f", rgTpInLin))
+			}
+		}
+	} 
 	
-	if actualCodec == "libfdk_aac" && config.writeTags && measured != nil {
+	resultsInM4A := (actualCodec == "libfdk_aac" || actualCodec == "aac") || (config.originIsAAC && config.noTranscode)
+	useMovFlags :=  resultsInM4A && config.writeTags && measured != nil 
+	
+	if useMovFlags {
 		args = append(args, "-movflags", "use_metadata_tags")
 	}
 	
@@ -860,7 +938,11 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 	
 	args = append(args, "-y", outputPath)
 	
+	fullCmdLog := ffmpegPath + " " + strings.Join(args, " ")
+	n.logStatus(fullCmdLog)
+	
 	cmd := exec.Command(ffmpegPath, args...)
+	hideWindow(cmd)
 	
 	
 	if err := cmd.Run(); err != nil {
@@ -904,6 +986,7 @@ func (n *AudioNormalizer) parseEBUR128Output(output string) map[string]string {
 	n.logStatus(result["input_i"])
 	n.logStatus(result["input_lra"])
 	n.logStatus(result["input_thresh"])
+	n.logStatus(result["input_tp"])
 	
 	return result
 }
@@ -916,6 +999,7 @@ func (n *AudioNormalizer) measureLoudnessEbuR128(inputPath string) map[string]st
 		"-f", "null",
 		"-",
 	)
+	hideWindow(cmd)
 	
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -955,6 +1039,7 @@ func (n *AudioNormalizer) measureLoudness(inputPath string) map[string]string {
 		"-f", "null",
 		"-",
 	)
+	hideWindow(cmd)
 	
 	output, err := cmd.CombinedOutput()
 	if err != nil {
