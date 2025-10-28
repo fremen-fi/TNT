@@ -4,6 +4,7 @@ fyne-cross/
 App/
 ffmpegSource/
 tnt.exe
-resources/
+buildBlocks/
 *.dmg
 *.exe
+*.app
