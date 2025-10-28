@@ -6,7 +6,7 @@ import(
 	_ "embed"
 	)
 
-//go:embed ffmpeg.exe
+//go:embed ffmpegSource/ffmpeg.exe
 var ffmpegBinary []byte
 
 var codecMap = map[string]string{

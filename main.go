@@ -16,14 +16,18 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-
+	"time"
+	
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
+
+const currentVersion = "1.0.0"
 
 type VersionInfo struct {
 	Version      string `json:"version"`
@@ -63,6 +67,8 @@ func checkForUpdates(currentVersion string, window fyne.Window) {
 			},
 			window,
 		)
+	} else {
+		dialog.ShowInformation("Up to date", "You're running the latest version :)", window)
 	}
 }
 
@@ -90,6 +96,25 @@ var ffmpegPath string
 
 func init() {
 	ffmpegPath = extractFFmpeg()
+}
+
+func (n *AudioNormalizer) initLogFile() *os.File {
+	configDir, _ := os.UserConfigDir()
+	logPath := filepath.Join(configDir, "TNT", "tnt.log")
+	
+	logfile, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil
+	}
+	
+	return logfile
+}
+
+func (n *AudioNormalizer) logToFile(logFile *os.File, message string) {
+	if logFile != nil {
+		timestamp := time.Now().Format("2006-01-02 15:04:05")
+		logFile.WriteString(fmt.Sprintf("[%s] %s\n", timestamp, message))
+	}
 }
 
 type AudioNormalizer struct {
@@ -121,9 +146,13 @@ type AudioNormalizer struct {
 	// Common
 	loudnormCheck *widget.Check
 	loudnormCustomCheck *widget.Check
+	loudnormLabel *widget.Label
+	normalizationStandard string
 	IsSpeechCheck *widget.Check
 	writeTags *widget.Check
 	noTranscode *widget.Check
+	
+	logFile *os.File
 	
 	mutex sync.Mutex
 }
@@ -141,7 +170,139 @@ type ProcessConfig struct {
 	originIsAAC bool
 }
 
+type Preferences struct {
+	AdvancedMode bool `json:"advanced_mode"`
+	LastOutputDir string `json:"last_output_dir"`
+	SimpleMode string `json:"simple_mode_selection"`
+	Format string `json:"format"`
+	SampleRate string `json:"sample_rate"`
+	BitDepth string `json:"bit_depth"`
+	Bitrate string `json:"bitrate"`
+	LoudnormEnabled bool `json:"loudnorm_enabled"`
+	CustomLoudnorm bool `json:"custom_loudnorm"`
+	NormalizeTarget string `json:"normalize_target"`
+	NormalizeTargetTp string `json:"normalize_target_tp"`
+	NormalizationStandard string `json:"normalization_standard"`
+}
+
+func (n *AudioNormalizer) loadPreferences() {
+	configDir, _ := os.UserConfigDir()
+	prefsPath := filepath.Join(configDir, "TNT", "preferences.json")
+	
+	data, err := os.ReadFile(prefsPath)
+	if err != nil {
+		return 
+	}
+	
+	var prefs Preferences
+	json.Unmarshal(data, &prefs)
+	
+	n.modeToggle.SetChecked(prefs.AdvancedMode)
+	n.outputDir = prefs.LastOutputDir
+	n.simpleGroup.SetSelected(prefs.SimpleMode)
+	n.formatSelect.SetSelected(prefs.Format)
+	n.sampleRate.SetSelected(prefs.SampleRate)
+	n.bitDepth.SetSelected(prefs.BitDepth)
+	n.bitrateEntry.SetText(prefs.Bitrate)
+	n.loudnormCheck.SetChecked(prefs.LoudnormEnabled)
+	n.loudnormCustomCheck.SetChecked(prefs.CustomLoudnorm)
+	n.normalizeTarget.SetText(prefs.NormalizeTarget)
+	n.normalizeTargetTp.SetText(prefs.NormalizeTargetTp)
+	n.normalizationStandard = prefs.NormalizationStandard
+	n.updateNormalizationLabel(prefs.NormalizationStandard)
+}
+
+func (n *AudioNormalizer) savePreferences() {
+	prefs := Preferences{
+		AdvancedMode: n.advancedMode,
+		LastOutputDir: n.outputDir,
+		SimpleMode: n.simpleGroup.Selected,
+		Format: n.formatSelect.Selected,
+		SampleRate: n.sampleRate.Selected,
+		BitDepth: n.bitDepth.Selected,
+		Bitrate: n.bitrateEntry.Text,
+		LoudnormEnabled: n.loudnormCheck.Checked,
+		CustomLoudnorm: n.loudnormCustomCheck.Checked,
+		NormalizeTarget: n.normalizeTarget.Text,
+		NormalizeTargetTp: n.normalizeTargetTp.Text,
+		NormalizationStandard: n.normalizationStandard,
+	}
+	
+	configDir, _ := os.UserConfigDir()
+	prefsDir := filepath.Join(configDir, "TNT")
+	os.MkdirAll(prefsDir, 0755)
+	
+	data, _ := json.MarshalIndent(prefs, "", "  ")
+	os.WriteFile(filepath.Join(prefsDir, "preferences.json"), data, 0644)
+}
+
+func (n *AudioNormalizer) showNormalizationSettings() {
+	stdGroup := widget.NewRadioGroup([]string{"EBU R128 (-23 LUFS)", "USA ATSC A/85 (-24 LUFS)", "Custom"}, nil)
+	stdGroup.SetSelected("EBU R128 (-23 LUFS)")
+	
+	lufsEntry := widget.NewEntry()
+	lufsEntry.SetPlaceHolder("-23")
+	lufsEntry.SetText("-23")
+	
+	tpEntry := widget.NewEntry()
+	tpEntry.SetPlaceHolder("-1")
+	tpEntry.SetText("-1")
+	
+	stdGroup.OnChanged = func(selected string) {
+		if selected == "Custom" {
+			lufsEntry.Enable()
+			tpEntry.Enable()
+		} else {
+			lufsEntry.Disable()
+			tpEntry.Disable()
+		}
+	}
+	lufsEntry.Disable()
+	tpEntry.Disable()
+	
+	content := container.NewVBox(
+		widget.NewLabel("Default normalization targets:"),
+		stdGroup,
+		widget.NewLabel("Custom LUFS target:"),
+		lufsEntry,
+		widget.NewLabel("Custom TP target:"),
+		tpEntry,
+	)
+	
+	dialog.ShowCustomConfirm("Normalization settings", "Save", "Cancel", content, func(save bool) {
+		if save {
+			switch stdGroup.Selected {
+				case "EBU R128 (-23 LUFS)":
+					n.normalizeTarget.SetText("-23")
+					n.normalizeTargetTp.SetText("-1")
+				case "USA ATSC A/85 (-24 LUFS)":
+					n.normalizeTarget.SetText("-24")
+					n.normalizeTargetTp.SetText("-2")
+				case "Custom":
+					n.normalizeTarget.SetText(lufsEntry.Text)
+					n.normalizeTargetTp.SetText(tpEntry.Text)
+			}
+			n.updateNormalizationLabel(stdGroup.Selected)
+			n.normalizationStandard = stdGroup.Selected
+			n.savePreferences()
+		}
+	}, n.window)
+}
+
+func (n *AudioNormalizer) updateNormalizationLabel(standard string) {
+	switch standard {
+		case "EBU R128 (-23 LUFS)":
+			n.loudnormLabel.SetText("Normalize (EBU R128: -23 LUFS)")
+		case "USA ATSC A/85 (-24 LUFS)":
+			n.loudnormLabel.SetText("Normalize (ATSC A/85: -24 LUFS)")
+		case "Custom":
+			target := n.normalizeTarget.Text
+			n.loudnormLabel.SetText(fmt.Sprintf("Normalize (Custom %s LUFS)", target))
+	}
+}
+
 func main() {
+
 	a := app.NewWithID("com.collinsgroup.tnt")
 	a.Settings().SetTheme(&appleTheme{})
 	
@@ -153,12 +314,24 @@ func main() {
 		files:  make([]string, 0),
 	}
 	
-	norm.setupUI()
+	norm.setupUI(a)
+	norm.loadPreferences()
 	
-	const currentVersion = "1.0.0"
+	norm.logFile = norm.initLogFile()
+	if norm.logFile != nil {
+		defer norm.logFile.Close()
+	}
+	
 	go checkForUpdates(currentVersion, w)
 	
 	w.ShowAndRun()
+}
+
+func getLogoForTheme(a fyne.App) fyne.Resource {
+	if a.Settings().ThemeVariant() == theme.VariantDark {
+		return resourceTntAppLogoForDarkPng
+	}
+	return resourceTntAppLogoForLightPng
 }
 
 func (n *AudioNormalizer) removeFile(index int) {
@@ -174,7 +347,18 @@ func (n *AudioNormalizer) removeFile(index int) {
 	})
 }
 
-func (n *AudioNormalizer) setupUI() {
+func (n *AudioNormalizer) setupUI(a fyne.App) {
+	logoImg := canvas.NewImageFromResource(getLogoForTheme(a))
+	logoImg.SetMinSize(fyne.NewSize(0, 100))
+	logoImg.FillMode = canvas.ImageFillContain
+	
+	go func() {
+		a.Settings().AddListener(func(s fyne.Settings) {
+			logoImg.Resource = getLogoForTheme(a)
+			canvas.Refresh(logoImg)
+		})
+	}()
+	
 	n.fileList = widget.NewList(
 		func() int { return len(n.files) },
 		func() fyne.CanvasObject {
@@ -257,8 +441,6 @@ func (n *AudioNormalizer) setupUI() {
 		} else {
 			n.normalizeTarget.Disable()
 			n.normalizeTargetTp.Disable()
-			n.normalizeTarget.SetText("-23")
-			n.normalizeTargetTp.SetText("-1")
 		}
 	})
 	n.loudnormCustomCheck.SetChecked(false)
@@ -305,14 +487,18 @@ func (n *AudioNormalizer) setupUI() {
 	n.advancedContainer.Objects[0] = container.NewBorder(nil, nil, formatLabel, nil, n.formatSelect)
 	
 	// Loudnorm checkbox
-	n.loudnormCheck = widget.NewCheck("Normalize (EBU R128: -23 LUFS)", func(checked bool) {
+	n.loudnormLabel = widget.NewLabel("Normalize (EBU R128: -23 LUFS)")
+	n.loudnormCheck = widget.NewCheck("", func(checked bool) {
 		if checked {
 			n.writeTags.Disable()
 		} else {
 			n.writeTags.Enable()
 		}
 	})
+	loudnormRow := container.NewHBox(n.loudnormCheck, n.loudnormLabel)
 	n.loudnormCheck.SetChecked(false)
+	
+	n.normalizationStandard = "EBU R128 (-23 LUFS)"
 	
 	// File selection
 	selectFilesBtn := widget.NewButton("Select Files", n.selectFiles)
@@ -330,6 +516,19 @@ func (n *AudioNormalizer) setupUI() {
 	n.statusLog = widget.NewMultiLineEntry()
 	n.statusLog.Disable()
 	n.statusLog.SetPlaceHolder("Processing log will appear here...")
+	
+	checkUpdateButton := widget.NewButton("Check for updates", func() {
+		go checkForUpdates(currentVersion, n.window)
+	})
+	
+	savePrefsBtn := widget.NewButton("Save current configuration", func() {
+		n.savePreferences()
+		dialog.ShowInformation("Saved", "Preferences saved successfully", n.window)
+	})
+	
+	loudnessSettingsBtn := widget.NewButton("Normalization defaults", func() {
+		n.showNormalizationSettings()
+	})
 		
 	helpBtn := widget.NewButton("Help", func() {
 			
@@ -402,9 +601,12 @@ PCM, or WAV in this tool is a pulse-code modulated, raw uncompressed audio strea
 	topButtons := container.NewHBox(selectFilesBtn, selectFolderBtn)
 	outputSection := container.NewBorder(nil, nil, widget.NewLabel("Output:"), selectOutputBtn, n.outputLabel)
 	
+	topBar := container.NewHBox(helpBtn, checkUpdateButton, savePrefsBtn, loudnessSettingsBtn)
+	
 	// Layout
 	settingsContainer := container.NewVBox(
-		helpBtn,
+		logoImg,
+		topBar,
 		n.modeToggle,
 		widget.NewSeparator(),
 		topButtons,
@@ -412,7 +614,7 @@ PCM, or WAV in this tool is a pulse-code modulated, raw uncompressed audio strea
 		widget.NewSeparator(),
 		n.simpleGroup,
 		n.advancedContainer,
-		n.loudnormCheck,
+		loudnormRow,
 	)
 	
 	content := container.NewBorder(
@@ -939,11 +1141,10 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 	args = append(args, "-y", outputPath)
 	
 	fullCmdLog := ffmpegPath + " " + strings.Join(args, " ")
-	n.logStatus(fullCmdLog)
+	n.logToFile(n.logFile, fullCmdLog)	
 	
 	cmd := exec.Command(ffmpegPath, args...)
 	hideWindow(cmd)
-	
 	
 	if err := cmd.Run(); err != nil {
 		n.logStatus(fmt.Sprintf("✗ Failed: %s - %v", filepath.Base(inputPath), err))
@@ -1101,17 +1302,51 @@ func isAudioFile(path string) bool {
 type appleTheme struct{}
 
 func (a *appleTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) color.Color {
+	if variant == theme.VariantDark {
+		switch name {
+		case theme.ColorNameBackground:
+			return color.RGBA{R: 0x2f, G: 0x2f, B: 0x2f, A: 0xff}
+		case theme.ColorNameButton:
+			return color.RGBA{R: 0x14, G: 0x1e, B: 0x30, A: 0xff} // Navy
+		case theme.ColorNameDisabledButton:
+			return color.RGBA{R: 0x4a, G: 0x4a, B: 0x4a, A: 0xff}
+		case theme.ColorNameForeground:
+			return color.RGBA{R: 0xeb, G: 0xeb, B: 0xeb, A: 0xff}
+		case theme.ColorNameHover:
+			return color.RGBA{R: 0x3f, G: 0x3f, B: 0x3f, A: 0xff}
+		case theme.ColorNameInputBackground:
+			return color.RGBA{R: 0x1a, G: 0x1a, B: 0x1a, A: 0xff}
+		case theme.ColorNameInputBorder:
+			return color.RGBA{R: 0x4a, G: 0x4a, B: 0x4a, A: 0xff}
+		case theme.ColorNamePlaceHolder:
+			return color.RGBA{R: 0x99, G: 0x99, B: 0x99, A: 0xff}
+		case theme.ColorNamePressed:
+			return color.RGBA{R: 0x0f, G: 0x16, B: 0x24, A: 0xff} // Darker navy
+		case theme.ColorNameSelection:
+			return color.RGBA{R: 0x14, G: 0x1e, B: 0x30, A: 0x66}
+		case theme.ColorNameMenuBackground:
+			return color.RGBA{R: 0x2f, G: 0x2f, B: 0x2f, A: 0xff}
+		case theme.ColorNameOverlayBackground:
+			return color.RGBA{R: 0x2f, G: 0x2f, B: 0x2f, A: 0xff}
+		case theme.ColorNameDisabled:
+			return color.RGBA{R: 0x77, G: 0x77, B: 0x77, A: 0xff}
+		default:
+			return theme.DefaultTheme().Color(name, variant)
+		}
+	}
+	
+	// Light variant
 	switch name {
 	case theme.ColorNameBackground:
-		return color.RGBA{R: 0xf5, G: 0xf5, B: 0xf7, A: 0xff}
+		return color.RGBA{R: 0xeb, G: 0xeb, B: 0xeb, A: 0xff}
 	case theme.ColorNameButton:
-		return color.RGBA{R: 0x00, G: 0x7a, B: 0xff, A: 0xff}
+		return color.RGBA{R: 0xde, G: 0x79, B: 0x7c, A: 0xff}
 	case theme.ColorNameDisabledButton:
-		return color.RGBA{R: 0xcc, G: 0xcc, B: 0xcc, A: 0xff}
+		return color.RGBA{R: 0xbb, G: 0xbb, B: 0xbb, A: 0xff}
 	case theme.ColorNameForeground:
-		return color.RGBA{R: 0x00, G: 0x00, B: 0x00, A: 0xff}
+		return color.RGBA{R: 0x1d, G: 0x1d, B: 0x1f, A: 0xff}
 	case theme.ColorNameHover:
-		return color.RGBA{R: 0xe5, G: 0xe5, B: 0xea, A: 0xff}
+		return color.RGBA{R: 0xd5, G: 0xd5, B: 0xd5, A: 0xff}
 	case theme.ColorNameInputBackground:
 		return color.RGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
 	case theme.ColorNameInputBorder:
@@ -1119,13 +1354,13 @@ func (a *appleTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) 
 	case theme.ColorNamePlaceHolder:
 		return color.RGBA{R: 0x8e, G: 0x8e, B: 0x93, A: 0xff}
 	case theme.ColorNamePressed:
-		return color.RGBA{R: 0x00, G: 0x5a, B: 0xbf, A: 0xff}
+		return color.RGBA{R: 0xc8, G: 0x60, B: 0x63, A: 0xff}
 	case theme.ColorNameSelection:
-		return color.RGBA{R: 0x00, G: 0x7a, B: 0xff, A: 0x66}
+		return color.RGBA{R: 0xde, G: 0x79, B: 0x7c, A: 0x66}
 	case theme.ColorNameMenuBackground:
-		return color.RGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
+		return color.RGBA{R: 0xeb, G: 0xeb, B: 0xeb, A: 0xff}
 	case theme.ColorNameOverlayBackground:
-		return color.RGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
+		return color.RGBA{R: 0xeb, G: 0xeb, B: 0xeb, A: 0xff}
 	case theme.ColorNameDisabled:
 		return color.RGBA{R: 0x99, G: 0x99, B: 0x99, A: 0xff}
 	default:
@@ -1138,7 +1373,7 @@ func (a *appleTheme) Icon(name fyne.ThemeIconName) fyne.Resource {
 }
 
 func (a *appleTheme) Font(style fyne.TextStyle) fyne.Resource {
-	return theme.DefaultTheme().Font(style)
+	return resourceBrockmannRegularTtf
 }
 
 func (a *appleTheme) Size(name fyne.ThemeSizeName) float32 {

@@ -2,8 +2,8 @@
 .DS_Store
 fyne-cross/
 App/
-ffmpeg.exe
-ffmpegLinuxAmd64
-ffmpegLinuxArm64
-ffmpegMacM
+ffmpegSource/
 tnt.exe
+resources/
+*.dmg
+*.exe

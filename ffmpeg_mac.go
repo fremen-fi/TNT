@@ -4,7 +4,7 @@ package main
 
 import _ "embed"
 
-//go:embed ffmpegMacM
+//go:embed ffmpegSource/ffmpegMacM
 var ffmpegBinary []byte
 
 var codecMap = map[string]string{
