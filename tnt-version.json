@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
-  "download_url": "https://collinsgroup.fi/software/tnt/download",
-  "release_notes": ""
+  "version": "1.0.1",
+  "download_url": "https://www.collinsgroup.fi/software/tnt/download-tnt",
+  "release_notes": "macOS users get access to Apple AAC encoder.\nWindows users get access to Fraunhofer AAC encoder(deprecates native AAC).\nPreferences can now be saved.\nFixes library linking issues on macOS.\nReduces executable size on Windows(225 M to 50 M).\nError reports can now be sent from the app."
 }

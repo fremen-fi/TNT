@@ -17,7 +17,7 @@ import (
 	"strings"
 	"sync"
 	"time"
-	
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/canvas"
@@ -25,6 +25,7 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	"github.com/fsnotify/fsnotify"
 )
 
 const currentVersion = "1.0.0"
@@ -35,45 +36,93 @@ type VersionInfo struct {
 	ReleaseNotes string `json:"release_notes"`
 }
 
-func checkForUpdates(currentVersion string, window fyne.Window) {
+func checkForUpdates(currentVersion string, window fyne.Window, logFile *os.File) {
+	logToFile(logFile, "Starting update check...")
+	time.Sleep(500 * time.Millisecond)
+	
+	logToFile(logFile, "Fetching version info from server...")
 	resp, err := http.Get("https://software.collinsgroup.fi/tnt-version.json")
 	if err != nil {
-		return // Silently fail if can't reach server
+		logToFile(logFile, fmt.Sprintf("HTTP error: %v", err))
+		return
 	}
 	defer resp.Body.Close()
 	
+	logToFile(logFile, "Parsing JSON...")
 	var versionInfo VersionInfo
 	if err := json.NewDecoder(resp.Body).Decode(&versionInfo); err != nil {
+		logToFile(logFile, fmt.Sprintf("JSON decode error: %v", err))
 		return
 	}
 	
-	if compareVersions(versionInfo.Version, currentVersion) > 0 {
-		dialog.ShowConfirm(
-			"Update Available",
-			fmt.Sprintf("Version %s is available!\n\n%s", versionInfo.Version, versionInfo.ReleaseNotes),
-			func(download bool) {
-				if download {
-					var cmd *exec.Cmd
-					switch runtime.GOOS {
-					case "windows":
-						cmd = exec.Command("cmd", "/c", "start", versionInfo.DownloadURL)
-					case "darwin":
-						cmd = exec.Command("open", versionInfo.DownloadURL)
-					case "linux":
-						cmd = exec.Command("xdg-open", versionInfo.DownloadURL)
+	logToFile(logFile, fmt.Sprintf("Current: %s, Remote: %s", currentVersion, versionInfo.Version))
+	comparison := compareVersions(versionInfo.Version, currentVersion)
+	logToFile(logFile, fmt.Sprintf("Comparison result: %d", comparison))
+	
+	if comparison > 0 {
+		logToFile(logFile, "Update available, showing dialog...")
+		fyne.Do(func() {
+			dialog.ShowConfirm(
+				"Update Available",
+				fmt.Sprintf("Version %s is available!\n\n%s", versionInfo.Version, versionInfo.ReleaseNotes),
+				func(download bool) {
+					if download {
+						var cmd *exec.Cmd
+						switch runtime.GOOS {
+						case "windows":
+							cmd = exec.Command("cmd", "/c", "start", versionInfo.DownloadURL)
+						case "darwin":
+							cmd = exec.Command("open", versionInfo.DownloadURL)
+						case "linux":
+							cmd = exec.Command("xdg-open", versionInfo.DownloadURL)
+						}
+						cmd.Start()
 					}
-					cmd.Start()
-				}
-			},
-			window,
-		)
+				},
+				window,
+			)
+		})
 	} else {
-		dialog.ShowInformation("Up to date", "You're running the latest version :)", window)
+		logToFile(logFile, "Already up to date")
+		fyne.Do(func() {
+			dialog.ShowInformation("Up to date", "You're running the latest version :)", window)
+		})
+	}
+}
+
+func logToFile(logFile *os.File, message string) {
+	if logFile != nil {
+		timestamp := time.Now().Format("2006-01-02 15:04:05")
+		logFile.WriteString(fmt.Sprintf("[%s] %s\n", timestamp, message))
 	}
 }
 
 func compareVersions(v1, v2 string) int {
-	return strings.Compare(v1, v2)
+	// Parse versions into major.minor.patch
+	parts1 := strings.Split(v1, ".")
+	parts2 := strings.Split(v2, ".")
+	
+	// Ensure we have 3 parts for both
+	for len(parts1) < 3 {
+		parts1 = append(parts1, "0")
+	}
+	for len(parts2) < 3 {
+		parts2 = append(parts2, "0")
+	}
+	
+	// Compare each part numerically
+	for i := 0; i < 3; i++ {
+		n1, _ := strconv.Atoi(parts1[i])
+		n2, _ := strconv.Atoi(parts2[i])
+		
+		if n1 > n2 {
+			return 1
+		} else if n1 < n2 {
+			return -1
+		}
+	}
+	
+	return 0
 }
 
 func extractFFmpeg() string {
@@ -102,6 +151,15 @@ func (n *AudioNormalizer) initLogFile() *os.File {
 	configDir, _ := os.UserConfigDir()
 	logPath := filepath.Join(configDir, "TNT", "tnt.log")
 	
+	if data, err := os.ReadFile(logPath); err == nil {
+		lines := strings.Count(string(data), "\n")
+		if lines > 1000 { // Keep last 1000 lines
+			allLines := strings.Split(string(data), "\n")
+			keepLines := allLines[len(allLines)-1000:]
+			os.WriteFile(logPath, []byte(strings.Join(keepLines, "\n")), 0644)
+		}
+	}
+	
 	logfile, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return nil
@@ -114,6 +172,72 @@ func (n *AudioNormalizer) logToFile(logFile *os.File, message string) {
 	if logFile != nil {
 		timestamp := time.Now().Format("2006-01-02 15:04:05")
 		logFile.WriteString(fmt.Sprintf("[%s] %s\n", timestamp, message))
+	}
+}
+
+func (n *AudioNormalizer) sendLogReport() {
+	configDir, _ := os.UserConfigDir()
+	logPath := filepath.Join(configDir, "TNT", "tnt.log")
+	
+	if _, err := os.Stat(logPath); os.IsNotExist(err) {
+		dialog.ShowInformation("No Log File", "No log file found. Try processing some files first.", n.window)
+		return
+	}
+	
+	subject := "TNT Error Report"
+	body := fmt.Sprintf("OS: %s\nVersion: %s\n\nPlease describe what happened:\n\n", runtime.GOOS, currentVersion)
+	
+	var cmd *exec.Cmd
+	var copyLocation string
+	
+	switch runtime.GOOS {
+	case "darwin":
+		// macOS: Use osascript to create email with attachment
+		script := fmt.Sprintf(`tell application "Mail"
+			set theMessage to make new outgoing message with properties {subject:"%s", content:"%s", visible:true}
+			tell theMessage
+				make new to recipient with properties {address:"appsupport@collinsgroup.fi"}
+				make new attachment with properties {file name:POSIX file "%s"}
+			end tell
+			activate
+		end tell`, subject, body, logPath)
+		cmd = exec.Command("osascript", "-e", script)
+	case "linux":
+		cmd = exec.Command("xdg-email",
+			"--subject", subject,
+			"--body", body,
+			"--attach", logPath,
+			"appsupport@collinsgroup.fi")
+	case "windows":
+		// Copy log to Desktop with clear name
+		homeDir, _ := os.UserHomeDir()
+		copyLocation = filepath.Join(homeDir, "Desktop", "TNT-error-log.txt")
+		input, _ := os.ReadFile(logPath)
+		os.WriteFile(copyLocation, input, 0644)
+		
+		// Open default email client with mailto
+		mailtoURL := fmt.Sprintf("mailto:appsupport@collinsgroup.fi?subject=%s&body=%s",
+			strings.ReplaceAll(subject, " ", "%20"),
+			strings.ReplaceAll(body, "\n", "%0D%0A"))
+		cmd := exec.Command("cmd", "/c", "start", mailtoURL)
+		hideWindow(cmd)
+	}
+	
+	if cmd != nil {
+		if runtime.GOOS == "windows" {
+			if err := cmd.Start(); err != nil {
+				dialog.ShowError(fmt.Errorf("Failed to launch email client: %w", err), n.window)
+			}
+		} else if err := cmd.Run(); err != nil {
+			// Use Run() for other OSes (darwin, linux)
+			dialog.ShowError(fmt.Errorf("Failed to open email client. Log file location:\n%s", logPath), n.window)
+		}
+	}
+	
+	if runtime.GOOS == "windows" && copyLocation != "" {
+		dialog.ShowInformation("Attach Log File", 
+			fmt.Sprintf("Log file copied to your Desktop:\n%s\n\nPlease attach it to the email. If no native email client was found, none was opened. In this case, send the email manually.", filepath.Base(copyLocation)), 
+			n.window)
 	}
 }
 
@@ -153,6 +277,19 @@ type AudioNormalizer struct {
 	noTranscode *widget.Check
 	
 	logFile *os.File
+	
+	// watchmode
+	watchMode *widget.Check
+	watching bool
+	watcherStop chan bool
+	jobQueue chan string
+	inputDir string
+	watcherWarnLabel *widget.Label
+	
+	watcherMutex sync.Mutex
+	
+	menuWindow fyne.Window
+	menuMutex  sync.Mutex
 	
 	mutex sync.Mutex
 }
@@ -199,6 +336,9 @@ func (n *AudioNormalizer) loadPreferences() {
 	
 	n.modeToggle.SetChecked(prefs.AdvancedMode)
 	n.outputDir = prefs.LastOutputDir
+	if n.outputDir != "" {
+		n.outputLabel.SetText(filepath.Base(n.outputDir))
+	}
 	n.simpleGroup.SetSelected(prefs.SimpleMode)
 	n.formatSelect.SetSelected(prefs.Format)
 	n.sampleRate.SetSelected(prefs.SampleRate)
@@ -301,6 +441,84 @@ func (n *AudioNormalizer) updateNormalizationLabel(standard string) {
 	}
 }
 
+func (n *AudioNormalizer) startWatching() {
+	n.watcherMutex.Lock()
+	if n.watching {
+		n.watcherMutex.Unlock()
+		return
+	}
+	n.watching = true
+	n.watcherStop = make(chan bool)
+	n.jobQueue = make(chan string, 100)
+	n.watcherMutex.Unlock()
+	
+	n.logStatus("Watch mode started")
+	n.logToFile(n.logFile, "started watching")
+	go n.watchDirectory()
+	go n.processWatchQueue()
+}
+
+func (n *AudioNormalizer) stopWatching() {
+	n.watcherMutex.Lock()
+	defer n.watcherMutex.Unlock()
+	
+	if n.watching {
+		n.watching = false
+		close(n.watcherStop)
+		for len(n.jobQueue) > 0 {
+			<-n.jobQueue
+		}
+		n.logStatus("Watch mode stopped")
+		n.logToFile(n.logFile, "stopped watching")
+	}
+}
+
+func (n *AudioNormalizer) watchDirectory() {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		n.logStatus("Failed to create watcher: " + err.Error())
+		n.logToFile(n.logFile, "watcher creation fail, " + err.Error())
+		return
+	}
+	defer watcher.Close()
+	
+	err = watcher.Add(n.inputDir)
+	if err != nil {
+		n.logStatus("Failed to watch directory: " + err.Error())
+		n.logToFile(n.logFile, "dir creation fail, " + err.Error())
+		return
+	}
+	
+	for {
+		select {
+			case event := <-watcher.Events:
+				if event.Op&fsnotify.Create == fsnotify.Create && isAudioFile(event.Name) {
+					select {
+						case n.jobQueue <- event.Name:
+						case <-n.watcherStop:
+							return
+					}
+				}
+			case <-n.watcherStop:
+				return
+			case err := <-watcher.Errors:
+				n.logStatus("Watcher error: " + err.Error())
+				n.logToFile(n.logFile, "watcher error, " + err.Error())
+		}
+	}
+}
+
+func (n *AudioNormalizer) processWatchQueue() {
+	for {
+		select {
+			case file := <-n.jobQueue:
+				n.processFile(file, n.getProcessConfig())
+			case <-n.watcherStop:
+				return
+		}
+	}
+}
+
 func main() {
 
 	a := app.NewWithID("com.collinsgroup.tnt")
@@ -322,7 +540,7 @@ func main() {
 		defer norm.logFile.Close()
 	}
 	
-	go checkForUpdates(currentVersion, w)
+	go checkForUpdates(currentVersion, w, norm.logFile)
 	
 	w.ShowAndRun()
 }
@@ -447,6 +665,17 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 	n.normalizeTarget.Disable()
 	n.normalizeTargetTp.Disable()
 	
+	n.watchMode = widget.NewCheck("Watch", func(checked bool) {
+		if checked {
+			n.startWatching()
+			n.watcherWarnLabel.SetText("WATCHING")
+		} else {
+			n.stopWatching()
+			n.watcherWarnLabel.SetText("")
+		}
+	})
+	n.watchMode.SetChecked(false)
+	
 	formatLabel := widget.NewLabel("Format:")
 	sampleRateLabel := widget.NewLabel("Sample Rate:")
 	bitDepthLabel := widget.NewLabel("Bit Depth:")
@@ -478,10 +707,10 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 	n.IsSpeechCheck.SetChecked(false)
 	
 	// Create format select after container exists
-	n.formatSelect = widget.NewSelect([]string{"Opus", "AAC", "MPEG-II L3", "PCM"}, func(value string) {
+	n.formatSelect = widget.NewSelect(getPlatformFormats(), func(value string) {
 		n.updateAdvancedControls()
 	})
-	n.formatSelect.SetSelected("AAC")
+	n.formatSelect.SetSelected(getPlatformFormats()[1])
 	
 	// Replace placeholder with actual format select
 	n.advancedContainer.Objects[0] = container.NewBorder(nil, nil, formatLabel, nil, n.formatSelect)
@@ -499,6 +728,8 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 	n.loudnormCheck.SetChecked(false)
 	
 	n.normalizationStandard = "EBU R128 (-23 LUFS)"
+	
+	n.watcherWarnLabel = widget.NewLabel("")
 	
 	// File selection
 	selectFilesBtn := widget.NewButton("Select Files", n.selectFiles)
@@ -518,18 +749,9 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 	n.statusLog.SetPlaceHolder("Processing log will appear here...")
 	
 	checkUpdateButton := widget.NewButton("Check for updates", func() {
-		go checkForUpdates(currentVersion, n.window)
+		go checkForUpdates(currentVersion, n.window, n.logFile)
 	})
 	
-	savePrefsBtn := widget.NewButton("Save current configuration", func() {
-		n.savePreferences()
-		dialog.ShowInformation("Saved", "Preferences saved successfully", n.window)
-	})
-	
-	loudnessSettingsBtn := widget.NewButton("Normalization defaults", func() {
-		n.showNormalizationSettings()
-	})
-		
 	helpBtn := widget.NewButton("Help", func() {
 			
 			menuGettingStarted := widget.NewLabel(				
@@ -598,13 +820,149 @@ PCM, or WAV in this tool is a pulse-code modulated, raw uncompressed audio strea
 		helpWindow.Show()
 	})
 	
+	menuBtn := widget.NewButton("Menu", func() {
+		n.menuMutex.Lock()
+		if n.menuWindow != nil {
+			n.menuMutex.Unlock()
+			n.menuWindow.RequestFocus()
+			return
+		}
+		n.menuMutex.Unlock()
+		// Create normalization settings content
+		stdGroup := widget.NewRadioGroup([]string{"EBU R128 (-23 LUFS)", "USA ATSC A/85 (-24 LUFS)", "Custom"}, nil)
+		stdGroup.SetSelected(n.normalizationStandard)
+		
+		lufsEntry := widget.NewEntry()
+		lufsEntry.SetText(n.normalizeTarget.Text)
+		
+		tpEntry := widget.NewEntry()
+		tpEntry.SetText(n.normalizeTargetTp.Text)
+		
+		stdGroup.OnChanged = func(selected string) {
+			if selected == "Custom" {
+				lufsEntry.Enable()
+				tpEntry.Enable()
+			} else {
+				lufsEntry.Disable()
+				tpEntry.Disable()
+			}
+		}
+		
+		if stdGroup.Selected != "Custom" {
+			lufsEntry.Disable()
+			tpEntry.Disable()
+		}
+		
+		normContent := container.NewVBox(
+			widget.NewLabel("Default normalization targets:"),
+			stdGroup,
+			widget.NewLabel("Custom LUFS target:"),
+			lufsEntry,
+			widget.NewLabel("Custom TP target:"),
+			tpEntry,
+		)
+		
+		// Create save button content
+		saveBtn := widget.NewButton("Save current configuration", func() {
+			// Apply normalization settings
+			switch stdGroup.Selected {
+			case "EBU R128 (-23 LUFS)":
+				n.normalizeTarget.SetText("-23")
+				n.normalizeTargetTp.SetText("-1")
+			case "USA ATSC A/85 (-24 LUFS)":
+				n.normalizeTarget.SetText("-24")
+				n.normalizeTargetTp.SetText("-2")
+			case "Custom":
+				n.normalizeTarget.SetText(lufsEntry.Text)
+				n.normalizeTargetTp.SetText(tpEntry.Text)
+			}
+			n.updateNormalizationLabel(stdGroup.Selected)
+			n.normalizationStandard = stdGroup.Selected
+			
+			n.savePreferences()
+			dialog.ShowInformation("Saved", "Preferences saved successfully", n.window)
+		})
+		
+		saveContentText := widget.NewLabel(`
+Save all current settings, including Mode (simple/advanced), Format and encoding settings, Normalization defaults and last output directory. Preferences are loaded automatically on startup.
+			`)
+		saveContentText.Wrapping = fyne.TextWrapWord
+		
+		saveContent := container.NewVBox(
+			saveContentText,
+			widget.NewSeparator(),
+			saveBtn,
+		)
+				
+		versionUpdate := container.NewVBox(
+			widget.NewLabel("Check for updates"),
+			widget.NewLabel(fmt.Sprintf("You're currently running version %s", currentVersion)),
+			widget.NewSeparator(),
+			checkUpdateButton,
+		)
+		
+		settingsWatchModeText := widget.NewLabel(`
+Start watch mode
+Watch mode processes new files in a directory automatically.
+Origin directory is selected from main UI by clicking 'Select Folder' and the output directory is chosen via 'Select Output'. Watch mode doesn't process files already existing in a directory. To trigger processing by watcher, files need to spawn to the watched directory.
+Watch mode status is indicated by a text in the top left corner. If empty, watch mode is OFF.
+			`)
+			
+		settingsWatchModeText.Wrapping = fyne.TextWrapWord
+		
+		settingsWatchMode := container.NewVBox(
+			settingsWatchModeText,
+			widget.NewSeparator(),
+			n.watchMode,
+		)
+		
+		settingsSendErrorReportText := widget.NewLabel(`
+Send an error report.
+			`)
+			
+			settingsSendErrorReportText.Wrapping = fyne.TextWrapWord
+			
+		sendLogReportBtn := widget.NewButton("Send report", func() {
+			n.sendLogReport()
+		})
+			
+		settingsSendErrorReport := container.NewVBox(
+			settingsSendErrorReportText,
+			widget.NewSeparator(),
+			sendLogReportBtn,
+			
+		)
+		
+		tabs := container.NewAppTabs(
+			container.NewTabItem("Normalization", normContent),
+			container.NewTabItem("Save Configuration", saveContent),
+			container.NewTabItem("Watch mode", settingsWatchMode),
+			container.NewTabItem("Version upgrade", versionUpdate),
+			container.NewTabItem("Send error report", settingsSendErrorReport),
+		)			
+		
+		prefsWindow := fyne.CurrentApp().NewWindow("Preferences")
+		prefsWindow.SetContent(tabs)
+		prefsWindow.Resize(fyne.NewSize(500, 400))
+		
+		n.menuWindow = prefsWindow
+		prefsWindow.SetOnClosed(func() {
+			n.menuMutex.Lock()
+			n.menuWindow = nil
+			n.menuMutex.Unlock()
+		})
+		
+		prefsWindow.Show()
+	})
+	
 	topButtons := container.NewHBox(selectFilesBtn, selectFolderBtn)
 	outputSection := container.NewBorder(nil, nil, widget.NewLabel("Output:"), selectOutputBtn, n.outputLabel)
 	
-	topBar := container.NewHBox(helpBtn, checkUpdateButton, savePrefsBtn, loudnessSettingsBtn)
+	topBar := container.NewHBox(helpBtn, menuBtn)
 	
 	// Layout
 	settingsContainer := container.NewVBox(
+		n.watcherWarnLabel,
 		logoImg,
 		topBar,
 		n.modeToggle,
@@ -703,7 +1061,10 @@ func (n *AudioNormalizer) selectFolder() {
 			return
 		}
 		
+		n.inputDir = uri.Path()
+		
 		n.logStatus("Scanning folder...")
+		n.logToFile(n.logFile, "Scanning folder")
 		
 		go func() {
 			audioFiles := []string{}
@@ -848,6 +1209,8 @@ func (n *AudioNormalizer) getProcessConfig() ProcessConfig {
 		UseLoudnorm: n.loudnormCheck.Checked,
 		IsSpeech: n.IsSpeechCheck.Checked,
 		originIsAAC: n.checkOriginAAC(),
+		writeTags: n.writeTags.Checked,
+		noTranscode: n.noTranscode.Checked,
 	}
 	
 	if n.advancedMode {
@@ -939,9 +1302,13 @@ func (n *AudioNormalizer) process() {
 func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bool {
 	actualCodec := config.Format
 	
-	if codecMap[config.Format] != "" {
+	if platformCodec := getPlatformCodecMap()[config.Format]; platformCodec != "" {
+		actualCodec = platformCodec
+	} else if codecMap[config.Format] != "" {
 		actualCodec = codecMap[config.Format]
-	}	
+	}
+	
+	n.logToFile(n.logFile, fmt.Sprintf("DEBUG: config.Format=%s, actualCodec=%s", config.Format, actualCodec))
 	
 	baseName := strings.TrimSuffix(filepath.Base(inputPath), filepath.Ext(inputPath))
 	
@@ -958,14 +1325,28 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 		ext = ".mp3"
 	case "PCM":
 		ext = ".wav"
+	case "aac_at":
+		ext = ".m4a"
 	default:
 		ext = filepath.Ext(inputPath)
 	}
 	
-	outputPath := filepath.Join(n.outputDir, fmt.Sprintf("%s.normalized%s", baseName, ext))
-
-	if n.noTranscode.Checked {
+	originalExt := filepath.Ext(inputPath)
+	
+	// don't add comments to name if just transcoding
+	outputPath := filepath.Join(n.outputDir, fmt.Sprintf("%s%s", baseName, ext))
+	
+	if config.UseLoudnorm {
+		// add normalized text to name
+		outputPath = filepath.Join(n.outputDir, fmt.Sprintf("%s.normalized%s", baseName, ext))
+	} else if config.writeTags && config.noTranscode {
+		// add tagged with original ext if just tagging
+		outputPath = filepath.Join(n.outputDir, fmt.Sprintf("%s.tagged%s", baseName, originalExt))
+	} else if config.writeTags {
+		// add tagged and new ext
 		outputPath = filepath.Join(n.outputDir, fmt.Sprintf("%s.tagged%s", baseName, ext))
+	} else {
+		outputPath = filepath.Join(n.outputDir, fmt.Sprintf("%s%s", baseName, ext))
 	}
 	
 	n.logStatus(fmt.Sprintf("Processing: %s, outputting to %s", filepath.Base(inputPath), outputPath))
@@ -1146,14 +1527,50 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 	cmd := exec.Command(ffmpegPath, args...)
 	hideWindow(cmd)
 	
+	if config.BitDepth != "" {
+		n.logToFile(n.logFile, fmt.Sprintf("config.Bitdepth= %s", config.BitDepth))
+	}
+	
+	if config.Bitrate != "" {
+		n.logToFile(n.logFile, fmt.Sprintf("config.Bitrate= %s", config.Bitrate))
+	}
+	
+	if config.SampleRate != "" {
+		n.logToFile(n.logFile, fmt.Sprintf("config.SampleRate= %s", config.SampleRate))
+	}
+	
+	if config.Format != "" {
+		n.logToFile(n.logFile, fmt.Sprintf("config.Format= %s", config.Format))
+	}
+	
+	if config.CustomLoudnorm {
+		n.logToFile(n.logFile, fmt.Sprintf("Custom loudness values input and used:"))
+		n.logToFile(n.logFile, fmt.Sprintf("LUFS I target: %s", target))
+		n.logToFile(n.logFile, fmt.Sprintf("TP target: %s", targetTp))
+	} 
+	
+	if config.writeTags && config.noTranscode {
+		n.logToFile(n.logFile, "Writing tags and not transcoding")
+		n.logToFile(n.logFile, fmt.Sprintf("Original format is: %s", originalExt))
+		n.logToFile(n.logFile, fmt.Sprintf("LUFS I target: %s", target))
+		n.logToFile(n.logFile, fmt.Sprintf("TP target: %s", targetTp))
+	} else if config.writeTags {
+		n.logToFile(n.logFile, fmt.Sprintf( "Writing tags and transcoding to %s", config.Format))
+		n.logToFile(n.logFile, fmt.Sprintf("LUFS I target: %s", target))
+		n.logToFile(n.logFile, fmt.Sprintf("TP target: %s", targetTp))
+	}
+	
 	if err := cmd.Run(); err != nil {
 		n.logStatus(fmt.Sprintf("✗ Failed: %s - %v", filepath.Base(inputPath), err))
+		n.logToFile(n.logFile, fmt.Sprintf("Failed %s - %v", filepath.Base(inputPath), err))
 		return false
 	}
 	
 	n.logStatus(fmt.Sprintf("✓ Success: %s", filepath.Base(inputPath)))
+	n.logToFile(n.logFile, fmt.Sprintf("✓ Success: %s", filepath.Base(inputPath)))
 	n.logStatus("")
 	n.logStatus(fmt.Sprintf("Your files can be found from %s. Thank you.", n.outputDir))
+	
 	return true
 }
 
