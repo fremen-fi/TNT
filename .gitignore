@@ -8,3 +8,4 @@ buildBlocks/
 *.dmg
 *.exe
 *.app
+Distribution/

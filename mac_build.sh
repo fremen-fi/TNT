@@ -49,6 +49,6 @@ xcrun notarytool submit "$DMG_FILE" --keychain-profile "notary-profile" --wait
 xcrun stapler staple "$DMG_FILE"
 
 # Copy back to source
-cp "$DMG_FILE" "$SOURCE_DIR/"
+cp "$DMG_FILE" "$SOURCE_DIR/Distribution"
 
-echo "Done! DMG is at $SOURCE_DIR/$DMG_FILE"
+echo "Done! DMG is at $SOURCE_DIR/Distribution/$DMG_FILE"
