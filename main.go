@@ -28,7 +28,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-const currentVersion = "1.0.0"
+const currentVersion = "1.0.2"
 
 type VersionInfo struct {
 	Version      string `json:"version"`
@@ -288,6 +288,9 @@ type AudioNormalizer struct {
 	
 	watcherMutex sync.Mutex
 	
+	// batch processing
+	batchMode bool
+	
 	menuWindow fyne.Window
 	menuMutex  sync.Mutex
 	
@@ -374,59 +377,6 @@ func (n *AudioNormalizer) savePreferences() {
 	
 	data, _ := json.MarshalIndent(prefs, "", "  ")
 	os.WriteFile(filepath.Join(prefsDir, "preferences.json"), data, 0644)
-}
-
-func (n *AudioNormalizer) showNormalizationSettings() {
-	stdGroup := widget.NewRadioGroup([]string{"EBU R128 (-23 LUFS)", "USA ATSC A/85 (-24 LUFS)", "Custom"}, nil)
-	stdGroup.SetSelected("EBU R128 (-23 LUFS)")
-	
-	lufsEntry := widget.NewEntry()
-	lufsEntry.SetPlaceHolder("-23")
-	lufsEntry.SetText("-23")
-	
-	tpEntry := widget.NewEntry()
-	tpEntry.SetPlaceHolder("-1")
-	tpEntry.SetText("-1")
-	
-	stdGroup.OnChanged = func(selected string) {
-		if selected == "Custom" {
-			lufsEntry.Enable()
-			tpEntry.Enable()
-		} else {
-			lufsEntry.Disable()
-			tpEntry.Disable()
-		}
-	}
-	lufsEntry.Disable()
-	tpEntry.Disable()
-	
-	content := container.NewVBox(
-		widget.NewLabel("Default normalization targets:"),
-		stdGroup,
-		widget.NewLabel("Custom LUFS target:"),
-		lufsEntry,
-		widget.NewLabel("Custom TP target:"),
-		tpEntry,
-	)
-	
-	dialog.ShowCustomConfirm("Normalization settings", "Save", "Cancel", content, func(save bool) {
-		if save {
-			switch stdGroup.Selected {
-				case "EBU R128 (-23 LUFS)":
-					n.normalizeTarget.SetText("-23")
-					n.normalizeTargetTp.SetText("-1")
-				case "USA ATSC A/85 (-24 LUFS)":
-					n.normalizeTarget.SetText("-24")
-					n.normalizeTargetTp.SetText("-2")
-				case "Custom":
-					n.normalizeTarget.SetText(lufsEntry.Text)
-					n.normalizeTargetTp.SetText(tpEntry.Text)
-			}
-			n.updateNormalizationLabel(stdGroup.Selected)
-			n.normalizationStandard = stdGroup.Selected
-			n.savePreferences()
-		}
-	}, n.window)
 }
 
 func (n *AudioNormalizer) updateNormalizationLabel(standard string) {
@@ -845,6 +795,22 @@ PCM, or WAV in this tool is a pulse-code modulated, raw uncompressed audio strea
 			} else {
 				lufsEntry.Disable()
 				tpEntry.Disable()
+				
+				// Update immediately when standard changes
+				switch selected {
+				case "EBU R128 (-23 LUFS)":
+					n.normalizeTarget.SetText("-23")
+					n.normalizeTargetTp.SetText("-1")
+					lufsEntry.SetText("-23")
+					tpEntry.SetText("-1")
+				case "USA ATSC A/85 (-24 LUFS)":
+					n.normalizeTarget.SetText("-24")
+					n.normalizeTargetTp.SetText("-2")
+					lufsEntry.SetText("-24")
+					tpEntry.SetText("-2")
+				}
+				n.updateNormalizationLabel(selected)
+				n.normalizationStandard = selected
 			}
 		}
 		
@@ -869,9 +835,13 @@ PCM, or WAV in this tool is a pulse-code modulated, raw uncompressed audio strea
 			case "EBU R128 (-23 LUFS)":
 				n.normalizeTarget.SetText("-23")
 				n.normalizeTargetTp.SetText("-1")
+				lufsEntry.SetText("-23")
+				tpEntry.SetText("-1")
 			case "USA ATSC A/85 (-24 LUFS)":
 				n.normalizeTarget.SetText("-24")
 				n.normalizeTargetTp.SetText("-2")
+				lufsEntry.SetText("-24")
+				tpEntry.SetText("-2")
 			case "Custom":
 				n.normalizeTarget.SetText(lufsEntry.Text)
 				n.normalizeTargetTp.SetText(tpEntry.Text)
@@ -955,6 +925,15 @@ Send an error report.
 		prefsWindow.Show()
 	})
 	
+	clearAllBtn := widget.NewButton("Clear all", func() {
+		n.mutex.Lock()
+		n.files = make([]string, 0)
+		n.mutex.Unlock()
+		n.fileList.Refresh()
+		n.updateProcessButton()
+		n.logStatus("Cleared all files from queue")
+	})
+	
 	topButtons := container.NewHBox(selectFilesBtn, selectFolderBtn)
 	outputSection := container.NewBorder(nil, nil, widget.NewLabel("Output:"), selectOutputBtn, n.outputLabel)
 	
@@ -982,7 +961,7 @@ Send an error report.
 		),
 		container.NewVBox(
 			n.progressBar,
-			container.NewHBox(n.processBtn),
+			container.NewHBox(n.processBtn, clearAllBtn),
 		),
 		nil,
 		nil,
@@ -1053,6 +1032,7 @@ func (n *AudioNormalizer) selectFiles() {
 			n.addFile(path)
 		}
 	}, n.window)
+	n.batchMode = false
 }
 
 func (n *AudioNormalizer) selectFolder() {
@@ -1062,6 +1042,8 @@ func (n *AudioNormalizer) selectFolder() {
 		}
 		
 		n.inputDir = uri.Path()
+		
+		n.batchMode = true
 		
 		n.logStatus("Scanning folder...")
 		n.logToFile(n.logFile, "Scanning folder")
@@ -1330,23 +1312,33 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 	default:
 		ext = filepath.Ext(inputPath)
 	}
+
+	var outputPath string
+	var outputDir string
+	
+	if n.batchMode && n.inputDir != "" {
+		relPath, err := filepath.Rel(n.inputDir, filepath.Dir(inputPath))
+		if err != nil {
+			relPath = ""
+		}
+		
+		outputDir = filepath.Join(n.outputDir, relPath)
+		
+		os.MkdirAll(outputDir, 0755)
+	} else {
+		outputDir = n.outputDir
+	}
 	
 	originalExt := filepath.Ext(inputPath)
 	
-	// don't add comments to name if just transcoding
-	outputPath := filepath.Join(n.outputDir, fmt.Sprintf("%s%s", baseName, ext))
-	
 	if config.UseLoudnorm {
-		// add normalized text to name
-		outputPath = filepath.Join(n.outputDir, fmt.Sprintf("%s.normalized%s", baseName, ext))
+		outputPath = filepath.Join(outputDir, fmt.Sprintf("%s.normalized%s", baseName, ext))
 	} else if config.writeTags && config.noTranscode {
-		// add tagged with original ext if just tagging
-		outputPath = filepath.Join(n.outputDir, fmt.Sprintf("%s.tagged%s", baseName, originalExt))
+		outputPath = filepath.Join(outputDir, fmt.Sprintf("%s.tagged%s", baseName, originalExt))
 	} else if config.writeTags {
-		// add tagged and new ext
-		outputPath = filepath.Join(n.outputDir, fmt.Sprintf("%s.tagged%s", baseName, ext))
+		outputPath = filepath.Join(outputDir, fmt.Sprintf("%s.tagged%s", baseName, ext))
 	} else {
-		outputPath = filepath.Join(n.outputDir, fmt.Sprintf("%s%s", baseName, ext))
+		outputPath = filepath.Join(outputDir, fmt.Sprintf("%s%s", baseName, ext))
 	}
 	
 	n.logStatus(fmt.Sprintf("Processing: %s, outputting to %s", filepath.Base(inputPath), outputPath))
