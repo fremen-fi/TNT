@@ -1,5 +1,0 @@
-{
-  "version": "1.0.2",
-  "download_url": "https://www.collinsgroup.fi/software/tnt/download-tnt",
-  "release_notes": "Preserve directory structure in batch processing (directory structure is copied to output directory so that for example Artist/Album/Track structure will remain intact)\nLoudness settings are now applied without needing to save UI configuration (saves you two clicks)."
-}
