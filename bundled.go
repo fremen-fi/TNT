@@ -8,13 +8,6 @@ import (
 	"fyne.io/fyne/v2"
 )
 
-//go:embed buildBlocks/Brockmann-Regular.ttf
-var resourceBrockmannRegularTtfData []byte
-var resourceBrockmannRegularTtf = &fyne.StaticResource{
-	StaticName:    "buildBlocks/Brockmann-Regular.ttf",
-	StaticContent: resourceBrockmannRegularTtfData,
-}
-
 //go:embed buildBlocks/tntAppLogoForDark.png
 var resourceTntAppLogoForDarkPngData []byte
 var resourceTntAppLogoForDarkPng = &fyne.StaticResource{
@@ -27,4 +20,11 @@ var resourceTntAppLogoForLightPngData []byte
 var resourceTntAppLogoForLightPng = &fyne.StaticResource{
 	StaticName:    "buildBlocks/tntAppLogoForLight.png",
 	StaticContent: resourceTntAppLogoForLightPngData,
+}
+
+//go:embed buildBlocks/Wotfard-Regular.ttf
+var resourceWotfardRegularTtfData []byte
+var resourceWotfardRegularTtf = &fyne.StaticResource{
+	StaticName:    "buildBlocks/Wotfard-Regular.ttf",
+	StaticContent: resourceWotfardRegularTtfData,
 }

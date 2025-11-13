@@ -28,7 +28,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-const currentVersion = "1.0.2"
+const currentVersion = "1.1.0"
 
 type VersionInfo struct {
 	Version      string `json:"version"`
@@ -149,7 +149,10 @@ func init() {
 
 func (n *AudioNormalizer) initLogFile() *os.File {
 	configDir, _ := os.UserConfigDir()
-	logPath := filepath.Join(configDir, "TNT", "tnt.log")
+	logDir := filepath.Join(configDir, "TNT")
+	os.MkdirAll(logDir, 0755)
+	
+	logPath := filepath.Join(logDir, "tnt.log")
 	
 	if data, err := os.ReadFile(logPath); err == nil {
 		lines := strings.Count(string(data), "\n")
@@ -271,10 +274,14 @@ type AudioNormalizer struct {
 	loudnormCheck *widget.Check
 	loudnormCustomCheck *widget.Check
 	loudnormLabel *widget.Label
+	writeTagsLabel *widget.Label
+	normalizeTargetLabel *widget.Label
+	normalizeTargetLabelTp *widget.Label
 	normalizationStandard string
 	IsSpeechCheck *widget.Check
 	writeTags *widget.Check
 	noTranscode *widget.Check
+	dataCompLevel *widget.Slider
 	
 	logFile *os.File
 	
@@ -308,6 +315,7 @@ type ProcessConfig struct {
 	writeTags bool
 	noTranscode bool
 	originIsAAC bool
+	dataCompLevel int8
 }
 
 type Preferences struct {
@@ -323,6 +331,7 @@ type Preferences struct {
 	NormalizeTarget string `json:"normalize_target"`
 	NormalizeTargetTp string `json:"normalize_target_tp"`
 	NormalizationStandard string `json:"normalization_standard"`
+	DataCompLevel int8 `json:"data_comp_level"`
 }
 
 func (n *AudioNormalizer) loadPreferences() {
@@ -353,6 +362,7 @@ func (n *AudioNormalizer) loadPreferences() {
 	n.normalizeTargetTp.SetText(prefs.NormalizeTargetTp)
 	n.normalizationStandard = prefs.NormalizationStandard
 	n.updateNormalizationLabel(prefs.NormalizationStandard)
+	n.dataCompLevel.SetValue(float64(prefs.DataCompLevel))
 }
 
 func (n *AudioNormalizer) savePreferences() {
@@ -369,6 +379,7 @@ func (n *AudioNormalizer) savePreferences() {
 		NormalizeTarget: n.normalizeTarget.Text,
 		NormalizeTargetTp: n.normalizeTargetTp.Text,
 		NormalizationStandard: n.normalizationStandard,
+		DataCompLevel: int8(n.dataCompLevel.Value),
 	}
 	
 	configDir, _ := os.UserConfigDir()
@@ -383,11 +394,15 @@ func (n *AudioNormalizer) updateNormalizationLabel(standard string) {
 	switch standard {
 		case "EBU R128 (-23 LUFS)":
 			n.loudnormLabel.SetText("Normalize (EBU R128: -23 LUFS)")
+			n.writeTagsLabel.SetText("Write RG tags (EBU R128: -23 LUFS)")
 		case "USA ATSC A/85 (-24 LUFS)":
 			n.loudnormLabel.SetText("Normalize (ATSC A/85: -24 LUFS)")
+			n.writeTagsLabel.SetText("Write RG tags (ATSC A/85: -24 LUFS)")
 		case "Custom":
 			target := n.normalizeTarget.Text
-			n.loudnormLabel.SetText(fmt.Sprintf("Normalize (Custom %s LUFS)", target))
+			targetTp := n.normalizeTargetTp.Text
+			n.loudnormLabel.SetText(fmt.Sprintf("Normalize (Custom %s LUFS, %s dBTP)", target, targetTp))
+			n.writeTagsLabel.SetText(fmt.Sprintf("Write RG tags (Custom %s LUFS, %s dBTP)", target, targetTp))
 	}
 }
 
@@ -486,8 +501,12 @@ func main() {
 	norm.loadPreferences()
 	
 	norm.logFile = norm.initLogFile()
+	fmt.Printf("Log file handle: %v\n", norm.logFile)
 	if norm.logFile != nil {
 		defer norm.logFile.Close()
+		fmt.Printf("Log file path: %s\n", norm.logFile.Name())
+	} else {
+		fmt.Println("Failed to create log file")
 	}
 	
 	go checkForUpdates(currentVersion, w, norm.logFile)
@@ -576,41 +595,78 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 	n.normalizeTarget.SetPlaceHolder("LUFS target")
 	n.normalizeTarget.SetText("-23")
 	
+	n.normalizeTarget.OnChanged = func(s string) {
+		if n.loudnormCustomCheck.Checked {
+			n.updateNormalizationLabel("Custom")
+		}
+	}
+	
 	n.normalizeTargetTp = widget.NewEntry()
 	n.normalizeTargetTp.SetPlaceHolder("TP limit")
 	n.normalizeTargetTp.SetText("-1")
 	
-	n.writeTags = widget.NewCheck("Write ReplayGain tags", func(checked bool) {
+	n.normalizeTargetTp.OnChanged = func(s string) {
+		if n.loudnormCustomCheck.Checked {
+			n.updateNormalizationLabel("Custom")
+		}
+	}
+		
+	// Loudnorm checkbox
+	n.writeTagsLabel = widget.NewLabel("Write RG tags (EBU R128: -23 LUFS)")
+	
+	n.writeTags = widget.NewCheck("", func(checked bool) {
 		if checked  && n.checkPCM(){
 			n.loudnormCheck.Disable()
 			n.noTranscode.Disable()
 			n.noTranscode.SetChecked(false)
+			n.noTranscode.Hide()
 		} else if checked {
 			n.loudnormCheck.Disable()
 			n.loudnormCheck.SetChecked(false)
 			n.noTranscode.Enable()
+			n.noTranscode.Show()
 		} else {
 			n.loudnormCheck.Enable()
 			n.noTranscode.Disable()
 			n.noTranscode.SetChecked(false)
+			n.noTranscode.Hide()
 		}
 	})
+	
+	writeTagsRow := container.NewHBox(n.writeTags, n.writeTagsLabel)
+	n.writeTags.SetChecked(false)
+	
 	n.writeTags.SetChecked(false)
 	n.writeTags.Disable()
 	
 	n.noTranscode = widget.NewCheck("Do not transcode", nil) 
 	n.noTranscode.SetChecked(false)
 	n.noTranscode.Disable()
+	n.noTranscode.Hide()
 	
+	n.dataCompLevel = widget.NewSlider(0, 10)
+	n.dataCompLevel.Step = 1
+		
 	n.loudnormCustomCheck = widget.NewCheck("Custom loudness", func(checked bool) {
 		if n.loudnormCustomCheck.Checked {
 			n.normalizeTarget.Enable()
 			n.normalizeTargetTp.Enable()
+			n.normalizeTarget.Show()
+			n.normalizeTargetTp.Show()
+			n.normalizeTargetLabel.Show()
+			n.normalizeTargetLabelTp.Show()
+			n.updateNormalizationLabel("Custom")
 		} else {
 			n.normalizeTarget.Disable()
 			n.normalizeTargetTp.Disable()
+			n.normalizeTarget.Hide()
+			n.normalizeTargetTp.Hide()
+			n.normalizeTargetLabel.Hide()
+			n.normalizeTargetLabelTp.Hide()
+			n.updateNormalizationLabel(n.normalizationStandard)
 		}
 	})
+	
 	n.loudnormCustomCheck.SetChecked(false)
 	n.normalizeTarget.Disable()
 	n.normalizeTargetTp.Disable()
@@ -630,18 +686,33 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 	sampleRateLabel := widget.NewLabel("Sample Rate:")
 	bitDepthLabel := widget.NewLabel("Bit Depth:")
 	bitrateLabel := widget.NewLabel("Bitrate (kbps):")
-	normalizeTargetLabel := widget.NewLabel("Target in LUFS")
-	normalizeTpLabel := widget.NewLabel("TP limit in dB")
+	n.normalizeTargetLabel = widget.NewLabel("Target in LUFS")
+	n.normalizeTargetLabelTp = widget.NewLabel("TP limit in dB")
+	dataCompLevelLabel := widget.NewLabel("Set data compression level (0 is off)")
+	dataCompLevelLabelCurrent := widget.NewLabel(fmt.Sprintf("Set: %d", int(n.dataCompLevel.Value)))
+	
+	n.normalizeTarget.Disable()
+	n.normalizeTargetTp.Disable()
+	n.normalizeTarget.Hide()
+	n.normalizeTargetTp.Hide()
+	n.normalizeTargetLabel.Hide()
+	n.normalizeTargetLabelTp.Hide()
+	
+	n.dataCompLevel.OnChanged = func(f float64) {
+		dataCompLevelLabelCurrent.SetText(fmt.Sprintf("Set: %d", int(f)))
+	}
 
 	n.advancedContainer = container.NewVBox(
 		container.NewBorder(nil, nil, formatLabel, nil, widget.NewLabel("")),
 		container.NewBorder(nil, nil, sampleRateLabel, nil, n.sampleRate),
 		container.NewBorder(nil, nil, bitDepthLabel, nil, n.bitDepth),
 		container.NewBorder(nil, nil, bitrateLabel, nil, n.bitrateEntry),
-		container.NewBorder(nil, nil, normalizeTargetLabel, nil, n.normalizeTarget),
-		container.NewBorder(nil, nil, normalizeTpLabel, nil, n.normalizeTargetTp),
+		container.NewBorder(nil, nil, n.normalizeTargetLabel, nil, n.normalizeTarget),
+		container.NewBorder(nil, nil, n.normalizeTargetLabelTp, nil, n.normalizeTargetTp),
+		container.NewBorder(nil,nil, dataCompLevelLabel, dataCompLevelLabelCurrent, n.dataCompLevel),
+		
 		n.loudnormCustomCheck,
-		n.writeTags,
+		writeTagsRow,
 		n.noTranscode,
 	)
 	
@@ -659,6 +730,48 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 	// Create format select after container exists
 	n.formatSelect = widget.NewSelect(getPlatformFormats(), func(value string) {
 		n.updateAdvancedControls()
+		
+		usesDataComp := value == "Opus" || value == "FLAC"
+		usesBitDepth := value == "PCM"
+		usesBitRate := value != "PCM" && value != "FLAC"
+		usesSampleRate := value == "PCM"
+		
+		if usesDataComp {
+			n.dataCompLevel.Show()
+			dataCompLevelLabel.Show()
+			dataCompLevelLabelCurrent.Show()
+		} else {
+			n.dataCompLevel.Hide()
+			dataCompLevelLabel.Hide()
+			dataCompLevelLabelCurrent.Hide()
+		}
+		
+		if usesBitDepth {
+			n.bitDepth.Show()
+			bitDepthLabel.Show()
+			bitrateLabel.Hide()
+			n.bitrateEntry.Hide()
+		} else {
+			n.bitDepth.Hide()
+			bitDepthLabel.Hide()
+		}
+		
+		if usesBitRate {
+			n.bitrateEntry.Show()
+			bitrateLabel.Show()
+		} else {
+			n.bitrateEntry.Hide()
+			bitrateLabel.Hide()
+		}
+		
+		if usesSampleRate {
+			n.sampleRate.Show()
+			sampleRateLabel.Show()
+		} else {
+			n.sampleRate.Hide()
+			sampleRateLabel.Hide()
+		}
+		
 	})
 	n.formatSelect.SetSelected(getPlatformFormats()[1])
 	
@@ -705,55 +818,120 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 	helpBtn := widget.NewButton("Help", func() {
 			
 			menuGettingStarted := widget.NewLabel(				
-`This tool is designed for broadcast houses to make the workflows as efficient as possible. This tool allows you to transcode (change formats), normalize (make sure the loudness is just right) and tag (give instructions to players as to what volume should the file be played at). 
+`TNT is designed for broadcast professionals to streamline audio workflows. The application provides three core capabilities:
 
-The tool has two modes. The Simple mode allows you to change format to one of the three pre-selected formats. It also allows you to normalize the audio file to EBU R128. Processing one or more files requires four clicks, and the program can be left running in background. Ready files will appear to the selected output folder once they're ready (one by one).
+• Transcode - Convert between audio formats
+• Normalize - Ensure consistent loudness levels  
+• Tag - Write ReplayGain metadata for playback guidance
 
-Advanced mode lets you choose what encoding format to use and what encoding values should be used. It also lets you set custom targets for loudness normalization, and it lets you choose whether you want to normalize or set ReplayGain tags. (there's no point in normalizing AND tagging)
+SIMPLE MODE
+Simple mode offers three preset configurations for common use cases. Processing requires just four clicks, and files are processed individually in the background with results appearing in your output folder as they complete.
 
-'Select Files' selects files to process.
+ADVANCED MODE
+Advanced mode provides granular control over encoding parameters including format selection, sample rates, bit depths, and bitrates. You can configure custom loudness normalization targets or write ReplayGain tags instead of normalizing.
 
-'Select Folder' selects folder full of files to process.
+Note: Normalization alters the audio data, while tagging only writes metadata. These options are mutually exclusive.
 
-'Output Folder' chooses directory to output the processed audio files.
+WORKFLOW
+1. Select Files - Choose individual files, or Select Folder for batch processing
+2. Output Folder - Specify destination for processed files
+3. Configure settings in Simple or Advanced mode
+4. Click Process
 
-For more information visit collinsgroup.fi/en/software/tnt`)
+For more information visit https://www.collins.fi/en/software/tnt/manual-tnt`)
 			menuGettingStarted.Wrapping = fyne.TextWrapWord
 			
 			menuSimpleTab := widget.NewLabel(`
-Choose the end format, minimal options.
+SIMPLE MODE
 
-Checkbox 'Normalize' allows you to normalize the audio file to EBU R128 standard.`)
+Simple mode provides three preset configurations optimized for common broadcast scenarios:
+
+• Small file (AAC 256kbps) - Compressed format balancing quality and file size
+• Most compatible (MP3 160kbps) - Universal playback support across all devices
+• Production (PCM 48kHz/24bit) - Uncompressed broadcast-quality audio
+
+Each preset handles format conversion with minimal configuration required. Simply select your desired output format from the three options.
+
+NORMALIZATION
+The 'Normalize' checkbox applies EBU R128 loudness normalization to your audio files. When enabled, all processed files will meet the -23 LUFS standard with -1 dBTP limiting, ensuring consistent playback levels across your content.
+
+WORKFLOW
+Processing in Simple mode requires just four clicks:
+1. Select your files or folder
+2. Choose output destination
+3. Pick a preset format
+4. Click Process
+
+The application processes files individually in the background. Completed files appear in your output folder as they finish, allowing you to continue working while processing continues.`)
 			menuSimpleTab.Wrapping = fyne.TextWrapWord
 			
 			menuAdvancedTab := widget.NewLabel(
-`Choose format out of AAC, Opus, MP3 and PCM (Wave).
+`ADVANCED MODE
 
-Sample rate and bit depth are disabled for all codecs except for PCM.
+Advanced mode provides granular control over all encoding parameters.
 
-Birate is available for codecs other than PCM. Minimum is 12 kbps and maximum is set by the encoder.
+FORMAT SELECTION
+Choose from AAC, Opus, MP3, PCM (Wave), or FLAC.
 
-Target in LUFS and TP limit in dB are for either custom normalization or ReplayGain tagging. To use these, check 'Use custom loudness...'
+Sample Rate: Available only for PCM (44.1 - 192 kHz)
+Bit Depth: Available only for PCM (16, 24, 32-float, 64-float)
+Bitrate: Available for AAC, Opus, and MP3 (12 kbps minimum, encoder-specific maximum)
+Compression Level: Available for FLAC and Opus (slider from 0-10)
+• 0 = no compression
+• 10 = most compression
 
-Checkbox 'Custom loudness' allows you to configure custom target for LUFS I and TP. Values will always be parsed into negative values. Uncheck to use EBU R128 (if Normalize is selected).
+LOUDNESS TARGETS
+Target in LUFS and TP limit in dB control loudness processing for both normalization and ReplayGain tagging.
 
-Checkbox 'Write RG tags' writes ReplayGain tags to the audio file metadata. It uses custom values, if above is checked, or EBU R128 if unchecked. This can not be checked with 'Normalize' or a PCM origin file.
+Custom Loudness: When enabled, you can configure custom LUFS I and TP targets. Values are automatically converted to negative. When disabled, the system uses EBU R128 defaults (-23 LUFS, -1 dBTP) if Normalize is selected.
 
-Checkbox 'Do not transcode' is an option for ReplayGain tagging. It does not alter the audio data, only writes metadata. This can only be used with the above checked, and if the original file is not PCM.
+PROCESSING OPTIONS
 
-Checkbox 'Normalize' normalizes the audio files to custom values, if relevant checkbox is checked, or to EBU R128 if no custom values are given. It uses BS.1770-5.
+Normalize: Applies loudness correction using the BS.1770-5 algorithm
+• Uses custom values if Custom Loudness is enabled
+• Uses EBU R128 standard if Custom Loudness is disabled
+• Alters the audio data to match target loudness
 
-Checkbox 'Speech' sets the codec to Opus and chooses data compression suitable for VoIP applications. If used with normalize, it uses normalization suited better for speech. Do not use with music.`)
+Write RG tags: Writes ReplayGain metadata to audio files
+• Uses custom values if Custom Loudness is enabled, otherwise EBU R128
+• Does not alter audio data, only writes metadata
+• Cannot be used with Normalize (mutually exclusive)
+• Cannot be used with PCM source files
+
+Do not transcode: Preserves original audio encoding while writing tags
+• Only available when Write RG tags is enabled
+• Does not alter audio data, only writes metadata
+• Cannot be used with PCM source files
+• Useful for adding metadata without re-encoding
+
+Speech: Optimizes encoding for voice content
+• Automatically selects Opus codec
+• Applies VoIP-optimized compression settings
+• Uses speech-specific normalization when combined with Normalize
+• Do not use with music content`)
 			menuAdvancedTab.Wrapping = fyne.TextWrapWord
 			
 			menuFormatsTab := widget.NewLabel(
-`AAC is a data compression method that at high bitrates can sound similar to a non-compressed file. In simple mode, the bitrate is set to 256 kbit/s, which gives very good results. The maximum bitrate for this encoder is 512 kbit/s. At 320 kbit/s the encoder tends to lose almost all of its encoding artifacts. Thirty seconds of audio encoded with 256 kbit/s results in approximately 1 MB filesize.
+`AUDIO FORMATS
 
-Opus is a modern data compression method that can achieve very good results even with lower bitrates. Opus has a lower algorithmic delay, which makes it suitable for live applications. It's an open-source format. It's minimum bitrate is 6 kbit/s, though the UI limits the bitrate at 12 kbit/s at minimum. The maximum bitrate for this encoder is 510 kbit/s.
+AAC (Advanced Audio Coding)
+AAC is a data compression method that at high bitrates can sound similar to a non-compressed file. In simple mode, the bitrate is set to 256 kbit/s, which gives very good results. The maximum bitrate for this encoder is 512 kbit/s. At 320 kbit/s the encoder tends to lose almost all of its encoding artifacts. Thirty seconds of audio encoded with 256 kbit/s results in approximately 1 MB filesize.
 
-MPEG-II Layer 3 (AKA mp3) is an older, but one of the most compatible encoder available. It isn't as capable at lower bitrates as the two encoders above, but at high bitrates (>320 kbit/s) it's usable. Use this if you know the end-user can't decode AAC or Opus. Filesize for mp3 at 160 kbit/s for 30 second audio file is 0.6 MB.
+Two AAC encoders are available depending on platform:
+• Fraunhofer FDK-AAC (all platforms) - Industry-standard reference encoder
+• Apple AudioToolbox AAC (macOS only) - Native hardware-accelerated encoder optimized for Apple Silicon
 
-PCM, or WAV in this tool is a pulse-code modulated, raw uncompressed audio stream. It's the highest quality, but it comes with a size-cost. This encoder doesn't have a bitrate setting, but has two other settings that result in a bitrate. First, samplerate (either 44.1, 48, 88.2, 96, 192 kHz) mean "how often the original data is converted into audio in a second". With 48 kHz the audio is sampled forty-eight thousand times in a second. Second, the bitrate controls "how precisely we want to have each sample". The options are either 16, 24, 32 or 64, of which the last two are floating-point and used in specific scenarions. The file size for a thirty-second audio with 48 kHz, 24-bit audio is 8.64 MB.`)
+Opus
+Opus is a modern data compression method that can achieve very good results even with lower bitrates. Opus has a lower algorithmic delay, which makes it suitable for live applications. It's an open-source format. Its minimum bitrate is 6 kbit/s, though the UI limits the bitrate at 12 kbit/s at minimum. The maximum bitrate for this encoder is 510 kbit/s.
+
+MP3 (MPEG-II Layer 3)
+MP3 is an older, but one of the most compatible encoders available. It isn't as capable at lower bitrates as the two encoders above, but at high bitrates (>320 kbit/s) it's usable. Use this if you know the end-user can't decode AAC or Opus. Filesize for MP3 at 160 kbit/s for 30 second audio file is 0.6 MB.
+
+FLAC (Free Lossless Audio Codec)
+FLAC is a lossless compression format that reduces file size without any quality loss. Unlike AAC, Opus, or MP3, FLAC preserves the original audio data perfectly while still achieving significant compression. File sizes are typically 40-60% of uncompressed PCM, depending on the compression level selected. FLAC is widely supported and ideal for archival or when perfect audio fidelity is required with reasonable file sizes.
+
+PCM (WAV)
+PCM, or WAV in this tool is a pulse-code modulated, raw uncompressed audio stream. It's the highest quality, but it comes with a size-cost. This encoder doesn't have a bitrate setting, but has two other settings that result in a bitrate. First, sample rate (either 44.1, 48, 88.2, 96, 192 kHz) means "how often the original data is converted into audio in a second". With 48 kHz the audio is sampled forty-eight thousand times in a second. Second, the bit depth controls "how precisely we want to have each sample". The options are either 16, 24, 32 or 64, of which the last two are floating-point and used in specific scenarios. The file size for a thirty-second audio with 48 kHz, 24-bit audio is 8.64 MB.`)
 			menuFormatsTab.Wrapping = fyne.TextWrapWord
 			
 			tabs := container.NewAppTabs(
@@ -784,9 +962,34 @@ PCM, or WAV in this tool is a pulse-code modulated, raw uncompressed audio strea
 		
 		lufsEntry := widget.NewEntry()
 		lufsEntry.SetText(n.normalizeTarget.Text)
+		lufsEntry.OnChanged = func(s string) {
+			if stdGroup.Selected == "Custom" {
+				n.normalizeTarget.SetText(s)
+				n.updateNormalizationLabel("Custom")
+			}
+		}
 		
 		tpEntry := widget.NewEntry()
 		tpEntry.SetText(n.normalizeTargetTp.Text)
+		tpEntry.Validator = func(s string) error {
+			if s == "" || s == "-" {
+				return nil
+			}
+			val, err := strconv.ParseFloat(s, 64)
+			if err != nil {
+				return fmt.Errorf("must be a number")
+			}
+			if val > 0 {
+				return fmt.Errorf("must be than or exactly zero")
+			}
+			return nil
+		}
+		tpEntry.OnChanged = func(s string) {
+			if stdGroup.Selected == "Custom" {
+				n.normalizeTargetTp.SetText(s)
+				n.updateNormalizationLabel("Custom")
+			}
+		}
 		
 		stdGroup.OnChanged = func(selected string) {
 			if selected == "Custom" {
@@ -819,13 +1022,19 @@ PCM, or WAV in this tool is a pulse-code modulated, raw uncompressed audio strea
 			tpEntry.Disable()
 		}
 		
+		tpRow := container.NewVBox(tpEntry)
+		
+		normInstructions := widget.NewLabel("Values are interpreted as negative values regardless of input. Empty values default to -23 LUFS and -1 dBTP.")
+		normInstructions.Wrapping = fyne.TextWrapWord
+		
 		normContent := container.NewVBox(
+			normInstructions,
 			widget.NewLabel("Default normalization targets:"),
 			stdGroup,
 			widget.NewLabel("Custom LUFS target:"),
 			lufsEntry,
 			widget.NewLabel("Custom TP target:"),
-			tpEntry,
+			tpRow,
 		)
 		
 		// Create save button content
@@ -1193,6 +1402,7 @@ func (n *AudioNormalizer) getProcessConfig() ProcessConfig {
 		originIsAAC: n.checkOriginAAC(),
 		writeTags: n.writeTags.Checked,
 		noTranscode: n.noTranscode.Checked,
+		dataCompLevel: int8(math.Round(n.dataCompLevel.Value)),
 	}
 	
 	if n.advancedMode {
@@ -1309,6 +1519,8 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 		ext = ".wav"
 	case "aac_at":
 		ext = ".m4a"
+	case "flac":
+		ext = ".flac"
 	default:
 		ext = filepath.Ext(inputPath)
 	}
@@ -1384,16 +1596,17 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 		args = append(args, "-acodec", codec)
 	} else if !n.noTranscode.Checked {
 		
-		isMp3 := actualCodec == "libmp3lame"
+		usesSampleRate := actualCodec == "PCM"
 		
-		if isMp3 {
+		if usesSampleRate {
+			args = append(args, "-ar", "48000")
 			args = append(args, "-c:a", actualCodec)
 		} else {
-			args = append(args, "-ar", "48000")
 			args = append(args, "-c:a", actualCodec)
 		}
 		
 		needsFullNumber := (actualCodec == "libfdk_aac" || actualCodec == "aac" || actualCodec == "libopus" || actualCodec == "libmp3lame")
+		noBitrateUsed := actualCodec == "PCM" || actualCodec == "flac"
 		
 		bitrateStr := config.Bitrate
 		
@@ -1420,10 +1633,12 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 			}
 		}
 		
-		if needsFullNumber {
-			args = append(args, "-b:a", fmt.Sprintf("%d", bitrate))
-		} else {
-			args = append(args, "-b:a", fmt.Sprintf("%dk", bitrate))
+		if !noBitrateUsed {
+			if needsFullNumber {
+				args = append(args, "-b:a", fmt.Sprintf("%d", bitrate))
+			} else {
+				args = append(args, "-b:a", fmt.Sprintf("%dk", bitrate))
+			}
 		}
 	}
 	
@@ -1432,6 +1647,18 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 		args = append(args, "-application", "voip")
 	} else if !config.IsSpeech && actualCodec == "libopus" && !n.noTranscode.Checked {
 		args = append(args, "-application", "audio")
+	}
+	
+	usesDataCompression := actualCodec == "flac" || actualCodec == "libopus"
+	
+	if usesDataCompression {
+		var level int
+		if actualCodec == "libopus" {
+			level = 10 - int(config.dataCompLevel)
+		} else if actualCodec == "flac" {
+			level = int(math.Round(float64(config.dataCompLevel) * 12.0 / 10.0))
+		}
+		args = append(args, "-compression_level", fmt.Sprintf("%d", level))
 	}
 	
 	target := "-23"
@@ -1444,6 +1671,10 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 		}
 	}
 	
+	if n.normalizeTarget.Text == "" {
+		target = "-23"
+	}
+	
 	targetTp := "-1"
 	
 	if n.loudnormCustomCheck.Checked && n.normalizeTargetTp.Text != "" {
@@ -1452,8 +1683,11 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 		} else {
 			targetTp = "-" + n.normalizeTargetTp.Text
 		}
-		targetTp = n.normalizeTargetTp.Text
 	} 
+	
+	if n.normalizeTargetTp.Text == "" {
+		targetTp = "-1"
+	}
 	
 	// Add two-pass loudnorm filter if enabled
 	if config.UseLoudnorm {
@@ -1782,7 +2016,7 @@ func (a *appleTheme) Icon(name fyne.ThemeIconName) fyne.Resource {
 }
 
 func (a *appleTheme) Font(style fyne.TextStyle) fyne.Resource {
-	return resourceBrockmannRegularTtf
+	return resourceWotfardRegularTtf
 }
 
 func (a *appleTheme) Size(name fyne.ThemeSizeName) float32 {

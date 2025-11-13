@@ -3,7 +3,7 @@
 package main
 
 func getPlatformFormats() []string {
-	return []string{"Opus", "AAC (Fraunhofer)", "AAC (Apple)", "MPEG-II L3", "PCM"}
+	return []string{"Opus", "AAC (Fraunhofer)", "AAC (Apple)", "MPEG-II L3", "PCM", "FLAC"}
 }
 
 func getPlatformCodecMap() map[string]string {

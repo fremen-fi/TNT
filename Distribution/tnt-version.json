@@ -1,13 +1,17 @@
 {
-  "version": "1.0.2",
+  "version": "1.1.0",
   "download_url": "https://www.collinsgroup.fi/software/tnt/download-tnt",
-  "release_notes": "Preserve directory structure in batch processing (directory structure is copied to output directory so that for example Artist/Album/Track structure will remain intact)\nLoudness settings are now applied without needing to save UI configuration (saves you two clicks).",
-  "release_date": "3 November, 2025",
-  "history": [
+  "release_notes": "Adds FLAC encoder and data compression methods for FLAC and Opus.\nHides disabled items from UI based on encoding format.\nRewritten help section.",
+  "release_date": "12 November, 2025",
+  "history": [{
+      "version": "1.0.2",
+      "release_notes": "Preserve directory structure in batch processing (directory structure is copied to output directory so that for example Artist/Album/Track structure will remain intact)\nLoudness settings are now applied without needing to save UI configuration (saves you two clicks).",
+      "release_date": "3 November, 2025"
+    },
     {
       "version": "1.0.1",
       "release_date": "31 October, 2025",
-      "release_notes": "macOS users get access to Apple AAC encoder.\nWindows users get access to Fraunhofer AAC encoder(deprecates native AAC).\nPreferences can now be saved.\nFixes library linking issues on macOS.\nReduces executable size on Windows(225 M to 50 M).\nError reports can now be sent from the app."
+      "release_notes": "macOS users get access to Apple AAC encoder.\nWindows users get access to Fraunhofer AAC encoder(deprecates native AAC).\nPreferences can now be saved.\nFixes library linking issues on macOS.\nReduces executable size on Windows.\nError reports can now be sent from the app."
     }
   ]
 }
