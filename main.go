@@ -294,6 +294,8 @@ type AudioNormalizer struct {
 	EqDrop *widget.Select
 	bypassProc *widget.Check
 	
+	multibandFilter string
+	
 	logFile *os.File
 	
 	// watchmode
@@ -340,6 +342,14 @@ type DynamicsAnalysis struct {
 	RMSLevel      float64
 }
 
+type FrequencyBandAnalysis struct {
+	BandName     string
+	PeakLevel    float64
+	RMSLevel     float64
+	CrestFactor  float64
+	DynamicRange float64
+}
+
 func (n *AudioNormalizer) analyzeDynamics(inputPath string) *DynamicsAnalysis {
 	cmd := exec.Command(
 		ffmpegPath,
@@ -362,6 +372,235 @@ func (n *AudioNormalizer) analyzeDynamics(inputPath string) *DynamicsAnalysis {
 	//n.logToFile(n.logFile, "=== RAW ASTATS OUTPUT END ===")
 	
 	return n.parseAstatsOutput(string(output))
+}
+
+func (n *AudioNormalizer) analyzeFrequencyBands(inputPath string) map[string]*FrequencyBandAnalysis {
+	bands := map[string]string{
+		"sub":     "lowpass=f=80",
+		"bass":    "highpass=f=80,lowpass=f=250",
+		"low_mid": "highpass=f=250,lowpass=f=1000",
+		"mid":     "highpass=f=1000,lowpass=f=4000",
+		"high":    "highpass=f=4000",
+	}
+	
+	results := make(map[string]*FrequencyBandAnalysis)
+	
+	n.logToFile(n.logFile, fmt.Sprintf("=== FREQUENCY BAND ANALYSIS START: %s ===", filepath.Base(inputPath)))
+	
+	for bandName, filter := range bands {
+		cmd := exec.Command(
+			ffmpegPath,
+			"-i", inputPath,
+			"-af", fmt.Sprintf("%s,astats=metadata=1:length=0.05", filter),
+			"-f", "null",
+			"-",
+		)
+		hideWindow(cmd)
+		
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			n.logToFile(n.logFile, fmt.Sprintf("Band %s analysis failed: %v", bandName, err))
+			continue
+		}
+		
+		// Log raw output for this band
+		//n.logToFile(n.logFile, fmt.Sprintf("--- RAW OUTPUT FOR BAND: %s ---", bandName))
+		//n.logToFile(n.logFile, string(output))
+		//n.logToFile(n.logFile, "--- END RAW OUTPUT ---")
+		
+		// Parse the output
+		analysis := n.parseFrequencyBandOutput(string(output), bandName)
+		if analysis != nil {
+			results[bandName] = analysis
+			
+			// Log parsed results
+			n.logToFile(n.logFile, fmt.Sprintf("Band %s Results:", bandName))
+			n.logToFile(n.logFile, fmt.Sprintf("  Peak: %.2f dBFS", analysis.PeakLevel))
+			n.logToFile(n.logFile, fmt.Sprintf("  RMS: %.2f dBFS", analysis.RMSLevel))
+			n.logToFile(n.logFile, fmt.Sprintf("  Crest: %.2f", analysis.CrestFactor))
+			n.logToFile(n.logFile, fmt.Sprintf("  Range: %.2f dB", analysis.DynamicRange))
+		}
+	}
+	
+	n.logToFile(n.logFile, "=== FREQUENCY BAND ANALYSIS END ===")
+	
+	return results
+}
+
+func (n *AudioNormalizer) parseFrequencyBandOutput(output string, bandName string) *FrequencyBandAnalysis {
+	result := &FrequencyBandAnalysis{BandName: bandName}
+	
+	// Find Overall section
+	overallStart := strings.Index(output, "Overall")
+	if overallStart == -1 {
+		return nil
+	}
+	overallSection := output[overallStart:]
+	
+	// Parse: Peak level dB: -65.832755
+	peakRe := regexp.MustCompile(`Peak level dB:\s+([-\d.]+)`)
+	if match := peakRe.FindStringSubmatch(overallSection); len(match) > 1 {
+		result.PeakLevel, _ = strconv.ParseFloat(match[1], 64)
+	}
+	
+	// Parse: RMS level dB: -76.472639
+	rmsRe := regexp.MustCompile(`RMS level dB:\s+([-\d.]+)`)
+	if match := rmsRe.FindStringSubmatch(overallSection); len(match) > 1 {
+		result.RMSLevel, _ = strconv.ParseFloat(match[1], 64)
+	}
+	
+	// Parse: Crest factor: 2.982689 (from channel section)
+	crestRe := regexp.MustCompile(`Crest factor:\s+([-\d.]+)`)
+	if match := crestRe.FindStringSubmatch(output); len(match) > 1 {
+		result.CrestFactor, _ = strconv.ParseFloat(match[1], 64)
+	}
+	
+	// Parse: Dynamic range: 51.779619 (from channel section)
+	dynRe := regexp.MustCompile(`Dynamic range:\s+([-\d.]+)`)
+	if match := dynRe.FindStringSubmatch(output); len(match) > 1 {
+		result.DynamicRange, _ = strconv.ParseFloat(match[1], 64)
+	}
+	
+	return result
+}
+
+func (n *AudioNormalizer) buildMultibandCompression(bandAnalysis map[string]*FrequencyBandAnalysis, preset string) string {
+	if len(bandAnalysis) == 0 || preset == "Off" {
+		return ""
+	}
+	
+	n.logToFile(n.logFile, fmt.Sprintf("=== BUILDING MULTIBAND COMPRESSION (%s) ===", preset))
+	
+	sub := bandAnalysis["sub"]
+	bass := bandAnalysis["bass"]
+	lowMid := bandAnalysis["low_mid"]
+	mid := bandAnalysis["mid"]
+	high := bandAnalysis["high"]
+	
+	// Base parameters per preset
+	var attackMs, releaseMs float64
+	var baseRatio float64
+	
+	switch preset {
+	case "Light":
+		attackMs = 100
+		releaseMs = 300
+		baseRatio = 2.5
+	case "Moderate":
+		attackMs = 150
+		releaseMs = 400
+		baseRatio = 4.0
+	case "Broadcast":
+		attackMs = 200
+		releaseMs = 500
+		baseRatio = 6.0
+	}
+	
+	// Build compression and limiting for each band
+	subFilter := n.buildBandAcompressor(sub, attackMs, releaseMs, baseRatio, -18)
+	bassFilter := n.buildBandAcompressor(bass, attackMs, releaseMs, baseRatio, -15)
+	lowMidFilter := n.buildBandAcompressor(lowMid, attackMs*0.8, releaseMs*0.9, baseRatio*1.2, -12)
+	midFilter := n.buildBandAcompressor(mid, attackMs*0.6, releaseMs*0.7, baseRatio*1.5, -10)
+	highFilter := n.buildBandAcompressor(high, attackMs*0.5, releaseMs*0.6, baseRatio*2.0, -8)
+	
+	// Build the complete filterchain:
+	// 1. Resample to 192kHz for intersample peak accuracy
+	// 2. Split into bands with acrossover
+	// 3. Compress and limit each band
+	// 4. Mix back together
+	filterChain := fmt.Sprintf(
+		"aresample=192000,"+
+		"acrossover=split=80 250 1000 4000:order=4th:precision=double[SUB][LOW][LMID][HMID][HI];"+
+		"[SUB]%s[sub_out];"+
+		"[LOW]%s[low_out];"+
+		"[LMID]%s[lmid_out];"+
+		"[HMID]%s[hmid_out];"+
+		"[HI]%s[hi_out];"+
+		"[sub_out][low_out][lmid_out][hmid_out][hi_out]amix=inputs=5:normalize=0,"+
+		"alimiter=limit=0.99426:level=false",
+		subFilter, bassFilter, lowMidFilter, midFilter, highFilter)
+	
+	n.logToFile(n.logFile, fmt.Sprintf("Multiband filter: %s", filterChain))
+	
+	return filterChain
+}
+
+func (n *AudioNormalizer) buildBandAcompressor(band *FrequencyBandAnalysis, attackMs float64, releaseMs float64, ratio float64, fallbackThresholdDb float64) string {
+	if band == nil {
+		// Fallback compression
+		thresholdLin := math.Pow(10, fallbackThresholdDb/20)
+		makeup := math.Pow(10, 3.0/20) // 3dB makeup
+		limiterLin := math.Pow(10, -1.0/20)
+		
+		return fmt.Sprintf("acompressor=threshold=%.6f:ratio=%.1f:attack=%.1f:release=%.1f:makeup=1.0,alimiter=limit=%.6f:attack=5:release=50,volume=%.3f",
+			thresholdLin, ratio, attackMs, releaseMs, limiterLin, makeup)
+	}
+	
+	// Calculate adaptive threshold from RMS + headroom
+	adaptiveThresholdDb := band.RMSLevel + 6.0
+	if adaptiveThresholdDb > fallbackThresholdDb {
+		adaptiveThresholdDb = fallbackThresholdDb
+	}
+	thresholdLin := math.Pow(10, adaptiveThresholdDb/20)
+	
+	// Calculate makeup gain based on expected gain reduction
+	expectedGRDb := (band.RMSLevel - adaptiveThresholdDb) / ratio
+	makeupGainDb := -expectedGRDb * 0.8
+	if makeupGainDb < 0 {
+		makeupGainDb = 0
+	}
+	makeupLin := math.Pow(10, makeupGainDb/20)
+	
+	// Limiter ceiling at current peak level (before makeup)
+	limiterCeilingDb := band.PeakLevel
+	if limiterCeilingDb > -1.0 {
+		limiterCeilingDb = -1.0
+	}
+	limiterLin := math.Pow(10, limiterCeilingDb/20)
+	
+	n.logToFile(n.logFile, fmt.Sprintf("Band %s: Threshold=%.1f dB, Ratio=%.1f:1, Limiter=%.1f dB, Makeup=%.1f dB",
+		band.BandName, adaptiveThresholdDb, ratio, limiterCeilingDb, makeupGainDb))
+	
+	return fmt.Sprintf("acompressor=threshold=%.6f:ratio=%.1f:attack=%.1f:release=%.1f:makeup=1.0:knee=2.8,alimiter=limit=%.6f:attack=5:release=50,volume=%.3fdB",
+		thresholdLin, ratio, attackMs, releaseMs, limiterLin, makeupLin)
+}
+
+func (n *AudioNormalizer) measureLoudnessFromFilter(inputPath string, filterChain string) map[string]string {
+	n.logStatus(fmt.Sprintf("→ Measuring compressed audio: %s", filepath.Base(inputPath)))
+	
+	target := "-23"
+	if n.loudnormCustomCheck.Checked && n.normalizeTarget.Text != "" {
+		if strings.Contains(n.normalizeTarget.Text, "-") {
+			target = n.normalizeTarget.Text
+		} else {
+			target = "-" + n.normalizeTarget.Text
+		}
+	}
+	
+	targetTp := "-1"
+	if n.loudnormCustomCheck.Checked && n.normalizeTargetTp.Text != "" {
+		if strings.Contains(n.normalizeTargetTp.Text, "-") {
+			targetTp = n.normalizeTargetTp.Text
+		} else {
+			targetTp = "-" + n.normalizeTargetTp.Text
+		}
+	}
+	
+	cmd := exec.Command(
+		ffmpegPath,
+		"-i", inputPath,
+		"-af", fmt.Sprintf("%s,loudnorm=linear=false:I=%s:TP=%s:LRA=5:print_format=json", filterChain, target, targetTp),
+		"-f", "null",
+		"-",
+	)
+	hideWindow(cmd)
+	
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil
+	}
+	
+	return n.parseLoudnormJSON(string(output))
 }
 
 func (n *AudioNormalizer) parseAstatsOutput(output string) *DynamicsAnalysis {
@@ -1907,7 +2146,7 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 	n.logStatus(fmt.Sprintf("Processing: %s, outputting to %s", filepath.Base(inputPath), outputPath))
 	
 	var measured map[string]string
-	
+		
 	if config.writeTags {
 		// Use accurate ebur128 for tagging
 		measured = n.measureLoudnessEbuR128(inputPath)
@@ -1916,8 +2155,13 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 			return false
 		}
 	} else if config.UseLoudnorm {
-		// Use loudnorm for normalization measurement
-		measured = n.measureLoudness(inputPath)
+		// If using multiband compression, measure AFTER compression
+		if n.multibandFilter != "" {
+			measured = n.measureLoudnessFromFilter(inputPath, n.multibandFilter)
+		} else {
+			// No multiband, measure original
+			measured = n.measureLoudness(inputPath)
+		}
 		if measured == nil {
 			n.logStatus(fmt.Sprintf("✗ Failed to measure: %s", filepath.Base(inputPath)))
 			return false
@@ -2041,8 +2285,20 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 	}
 	
 	var dynamicsAnalysis *DynamicsAnalysis
+	var bandAnalysis map[string]*FrequencyBandAnalysis
 	
-	if config.DynamicsPreset != "" && config.DynamicsPreset != "Off" && !config.bypassProc {
+	if config.DynamicsPreset == "Broadcast" && !config.bypassProc {
+		bandAnalysis = n.analyzeFrequencyBands(inputPath)
+		if bandAnalysis == nil || len(bandAnalysis) == 0 {
+			n.logStatus(fmt.Sprintf("✗ Failed to analyze dynamics: %s", filepath.Base(inputPath)))
+			return false
+		}
+		
+		multibandFilter := n.buildMultibandCompression(bandAnalysis, config.DynamicsPreset)
+		n.logToFile(n.logFile, fmt.Sprintf("Built filter: %s", multibandFilter))
+	}
+	
+	if config.DynamicsPreset != "" && config.DynamicsPreset != "Off" && !config.bypassProc && config.DynamicsPreset != "Broadcast" {
 		dynamicsAnalysis = n.analyzeDynamics(inputPath)
 		if dynamicsAnalysis == nil {
 			n.logStatus(fmt.Sprintf("✗ Failed to analyze dynamics: %s", filepath.Base(inputPath)))
@@ -2062,33 +2318,54 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 		dynamicsFilter = n.calculateAdaptiveCompression(dynamicsAnalysis, config.DynamicsPreset)
 	}
 	
-	if dynamicsFilter != "" && config.UseLoudnorm {
-		// Compress first, then normalize
-		filterChain := dynamicsFilter + "," + fmt.Sprintf(
-			"loudnorm=I=%s:TP=%s:LRA=5.0:measured_I=%s:measured_TP=%s:measured_LRA=%s:measured_thresh=%s:linear=true",
-			target, targetTp,
-			measured["input_i"], measured["input_tp"], measured["input_lra"], measured["input_thresh"],
-		)
-		args = append(args, "-af", filterChain)
-	} else if dynamicsFilter != "" {
-		// Just compression, no normalization
-		args = append(args, "-af", dynamicsFilter)
-	} else if config.UseLoudnorm { 
-		var filterChain string
+	var multibandFilter string
+	if bandAnalysis != nil && len(bandAnalysis) > 0 && config.DynamicsPreset != "Off" {
+		multibandFilter = n.buildMultibandCompression(bandAnalysis, config.DynamicsPreset)
+	}
+
+	var loudnormFilterChain string
+	if config.UseLoudnorm && measured != nil {
 		if config.IsSpeech {
-			filterChain = fmt.Sprintf(
+			loudnormFilterChain = fmt.Sprintf(
 				"speechnorm=e=12.5:r=0.0001:l=1,loudnorm=I=%s:TP=%s:LRA=5.0:measured_I=%s:measured_TP=%s:measured_LRA=%s:measured_thresh=%s:linear=true",
 				target, targetTp,
 				measured["input_i"], measured["input_tp"], measured["input_lra"], measured["input_thresh"],
 			)
 		} else {
-			filterChain = fmt.Sprintf(
+			loudnormFilterChain = fmt.Sprintf(
 				"loudnorm=I=%s:TP=%s:LRA=5.0:measured_I=%s:measured_TP=%s:measured_LRA=%s:measured_thresh=%s:offset=%s:linear=true",
 				target, targetTp,
 				measured["input_i"], measured["input_tp"], measured["input_lra"], measured["input_thresh"], measured["target_offset"],
 			)
 		}
-		args = append(args, "-af", filterChain)
+	}
+	
+	// Build final filter chain
+	var finalFilterChain string
+	if multibandFilter != "" && loudnormFilterChain != "" {
+		finalFilterChain = multibandFilter + "," + loudnormFilterChain
+	} else if multibandFilter != "" {
+		finalFilterChain = multibandFilter
+	} else if dynamicsFilter != "" && loudnormFilterChain != "" {
+		finalFilterChain = dynamicsFilter + "," + loudnormFilterChain
+	} else if dynamicsFilter != "" {
+		finalFilterChain = dynamicsFilter
+	} else if loudnormFilterChain != "" {
+		finalFilterChain = loudnormFilterChain
+	}
+	
+	// Add dithering for 16-bit PCM output
+	// Add dithering for 16-bit PCM output
+	if actualCodec == "PCM" && config.BitDepth == "16" {
+		if finalFilterChain != "" {
+			finalFilterChain = finalFilterChain + ",aresample=resampler=soxr:dither_method=triangular"
+		} else {
+			finalFilterChain = "aresample=resampler=soxr:dither_method=triangular"
+		}
+	}
+	
+	if finalFilterChain != "" {
+		args = append(args, "-af", finalFilterChain)
 	}
 	
 	var rgTpInLin float64
@@ -2128,6 +2405,14 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 		)
 	}
 	
+	n.logToFile(n.logFile, "")
+	n.logToFile(n.logFile, "")
+	n.logToFile(n.logFile, "")
+	n.logToFile(n.logFile, fmt.Sprintf("DEBUG args: %#v", args))
+	n.logToFile(n.logFile, "")
+	n.logToFile(n.logFile, "")
+
+
 	args = append(args, "-y", outputPath)
 	
 	fullCmdLog := ffmpegPath + " " + strings.Join(args, " ")
@@ -2135,6 +2420,15 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 	
 	cmd := exec.Command(ffmpegPath, args...)
 	hideWindow(cmd)
+	
+	output, err := cmd.CombinedOutput()
+	n.logToFile(n.logFile, fmt.Sprintf("FFmpeg output: %s", string(output)))
+	
+	if err != nil {
+		n.logStatus(fmt.Sprintf("✗ Failed: %s - %v", filepath.Base(inputPath), err))
+		n.logToFile(n.logFile, fmt.Sprintf("Failed %s - %v", filepath.Base(inputPath), err))
+		return false
+	}
 	
 	if config.BitDepth != "" {
 		n.logToFile(n.logFile, fmt.Sprintf("config.Bitdepth= %s", config.BitDepth))
@@ -2169,11 +2463,7 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 		n.logToFile(n.logFile, fmt.Sprintf("TP target: %s", targetTp))
 	}
 	
-	if err := cmd.Run(); err != nil {
-		n.logStatus(fmt.Sprintf("✗ Failed: %s - %v", filepath.Base(inputPath), err))
-		n.logToFile(n.logFile, fmt.Sprintf("Failed %s - %v", filepath.Base(inputPath), err))
-		return false
-	}
+	// REMOVED: if err := cmd.Run() - CombinedOutput already ran the command!
 	
 	n.logStatus(fmt.Sprintf("✓ Success: %s", filepath.Base(inputPath)))
 	n.logToFile(n.logFile, fmt.Sprintf("✓ Success: %s", filepath.Base(inputPath)))
