@@ -28,7 +28,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-const currentVersion = "1.1.0"
+const currentVersion = "1.2.0"
 
 type VersionInfo struct {
 	Version      string `json:"version"`
@@ -254,12 +254,16 @@ type AudioNormalizer struct {
 	statusLog    *widget.Entry
 	outputLabel  *widget.Label
 	
+	modeTabs *container.AppTabs
+	modeWarning *widget.Label
+
 	// Mode toggle
 	advancedMode bool
 	modeToggle   *widget.Check
 	
 	// Simple mode
-	simpleGroup *widget.RadioGroup
+	simpleGroupButtons *widget.RadioGroup
+	simpleGroup *fyne.Container
 	
 	// Advanced mode
 	formatSelect   *widget.Select
@@ -282,6 +286,13 @@ type AudioNormalizer struct {
 	writeTags *widget.Check
 	noTranscode *widget.Check
 	dataCompLevel *widget.Slider
+	
+	// dynamics
+	dynamicsLabel *widget.Label
+	dynamicsDrop *widget.Select
+	EqLabel *widget.Label
+	EqDrop *widget.Select
+	bypassProc *widget.Check
 	
 	logFile *os.File
 	
@@ -316,6 +327,296 @@ type ProcessConfig struct {
 	noTranscode bool
 	originIsAAC bool
 	dataCompLevel int8
+	DynamicsPreset string
+	bypassProc bool
+}
+
+type DynamicsAnalysis struct {
+	PeakLevel     float64
+	RMSPeak       float64
+	RMSTrough     float64
+	CrestFactor   float64
+	DynamicRange  float64
+	RMSLevel      float64
+}
+
+func (n *AudioNormalizer) analyzeDynamics(inputPath string) *DynamicsAnalysis {
+	cmd := exec.Command(
+		ffmpegPath,
+		"-i", inputPath,
+		"-af", "astats=metadata=1:length=0.05",
+		"-f", "null",
+		"-",
+	)
+	hideWindow(cmd)
+	
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		n.logToFile(n.logFile, fmt.Sprintf("astats failed: %v", err))
+		return nil
+	}
+	
+	// LOG THE RAW OUTPUT
+	//n.logToFile(n.logFile, "=== RAW ASTATS OUTPUT START ===")
+	//n.logToFile(n.logFile, string(output))
+	//n.logToFile(n.logFile, "=== RAW ASTATS OUTPUT END ===")
+	
+	return n.parseAstatsOutput(string(output))
+}
+
+func (n *AudioNormalizer) parseAstatsOutput(output string) *DynamicsAnalysis {
+	result := &DynamicsAnalysis{}
+	
+	// Look for "Overall" section and parse from there
+	// Format: [Parsed_astats_0 @ 0xXXXXXXXXX] Peak level dB: -65.832755
+	
+	// Extract Overall section
+	overallStart := strings.Index(output, "Overall")
+	if overallStart == -1 {
+		return result
+	}
+	overallSection := output[overallStart:]
+	
+	// Parse: Peak level dB: -65.832755
+	peakRe := regexp.MustCompile(`Peak level dB:\s+([-\d.]+)`)
+	if match := peakRe.FindStringSubmatch(overallSection); len(match) > 1 {
+		result.PeakLevel, _ = strconv.ParseFloat(match[1], 64)
+	}
+	
+	// Parse: RMS peak dB: -75.013939
+	rmsPeakRe := regexp.MustCompile(`RMS peak dB:\s+([-\d.]+)`)
+	if match := rmsPeakRe.FindStringSubmatch(overallSection); len(match) > 1 {
+		result.RMSPeak, _ = strconv.ParseFloat(match[1], 64)
+	}
+	
+	// Parse: RMS trough dB: -78.685114
+	rmsTroughRe := regexp.MustCompile(`RMS trough dB:\s+([-\d.]+)`)
+	if match := rmsTroughRe.FindStringSubmatch(overallSection); len(match) > 1 {
+		result.RMSTrough, _ = strconv.ParseFloat(match[1], 64)
+	}
+	
+	// Parse: RMS level dB: -76.472639
+	rmsRe := regexp.MustCompile(`RMS level dB:\s+([-\d.]+)`)
+	if match := rmsRe.FindStringSubmatch(overallSection); len(match) > 1 {
+		result.RMSLevel, _ = strconv.ParseFloat(match[1], 64)
+	}
+	
+	// Parse from Channel 1 section (before Overall): Crest factor: 2.982689
+	crestRe := regexp.MustCompile(`Crest factor:\s+([-\d.]+)`)
+	if match := crestRe.FindStringSubmatch(output); len(match) > 1 {
+		result.CrestFactor, _ = strconv.ParseFloat(match[1], 64)
+	}
+	
+	// Parse from Channel 1 section: Dynamic range: 51.779619
+	dynRe := regexp.MustCompile(`Dynamic range:\s+([-\d.]+)`)
+	if match := dynRe.FindStringSubmatch(output); len(match) > 1 {
+		result.DynamicRange, _ = strconv.ParseFloat(match[1], 64)
+	}
+	
+	return result
+}
+
+func (n *AudioNormalizer) calculateAdaptiveCompression(analysis *DynamicsAnalysis, preset string) string {
+	if analysis == nil || preset == "Off" {
+		return ""
+	}
+	
+	var threshold, ratio, attack, release float64
+	var limiterCeiling float64
+	
+	// Decide if we need limiting based on crest factor
+	needsLimiting := analysis.CrestFactor > 4.0
+	
+	switch preset {
+	case "Light":
+		// Gentle compression on peaks
+		threshold = analysis.RMSPeak + 2.0
+		ratio = 2.5
+		attack = 10
+		release = 150
+		limiterCeiling = -1.0
+		
+	case "Moderate":
+		// Standard broadcast compression
+		threshold = analysis.RMSLevel + 6.0
+		ratio = 3.5
+		attack = 15
+		release = 200
+		limiterCeiling = -0.5
+		
+	case "Broadcast":
+		// Aggressive limiting and compression
+		threshold = analysis.RMSLevel + 4.0
+		ratio = 5.0
+		attack = 20
+		release = 250
+		limiterCeiling = -0.3
+	}
+	
+	makeupGain := calculateMakeupGain(analysis, threshold, ratio)
+	
+	// Build filter chain
+	var filterChain string
+	
+	// Always add compression
+	filterChain = fmt.Sprintf(
+		"acompressor=threshold=%.1fdB:ratio=%.1f:attack=%.0f:release=%.0f:knee=2.5:makeup=%.1f",
+		threshold, ratio, attack, release, makeupGain,
+	)
+	
+	// Add limiter if needed
+	if needsLimiting {
+		limiterLinear := math.Pow(10, limiterCeiling/20)
+		filterChain += fmt.Sprintf(",alimiter=limit=%.6f:attack=5:release=50", limiterLinear)
+	}
+	
+	n.logToFile(n.logFile, fmt.Sprintf("Dynamics filter: %s", filterChain))
+	
+	return filterChain
+}
+
+func calculateMakeupGain(analysis *DynamicsAnalysis, threshold, ratio float64) float64 {
+	// Use RMS measurements to estimate signal distribution
+	rmsPeak := analysis.RMSPeak
+	rmsLevel := analysis.RMSLevel
+	
+	// If threshold is above RMS peak, minimal compression happening
+	if threshold >= rmsPeak {
+		return 1.0  // No makeup needed, return 1.0 (unity gain)
+	}
+	
+	// If threshold is below RMS level, most signal is being compressed
+	var percentageAboveThreshold float64
+	if threshold <= rmsLevel {
+		percentageAboveThreshold = 0.7
+	} else {
+		thresholdPosition := (rmsPeak - threshold) / (rmsPeak - rmsLevel)
+		percentageAboveThreshold = 0.3 * thresholdPosition
+	}
+	
+	avgExcursion := (rmsPeak - threshold) / 2
+	gainReductionPerSample := avgExcursion * ((ratio - 1) / ratio)
+	effectiveGainReduction := gainReductionPerSample * percentageAboveThreshold
+	makeupGainDB := effectiveGainReduction * 0.85
+	
+	// Convert dB to linear gain: 10^(dB/20)
+	makeupGainLinear := math.Pow(10, makeupGainDB/20)
+	
+	// Clamp to FFmpeg's valid range [1, 64]
+	if makeupGainLinear < 1.0 {
+		makeupGainLinear = 1.0
+	} else if makeupGainLinear > 64.0 {
+		makeupGainLinear = 64.0
+	}
+	
+	return makeupGainLinear
+}
+
+func (n *AudioNormalizer) getDuration(inputPath string) (float64, error) {
+	cmd := exec.Command(ffmpegPath, "-i", inputPath, "-f", "null", "-")
+	hideWindow(cmd)
+	
+	output, _ := cmd.CombinedOutput()
+	outputStr := string(output)
+	
+	// Parse "Duration: 00:01:04.03"
+	re := regexp.MustCompile(`Duration: (\d{2}):(\d{2}):(\d{2}\.\d{2})`)
+	matches := re.FindStringSubmatch(outputStr)
+	
+	if len(matches) < 4 {
+		return 0, fmt.Errorf("could not parse duration")
+	}
+	
+	hours, _ := strconv.ParseFloat(matches[1], 64)
+	minutes, _ := strconv.ParseFloat(matches[2], 64)
+	seconds, _ := strconv.ParseFloat(matches[3], 64)
+	
+	totalSeconds := hours*3600 + minutes*60 + seconds
+	return totalSeconds, nil
+}
+
+func (n *AudioNormalizer) calculateOutputSize(config ProcessConfig) (int64, error) {
+	var totalBytes int64
+	
+	for _, file := range n.files {
+		duration, err := n.getDuration(file)
+		if err != nil {
+			n.logToFile(n.logFile, fmt.Sprintf("Failed to get duration for %s: %v", file, err))
+			continue
+		}
+		
+		var fileSize int64
+		
+		if config.Format == "PCM" {
+			// PCM: sample_rate × (bit_depth / 8) × channels × duration
+			sampleRate, _ := strconv.ParseFloat(config.SampleRate, 64)
+			
+			var bitDepthBits float64
+			switch config.BitDepth {
+			case "16":
+				bitDepthBits = 16
+			case "24":
+				bitDepthBits = 24
+			case "32 (float)":
+				bitDepthBits = 32
+			case "64 (float)":
+				bitDepthBits = 64
+			default:
+				bitDepthBits = 24
+			}
+			
+			channels := 2.0 // Stereo
+			fileSize = int64(sampleRate * (bitDepthBits / 8) * channels * duration)
+		} else {
+			// Lossy: (bitrate_kbps × 1000 / 8) × duration
+			bitrate, _ := strconv.ParseFloat(config.Bitrate, 64)
+			fileSize = int64((bitrate * 1000 / 8) * duration)
+		}
+		
+		totalBytes += fileSize
+	}
+	
+	return totalBytes, nil
+}
+
+func (n *AudioNormalizer) previewSize() {
+	if len(n.files) == 0 {
+		dialog.ShowInformation("No Files", "Please select files first", n.window)
+		return
+	}
+	
+	config := n.getProcessConfig()
+	
+	n.logStatus("Calculating output size...")
+	
+	go func() {
+		totalBytes, err := n.calculateOutputSize(config)
+		if err != nil {
+			fyne.Do(func() {
+				dialog.ShowError(fmt.Errorf("Failed to calculate size: %v", err), n.window)
+			})
+			return
+		}
+		
+		// Convert to human-readable format
+		var sizeStr string
+		if totalBytes < 1024 {
+			sizeStr = fmt.Sprintf("%d B", totalBytes)
+		} else if totalBytes < 1024*1024 {
+			sizeStr = fmt.Sprintf("%.2f KB", float64(totalBytes)/1024)
+		} else if totalBytes < 1024*1024*1024 {
+			sizeStr = fmt.Sprintf("%.2f MB", float64(totalBytes)/(1024*1024))
+		} else {
+			sizeStr = fmt.Sprintf("%.2f GB", float64(totalBytes)/(1024*1024*1024))
+		}
+		
+		fyne.Do(func() {
+			n.logStatus(fmt.Sprintf("Estimated output size: %s", sizeStr))
+			dialog.ShowInformation("Estimated Output Size", 
+				fmt.Sprintf("Total estimated size: %s\n\nBased on %d files with current settings", sizeStr, len(n.files)), 
+				n.window)
+		})
+	}()
 }
 
 type Preferences struct {
@@ -351,7 +652,7 @@ func (n *AudioNormalizer) loadPreferences() {
 	if n.outputDir != "" {
 		n.outputLabel.SetText(filepath.Base(n.outputDir))
 	}
-	n.simpleGroup.SetSelected(prefs.SimpleMode)
+	n.simpleGroupButtons.SetSelected(prefs.SimpleMode)
 	n.formatSelect.SetSelected(prefs.Format)
 	n.sampleRate.SetSelected(prefs.SampleRate)
 	n.bitDepth.SetSelected(prefs.BitDepth)
@@ -369,7 +670,7 @@ func (n *AudioNormalizer) savePreferences() {
 	prefs := Preferences{
 		AdvancedMode: n.advancedMode,
 		LastOutputDir: n.outputDir,
-		SimpleMode: n.simpleGroup.Selected,
+		SimpleMode: n.simpleGroupButtons.Selected,
 		Format: n.formatSelect.Selected,
 		SampleRate: n.sampleRate.Selected,
 		BitDepth: n.bitDepth.Selected,
@@ -573,12 +874,12 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 	})
 	
 	// Simple mode widgets
-	n.simpleGroup = widget.NewRadioGroup([]string{
+	n.simpleGroupButtons = widget.NewRadioGroup([]string{
 		"Small file (AAC 256kbps)",
 		"Most compatible (MP3 160kbps)",
 		"Production (PCM 48kHz/24bit)",
 	}, nil)
-	n.simpleGroup.SetSelected("Production (PCM 48kHz/24bit)")
+	n.simpleGroupButtons.SetSelected("Production (PCM 48kHz/24bit)")
 	
 	// Advanced mode widgets
 	n.sampleRate = widget.NewSelect([]string{"44100", "48000", "88200", "96000", "192000"}, nil)
@@ -701,20 +1002,6 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 	n.dataCompLevel.OnChanged = func(f float64) {
 		dataCompLevelLabelCurrent.SetText(fmt.Sprintf("Set: %d", int(f)))
 	}
-
-	n.advancedContainer = container.NewVBox(
-		container.NewBorder(nil, nil, formatLabel, nil, widget.NewLabel("")),
-		container.NewBorder(nil, nil, sampleRateLabel, nil, n.sampleRate),
-		container.NewBorder(nil, nil, bitDepthLabel, nil, n.bitDepth),
-		container.NewBorder(nil, nil, bitrateLabel, nil, n.bitrateEntry),
-		container.NewBorder(nil, nil, n.normalizeTargetLabel, nil, n.normalizeTarget),
-		container.NewBorder(nil, nil, n.normalizeTargetLabelTp, nil, n.normalizeTargetTp),
-		container.NewBorder(nil,nil, dataCompLevelLabel, dataCompLevelLabelCurrent, n.dataCompLevel),
-		
-		n.loudnormCustomCheck,
-		writeTagsRow,
-		n.noTranscode,
-	)
 	
 	n.IsSpeechCheck = widget.NewCheck("The content is speech, use Opus", func(checked bool){
 		if checked {
@@ -775,9 +1062,6 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 	})
 	n.formatSelect.SetSelected(getPlatformFormats()[1])
 	
-	// Replace placeholder with actual format select
-	n.advancedContainer.Objects[0] = container.NewBorder(nil, nil, formatLabel, nil, n.formatSelect)
-	
 	// Loudnorm checkbox
 	n.loudnormLabel = widget.NewLabel("Normalize (EBU R128: -23 LUFS)")
 	n.loudnormCheck = widget.NewCheck("", func(checked bool) {
@@ -789,6 +1073,30 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 	})
 	loudnormRow := container.NewHBox(n.loudnormCheck, n.loudnormLabel)
 	n.loudnormCheck.SetChecked(false)
+	
+	n.modeWarning = widget.NewLabel("To use advanced features, trigger processing from Advanced or Processing view.")
+	n.modeWarning.Wrapping = fyne.TextWrapWord
+	
+	n.simpleGroup = container.NewVBox(n.modeWarning, n.simpleGroupButtons, loudnormRow)
+		
+	n.advancedContainer = container.NewVBox(
+		container.NewBorder(nil, nil, formatLabel, nil, widget.NewLabel("")),
+		container.NewBorder(nil, nil, sampleRateLabel, nil, n.sampleRate),
+		container.NewBorder(nil, nil, bitDepthLabel, nil, n.bitDepth),
+		container.NewBorder(nil, nil, bitrateLabel, nil, n.bitrateEntry),
+		container.NewBorder(nil, nil, n.normalizeTargetLabel, nil, n.normalizeTarget),
+		container.NewBorder(nil, nil, n.normalizeTargetLabelTp, nil, n.normalizeTargetTp),
+		container.NewBorder(nil,nil, dataCompLevelLabel, dataCompLevelLabelCurrent, n.dataCompLevel),
+		
+		n.loudnormCustomCheck,
+		writeTagsRow,
+		n.noTranscode,
+		loudnormRow,
+		n.IsSpeechCheck,
+	)
+	
+	// Replace placeholder with actual format select
+	n.advancedContainer.Objects[0] = container.NewBorder(nil, nil, formatLabel, nil, n.formatSelect)
 	
 	n.normalizationStandard = "EBU R128 (-23 LUFS)"
 	
@@ -810,6 +1118,29 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 	n.statusLog = widget.NewMultiLineEntry()
 	n.statusLog.Disable()
 	n.statusLog.SetPlaceHolder("Processing log will appear here...")
+	
+	// processing tab 
+	n.dynamicsLabel = widget.NewLabel("Dynamics processing level")
+	n.dynamicsDrop = widget.NewSelect([]string{"Off", "Light", "Moderate", "Broadcast"}, nil)
+	n.dynamicsDrop.SetSelected("Off")
+	dynamicsTab := container.NewHBox(n.dynamicsLabel, n.dynamicsDrop)
+	
+	n.EqLabel = widget.NewLabel("EQ target curve")
+	n.EqDrop = widget.NewSelect([]string{"Off", "Flat", "Speech", "Broadcast"}, nil)
+	n.EqDrop.SetSelected("Off")
+	eqTab := container.NewHBox(n.EqLabel, n.EqDrop)
+	
+	n.bypassProc = widget.NewCheck("Bypass all processing", func(checked bool) {
+		if checked {
+			n.dynamicsDrop.Disable()
+			n.EqDrop.Disable()
+		} else {
+			n.dynamicsDrop.Enable()
+			n.EqDrop.Enable()
+		}
+	})
+	
+	processTab := container.NewVBox(dynamicsTab, eqTab, n.bypassProc)
 	
 	checkUpdateButton := widget.NewButton("Check for updates", func() {
 		go checkForUpdates(currentVersion, n.window, n.logFile)
@@ -980,7 +1311,7 @@ PCM, or WAV in this tool is a pulse-code modulated, raw uncompressed audio strea
 				return fmt.Errorf("must be a number")
 			}
 			if val > 0 {
-				return fmt.Errorf("must be than or exactly zero")
+				return fmt.Errorf("must be less than or exactly zero")
 			}
 			return nil
 		}
@@ -1143,24 +1474,36 @@ Send an error report.
 		n.logStatus("Cleared all files from queue")
 	})
 	
+	previewSizeBtn := widget.NewButton("Preview Size", func() {
+		n.previewSize()
+	})
+	
 	topButtons := container.NewHBox(selectFilesBtn, selectFolderBtn)
 	outputSection := container.NewBorder(nil, nil, widget.NewLabel("Output:"), selectOutputBtn, n.outputLabel)
 	
 	topBar := container.NewHBox(helpBtn, menuBtn)
+	
+	modeTabs := container.NewAppTabs(
+		container.NewTabItem("Fast", container.NewPadded(n.simpleGroup)),
+		container.NewTabItem("Advanced", container.NewPadded(n.advancedContainer)),
+		container.NewTabItem("Processing", container.NewPadded(processTab)),
+	)
+	
+	n.modeTabs = modeTabs
 	
 	// Layout
 	settingsContainer := container.NewVBox(
 		n.watcherWarnLabel,
 		logoImg,
 		topBar,
-		n.modeToggle,
+		//n.modeToggle,
 		widget.NewSeparator(),
 		topButtons,
 		outputSection,
 		widget.NewSeparator(),
-		n.simpleGroup,
-		n.advancedContainer,
-		loudnormRow,
+		modeTabs,
+		//n.simpleGroup,
+		//n.advancedContainer,
 	)
 	
 	content := container.NewBorder(
@@ -1170,7 +1513,7 @@ Send an error report.
 		),
 		container.NewVBox(
 			n.progressBar,
-			container.NewHBox(n.processBtn, clearAllBtn),
+			container.NewPadded(container.NewHBox(n.processBtn, clearAllBtn, previewSizeBtn)),
 		),
 		nil,
 		nil,
@@ -1192,14 +1535,14 @@ Send an error report.
 
 func (n *AudioNormalizer) updateModeUI() {
 	if n.advancedMode {
-		n.simpleGroup.Hide()
-		n.advancedContainer.Show()
-		n.updateAdvancedControls()
+		//n.simpleGroup.Hide()
+		//n.advancedContainer.Show()
+		//n.updateAdvancedControls()
 	} else {
-		n.advancedContainer.Hide()
-		n.simpleGroup.Show()
+		//n.advancedContainer.Hide()
+		//n.simpleGroup.Show()
 	}
-	n.window.Content().Refresh()
+	//n.window.Content().Refresh()
 }
 
 func (n *AudioNormalizer) updateAdvancedControls() {
@@ -1396,6 +1739,12 @@ func (n *AudioNormalizer) updateProcessButton() {
 }
 
 func (n *AudioNormalizer) getProcessConfig() ProcessConfig {
+	if n.modeTabs.Selected() == n.modeTabs.Items[0] {
+		n.advancedMode = false
+	} else {
+		n.advancedMode = true
+	}
+	
 	config := ProcessConfig{
 		UseLoudnorm: n.loudnormCheck.Checked,
 		IsSpeech: n.IsSpeechCheck.Checked,
@@ -1403,6 +1752,8 @@ func (n *AudioNormalizer) getProcessConfig() ProcessConfig {
 		writeTags: n.writeTags.Checked,
 		noTranscode: n.noTranscode.Checked,
 		dataCompLevel: int8(math.Round(n.dataCompLevel.Value)),
+		bypassProc: n.bypassProc.Checked,
+		DynamicsPreset: n.dynamicsDrop.Selected,
 	}
 	
 	if n.advancedMode {
@@ -1412,7 +1763,7 @@ func (n *AudioNormalizer) getProcessConfig() ProcessConfig {
 		config.Bitrate = n.bitrateEntry.Text
 		config.writeTags = n.writeTags.Checked
 	} else {
-		switch n.simpleGroup.Selected {
+		switch n.simpleGroupButtons.Selected {
 		case "Small file (AAC 256kbps)":
 			config.Format = "AAC"
 			config.Bitrate = "256"
@@ -1689,8 +2040,40 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 		targetTp = "-1"
 	}
 	
-	// Add two-pass loudnorm filter if enabled
-	if config.UseLoudnorm {
+	var dynamicsAnalysis *DynamicsAnalysis
+	
+	if config.DynamicsPreset != "" && config.DynamicsPreset != "Off" && !config.bypassProc {
+		dynamicsAnalysis = n.analyzeDynamics(inputPath)
+		if dynamicsAnalysis == nil {
+			n.logStatus(fmt.Sprintf("✗ Failed to analyze dynamics: %s", filepath.Base(inputPath)))
+			return false
+		}
+		n.logToFile(n.logFile, fmt.Sprintf("Dynamics Analysis for %s:", filepath.Base(inputPath)))
+		n.logToFile(n.logFile, fmt.Sprintf("  Peak Level: %.2f dBFS", dynamicsAnalysis.PeakLevel))
+		n.logToFile(n.logFile, fmt.Sprintf("  RMS Peak: %.2f dBFS", dynamicsAnalysis.RMSPeak))
+		n.logToFile(n.logFile, fmt.Sprintf("  RMS Trough: %.2f dBFS", dynamicsAnalysis.RMSTrough))
+		n.logToFile(n.logFile, fmt.Sprintf("  RMS Level: %.2f dBFS", dynamicsAnalysis.RMSLevel))
+		n.logToFile(n.logFile, fmt.Sprintf("  Crest Factor: %.2f", dynamicsAnalysis.CrestFactor))
+		n.logToFile(n.logFile, fmt.Sprintf("  Dynamic Range: %.2f dB", dynamicsAnalysis.DynamicRange))
+	}
+	
+	var dynamicsFilter string
+	if dynamicsAnalysis != nil && config.DynamicsPreset != "Off" {
+		dynamicsFilter = n.calculateAdaptiveCompression(dynamicsAnalysis, config.DynamicsPreset)
+	}
+	
+	if dynamicsFilter != "" && config.UseLoudnorm {
+		// Compress first, then normalize
+		filterChain := dynamicsFilter + "," + fmt.Sprintf(
+			"loudnorm=I=%s:TP=%s:LRA=5.0:measured_I=%s:measured_TP=%s:measured_LRA=%s:measured_thresh=%s:linear=true",
+			target, targetTp,
+			measured["input_i"], measured["input_tp"], measured["input_lra"], measured["input_thresh"],
+		)
+		args = append(args, "-af", filterChain)
+	} else if dynamicsFilter != "" {
+		// Just compression, no normalization
+		args = append(args, "-af", dynamicsFilter)
+	} else if config.UseLoudnorm { 
 		var filterChain string
 		if config.IsSpeech {
 			filterChain = fmt.Sprintf(
@@ -1931,7 +2314,7 @@ func (n *AudioNormalizer) logStatus(message string) {
 
 func isAudioFile(path string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
-	audioExts := []string{".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg", ".opus", ".wma", ".aiff", ".ape"}
+	audioExts := []string{".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg", ".opus", ".wma", ".aiff", ".aif", ".ape"}
 	
 	for _, audioExt := range audioExts {
 		if ext == audioExt {
