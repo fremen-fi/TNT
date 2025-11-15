@@ -331,6 +331,7 @@ type ProcessConfig struct {
 	dataCompLevel int8
 	DynamicsPreset string
 	bypassProc bool
+	EqTarget string
 }
 
 type DynamicsAnalysis struct {
@@ -1993,6 +1994,7 @@ func (n *AudioNormalizer) getProcessConfig() ProcessConfig {
 		dataCompLevel: int8(math.Round(n.dataCompLevel.Value)),
 		bypassProc: n.bypassProc.Checked,
 		DynamicsPreset: n.dynamicsDrop.Selected,
+		EqTarget: n.EqDrop.Selected,
 	}
 	
 	if n.advancedMode {
@@ -2286,6 +2288,22 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 	
 	var dynamicsAnalysis *DynamicsAnalysis
 	var bandAnalysis map[string]*FrequencyBandAnalysis
+	var eqBandAnalysis []FrequencyBand
+	
+	// EQ frequency response analysis
+	if config.EqTarget != "" && config.EqTarget != "Off" && !config.bypassProc {
+		eqBandAnalysis = n.analyzeFrequencyResponseBands(inputPath)
+		if eqBandAnalysis == nil || len(eqBandAnalysis) == 0 {
+			n.logStatus(fmt.Sprintf("✗ Failed to analyze frequency response: %s", filepath.Base(inputPath)))
+			return false
+		}
+		
+		n.logToFile(n.logFile, fmt.Sprintf("Frequency Response Analysis for %s:", filepath.Base(inputPath)))
+		for _, band := range eqBandAnalysis {
+			n.logToFile(n.logFile, fmt.Sprintf("  %s (%s): RMS=%.2f dB, Peak=%.2f dB, Crest=%.2f dB",
+				band.Frequency, band.FilterType, band.RMSLevel, band.PeakLevel, band.CrestFactor))
+		}
+	}
 	
 	if config.DynamicsPreset == "Broadcast" && !config.bypassProc {
 		bandAnalysis = n.analyzeFrequencyBands(inputPath)
@@ -2322,7 +2340,14 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 	if bandAnalysis != nil && len(bandAnalysis) > 0 && config.DynamicsPreset != "Off" {
 		multibandFilter = n.buildMultibandCompression(bandAnalysis, config.DynamicsPreset)
 	}
-
+	
+	// Build EQ filter chain from frequency response analysis
+	var eqFilter string
+	if eqBandAnalysis != nil && len(eqBandAnalysis) > 0 && config.EqTarget != "Off" {
+		eqFilter = n.buildEqFilter(eqBandAnalysis, config.EqTarget)
+		n.logToFile(n.logFile, fmt.Sprintf("Built EQ filter: %s", eqFilter))
+	}
+	
 	var loudnormFilterChain string
 	if config.UseLoudnorm && measured != nil {
 		if config.IsSpeech {
@@ -2340,21 +2365,26 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 		}
 	}
 	
-	// Build final filter chain
+	// Build final filter chain - EQ goes BEFORE dynamics/loudnorm
 	var finalFilterChain string
-	if multibandFilter != "" && loudnormFilterChain != "" {
-		finalFilterChain = multibandFilter + "," + loudnormFilterChain
-	} else if multibandFilter != "" {
-		finalFilterChain = multibandFilter
-	} else if dynamicsFilter != "" && loudnormFilterChain != "" {
-		finalFilterChain = dynamicsFilter + "," + loudnormFilterChain
+	var filterStages []string
+	
+	if eqFilter != "" {
+		filterStages = append(filterStages, eqFilter)
+	}
+	if multibandFilter != "" {
+		filterStages = append(filterStages, multibandFilter)
 	} else if dynamicsFilter != "" {
-		finalFilterChain = dynamicsFilter
-	} else if loudnormFilterChain != "" {
-		finalFilterChain = loudnormFilterChain
+		filterStages = append(filterStages, dynamicsFilter)
+	}
+	if loudnormFilterChain != "" {
+		filterStages = append(filterStages, loudnormFilterChain)
 	}
 	
-	// Add dithering for 16-bit PCM output
+	if len(filterStages) > 0 {
+		finalFilterChain = strings.Join(filterStages, ",")
+	}
+	
 	// Add dithering for 16-bit PCM output
 	if actualCodec == "PCM" && config.BitDepth == "16" {
 		if finalFilterChain != "" {
