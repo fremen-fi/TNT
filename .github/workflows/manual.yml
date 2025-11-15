@@ -25,10 +25,10 @@ jobs:
       - name: Download Built Installer Artifact
         uses: actions/download-artifact@v4
         with:
-          # IMPORTANT: Check your *upload* step's 'name' parameter. 
-          # We are assuming the artifact name is 'tnt-installer'. If this fails, 
-          # you MUST change this name to match the name used during upload.
-          name: tnt-installer 
+          # --- ARTIFACT NAME FIX ATTEMPT ---
+          # 'tnt-installer' failed. Trying the common default name: 'artifact'.
+          # If this still fails, you MUST check the GitHub UI or the UPLOAD workflow's YAML.
+          name: artifact 
           path: ${{ env.ARTIFACTS_PATH }} # Downloads the artifact contents to ./Distribution/
       
       # 2. Azure Trusted Signing Action
