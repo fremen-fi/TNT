@@ -2369,8 +2369,10 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 	var finalFilterChain string
 	var filterStages []string
 	
+	deEsser := "deesser=i=0.6:s=o"
+	
 	if eqFilter != "" {
-		filterStages = append(filterStages, eqFilter)
+		filterStages = append(filterStages, eqFilter, deEsser)
 	}
 	if multibandFilter != "" {
 		filterStages = append(filterStages, multibandFilter)

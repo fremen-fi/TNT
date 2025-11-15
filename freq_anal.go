@@ -76,9 +76,9 @@ func (n *AudioNormalizer) analyzeFrequencyResponseBands(inputPath string) []Freq
 		}
 
 		// Log raw FFmpeg output for debugging
-		n.logToFile(n.logFile, fmt.Sprintf("=== RAW OUTPUT for %s ===", band.Frequency))
-		n.logToFile(n.logFile, string(output))
-		n.logToFile(n.logFile, fmt.Sprintf("=== END RAW OUTPUT for %s ===", band.Frequency))
+		//n.logToFile(n.logFile, fmt.Sprintf("=== RAW OUTPUT for %s ===", band.Frequency))
+		//n.logToFile(n.logFile, string(output))
+		//n.logToFile(n.logFile, fmt.Sprintf("=== END RAW OUTPUT for %s ===", band.Frequency))
 
 		// Parse astats output for this band
 		stats := n.parseFrequencyBandStats(string(output))
@@ -247,7 +247,8 @@ func (n *AudioNormalizer) calculateTargetCurve(bands []FrequencyBand, eqTarget s
 		for i, band := range bands {
 			// Calculate pink noise reference level for this band
 			octavesFrom1k := n.getOctavesFrom1k(band.Frequency)
-			pinkNoiseRef := overallRMS + (octavesFrom1k * 3.0) // +3 dB per octave down from 1k
+			// Pink noise: +3 dB per octave down from 1kHz (more energy in bass)
+			pinkNoiseRef := overallRMS - (octavesFrom1k * 3.0)
 			
 			// If measured level exceeds reference, attenuate
 			if band.RMSLevel > pinkNoiseRef {
@@ -268,87 +269,132 @@ func (n *AudioNormalizer) calculateTargetCurve(bands []FrequencyBand, eqTarget s
 		}
 		
 	case "Speech":
-		// Speech: More aggressive cuts on problem frequencies
-		// Target 250Hz, 400Hz down by 3 dB below pink curve
-		// Target 800Hz, 3.2kHz down by 2 dB below pink curve
+		// Speech: Optimize for intelligibility
+		// Reference: Gemini tables (relative to pink noise curve)
 		
 		for i, band := range bands {
 			octavesFrom1k := n.getOctavesFrom1k(band.Frequency)
-			pinkNoiseRef := overallRMS + (octavesFrom1k * 3.0)
+			pinkNoiseRef := overallRMS - (octavesFrom1k * 3.0)
 			
-			// Apply specific offsets for speech clarity
-			var targetOffset float64
+			// Target adjustments relative to pink noise
+			var adjustment float64
 			switch band.Frequency {
-			case "50Hz", "100Hz":
-				targetOffset = -4.0 // Cut sub-bass/bass rumble
+			case "50Hz":
+				adjustment = -9.0  // -6 to -12 dB cut (using -9 dB)
+			case "100Hz":
+				adjustment = -4.5  // -3 to -6 dB cut (using -4.5 dB)
 			case "200Hz":
-				targetOffset = -3.0 // Cut mud
+				adjustment = +1.0  // 0 to +2 dB (using +1 dB for slight warmth)
 			case "400Hz":
-				targetOffset = -3.0 // Cut boxiness
+				adjustment = -4.0  // -3 to -5 dB cut (reduce boxiness)
 			case "800Hz":
-				targetOffset = -2.0 // Slight cut
+				adjustment = +0.5  // 0 to +1 dB (slight boost for projection)
+			case "1.6kHz":
+				adjustment = +3.0  // +2 to +4 dB boost (intelligibility core)
 			case "3.2kHz":
-				targetOffset = -2.0 // Control sibilance
+				adjustment = +2.0  // +1 to +3 dB boost (presence)
+			case "6.4kHz":
+				adjustment = +1.0  // 0 to +2 dB (add air)
+			case "12.8kHz":
+				adjustment = +1.5  // 0 to +3 dB (add openness)
+			case "12.8kHz+":
+				adjustment = 0.0   // Flat or slight high-pass
 			default:
-				targetOffset = 0.0
+				adjustment = 0.0
 			}
 			
-			speechTarget := pinkNoiseRef + targetOffset
+			targetLevel := pinkNoiseRef + adjustment
+			deviation := band.RMSLevel - targetLevel
 			
-			if band.RMSLevel > speechTarget {
-				excess := band.RMSLevel - speechTarget
-				attenuation := excess / 2.0 // 2:1 ratio
-				if attenuation > 10.0 {
-					attenuation = 10.0
-				}
-				targets[i] = band.RMSLevel - attenuation
-				n.logToFile(n.logFile, fmt.Sprintf("  %s: %.2f dB exceeds speech target (%.2f dB) by %.2f dB, attenuate %.2f dB", 
-					band.Frequency, band.RMSLevel, speechTarget, excess, attenuation))
-			} else {
+			// Apply 2:1 ratio
+			correction := deviation / 2.0
+			
+			// Limit correction to ±10 dB
+			if correction > 10.0 {
+				correction = 10.0
+			} else if correction < -10.0 {
+				correction = -10.0
+			}
+			
+			// Skip tiny adjustments
+			if correction > -0.5 && correction < 0.5 {
 				targets[i] = band.RMSLevel
+				continue
+			}
+			
+			targets[i] = band.RMSLevel - correction
+			
+			if correction > 0 {
+				n.logToFile(n.logFile, fmt.Sprintf("  %s: %.2f dB exceeds speech target (%.2f dB) by %.2f dB, attenuate %.2f dB", 
+					band.Frequency, band.RMSLevel, targetLevel, deviation, correction))
+			} else {
+				n.logToFile(n.logFile, fmt.Sprintf("  %s: %.2f dB below speech target (%.2f dB) by %.2f dB, boost %.2f dB", 
+					band.Frequency, band.RMSLevel, targetLevel, -deviation, -correction))
 			}
 		}
 		
 	case "Broadcast":
-		// Broadcast: Flat cuts + gentle Fletcher-Munson compensation on extremes
+		// Broadcast: Aggressive clarity for small speakers/phones
+		// Reference: Gemini tables (relative to pink noise curve)
 		
 		for i, band := range bands {
 			octavesFrom1k := n.getOctavesFrom1k(band.Frequency)
-			pinkNoiseRef := overallRMS + (octavesFrom1k * 3.0)
+			pinkNoiseRef := overallRMS - (octavesFrom1k * 3.0)
 			
-			// Apply broadcast-specific offsets
-			var targetOffset float64
+			// Target adjustments relative to pink noise
+			var adjustment float64
 			switch band.Frequency {
 			case "50Hz":
-				targetOffset = -3.0 // Cut sub-bass
-			case "100Hz", "200Hz":
-				targetOffset = -2.0 // Cut bass
+				adjustment = -12.0  // Aggressive high-pass
+			case "100Hz":
+				adjustment = -8.0   // -6 to -10 dB deep cut
+			case "200Hz":
+				adjustment = -0.5   // -2 to +1 dB (using -0.5 for clarity)
 			case "400Hz":
-				targetOffset = -3.0 // Cut boxiness
+				adjustment = -5.5   // -4 to -7 dB (eliminate boxiness)
 			case "800Hz":
-				targetOffset = -2.0
+				adjustment = +2.0   // +1 to +3 dB (forwardness)
+			case "1.6kHz":
+				adjustment = +4.5   // +3 to +6 dB (maximize intelligibility)
 			case "3.2kHz":
-				targetOffset = -2.0
-			case "12.8kHz", "12.8kHz+":
-				// Fletcher-Munson: gentle boost on highs (but implemented as less attenuation)
-				targetOffset = +1.0 // Allow 1 dB above curve
+				adjustment = +3.5   // +2 to +5 dB (presence and crispness)
+			case "6.4kHz":
+				adjustment = +3.0   // +2 to +4 dB (sparkle and polish)
+			case "12.8kHz":
+				adjustment = -1.5   // -3 to 0 dB (reduce hiss)
+			case "12.8kHz+":
+				adjustment = -1.5   // Slight roll-off
 			default:
-				targetOffset = 0.0
+				adjustment = 0.0
 			}
 			
-			broadcastTarget := pinkNoiseRef + targetOffset
+			targetLevel := pinkNoiseRef + adjustment
+			deviation := band.RMSLevel - targetLevel
 			
-			if band.RMSLevel > broadcastTarget {
-				excess := band.RMSLevel - broadcastTarget
-				attenuation := excess / 2.0
-				if attenuation > 10.0 {
-					attenuation = 10.0
-				}
-				targets[i] = band.RMSLevel - attenuation
-				n.logToFile(n.logFile, fmt.Sprintf("  %s: %.2f dB exceeds broadcast target (%.2f dB) by %.2f dB, attenuate %.2f dB", 
-					band.Frequency, band.RMSLevel, broadcastTarget, excess, attenuation))
-			} else {
+			// Apply 2:1 ratio
+			correction := deviation / 2.0
+			
+			// Limit correction to ±10 dB
+			if correction > 10.0 {
+				correction = 10.0
+			} else if correction < -10.0 {
+				correction = -10.0
+			}
+			
+			// Skip tiny adjustments
+			if correction > -0.5 && correction < 0.5 {
 				targets[i] = band.RMSLevel
+				continue
+			}
+			
+			targets[i] = band.RMSLevel - correction
+			
+			if correction > 0 {
+				n.logToFile(n.logFile, fmt.Sprintf("  %s: %.2f dB exceeds broadcast target (%.2f dB) by %.2f dB, attenuate %.2f dB", 
+					band.Frequency, band.RMSLevel, targetLevel, deviation, correction))
+			} else {
+				n.logToFile(n.logFile, fmt.Sprintf("  %s: %.2f dB below broadcast target (%.2f dB) by %.2f dB, boost %.2f dB", 
+					band.Frequency, band.RMSLevel, targetLevel, -deviation, -correction))
 			}
 		}
 		
