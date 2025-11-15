@@ -3,10 +3,7 @@
 fyne-cross/
 App/
 ffmpegSource/
-tnt.exe
 buildBlocks/
 *.dmg
-*.exe
 *.app
 Distribution/*.dmg
-Distribution/*.exe
