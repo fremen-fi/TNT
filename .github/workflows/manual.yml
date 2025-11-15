@@ -1,51 +1,26 @@
 name: Sign Existing Installer
 
 on:
-  # Triggers the workflow on push events to the 'main' branch
   push:
     branches: [ main ]
-  
-  # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
 jobs:
   sign_installer:
-    # This must be a Windows runner to correctly sign Windows executables
     runs-on: windows-latest
     
-    # 1. Define the directory where the installer artifact will be placed
-    env:
-      ARTIFACTS_PATH: 'Distribution/'
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-        # Needed to ensure the workspace root is correctly set
 
-      - name: Download Built Installer Artifact
-        uses: actions/download-artifact@v4
-        with:
-          # --- ARTIFACT NAME FIX ATTEMPT ---
-          # 'tnt-installer' failed. Trying the common default name: 'artifact'.
-          # If this still fails, you MUST check the GitHub UI or the UPLOAD workflow's YAML.
-          name: artifact 
-          path: ${{ env.ARTIFACTS_PATH }} # Downloads the artifact contents to ./Distribution/
-      
-      # 2. Azure Trusted Signing Action
       - name: Azure Trusted Signing
         uses: azure/trusted-signing-action@v0.3.16
         with:
-          # --- Authentication Secrets (Must be defined in GitHub Secrets) ---
           azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
           azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
-          
-          # --- Trusted Signing Configuration ---
           endpoint: ${{ secrets.AZURE_ENDPOINT }}
           trusted-signing-account-name: ${{ secrets.AZURE_CODE_SIGNING_NAME }}
           certificate-profile-name: ${{ secrets.AZURE_CERT_PROFILE_NAME }}
-          
-          # --- Target Files ---
-          # Targets the files in the downloaded directory (Distribution/)
-          files-folder: ${{ env.ARTIFACTS_PATH }} 
-          files-folder-filter: exe # Signs all .exe files found (like TNT.exe)
+          files-folder: Distribution/
+          files-folder-filter: exe
