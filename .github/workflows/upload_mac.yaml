@@ -20,4 +20,4 @@ jobs:
           curl -X PUT \
             -H "AccessKey: ${{ secrets.BUNNY_ACCESS_KEY }}" \
             --data-binary "@Distribution/TNT.dmg" \
-            "https://se.storage.bunnycdn.com/sw-stor/dev-TNT.dmg"
+            "https://se.storage.bunnycdn.com/sw-stor/TNT.dmg"
