@@ -1,0 +1,25 @@
+jobs:
+  build_and_sign:
+    runs-on: windows-latest 
+    
+    env:
+      ARTIFACTS_PATH: 'Distribution/'
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Project
+        run: dotnet publish --output ${{ env.ARTIFACTS_PATH }}
+      
+      - name: Azure Trusted Signing
+      uses: azure/trusted-signing-action@v0.3.16
+      with:
+        azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+        endpoint: ${{ secrets.AZURE_ENDPOINT }}
+        trusted-signing-account-name: ${{ secrets.AZURE_CODE_SIGNING_NAME }}
+        certificate-profile-name: ${{ secrets.AZURE_CERT_PROFILE_NAME }}
+        
+        # Sign all exes inside the folder
+        files-folder: ${{ env.ARTIFACTS_PATH }}
+        files-folder-filter: exe
