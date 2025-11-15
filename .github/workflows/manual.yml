@@ -27,3 +27,13 @@ jobs:
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
+
+      - name: Upload to BunnyCDN
+        run: |
+          $headers = @{
+            "AccessKey" = "${{ secrets.BUNNY_ACCESS_KEY }}"
+          }
+          $file = Get-ChildItem -Path Distribution\*.exe | Select-Object -First 1
+          $uri = "https://se.storage.bunnycdn.com/sw-stor/$($file.Name)"
+          Invoke-RestMethod -Uri $uri -Method Put -InFile $file.FullName -Headers $headers
+        shell: powershell
