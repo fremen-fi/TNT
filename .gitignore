@@ -4,6 +4,4 @@ fyne-cross/
 App/
 ffmpegSource/
 buildBlocks/
-*.dmg
 *.app
-Distribution/*.dmg
