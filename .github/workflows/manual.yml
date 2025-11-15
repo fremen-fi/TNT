@@ -3,6 +3,8 @@ name: Sign Existing Installer
 on:
   push:
     branches: [ main ]
+    paths:
+      - 'Distribution/TNT.exe'
   workflow_dispatch:
 
 jobs:
