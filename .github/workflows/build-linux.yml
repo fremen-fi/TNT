@@ -21,6 +21,14 @@ jobs:
       with:
         go-version: '1.23'
 
+    - name: Download build assets
+      run: |
+        mkdir -p buildBlocks ffmpegSource
+        curl -o buildBlocks/Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+        curl -o buildBlocks/tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+        curl -o buildBlocks/tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+        curl -o ffmpegSource/ffmpegLinuxAmd64 "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegLinuxAmd64?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+
     - name: Build
       run: go build -o tnt-linux-amd64
 
@@ -29,24 +37,3 @@ jobs:
       with:
         name: tnt-linux-amd64
         path: tnt-linux-amd64
-
-  build-arm64:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        ref: ${{ github.event.inputs.tag }}
-
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.23'
-
-    - name: Build
-      run: GOOS=linux GOARCH=arm64 go build -o tnt-linux-arm64
-
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: tnt-linux-arm64
-        path: tnt-linux-arm64
