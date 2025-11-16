@@ -45,6 +45,21 @@ jobs:
     - name: Build
       run: CGO_ENABLED=1 go build -o tnt-linux-amd64
 
+    - name: Create Desktop Entry File
+      run: |
+        # Creates the tnt.desktop file on the runner's disk
+        cat << EOF > tnt.desktop
+[Desktop Entry]
+Name=TNT App
+Comment=A description of what your application does.
+Exec=/opt/tnt/tnt-linux-amd64
+Icon=/opt/tnt/tntAppLogoForDark.png
+Terminal=false
+Type=Application
+Categories=Utility;Graphics;
+StartupNotify=true
+EOF
+
     - name: Create .deb Package
       run: |
         TAG_NAME="${{ github.event.inputs.tag }}"
@@ -67,8 +82,8 @@ Version: $VERSION_PART
 Section: utils
 Priority: optional
 Architecture: amd64
-Maintainer: Collins Group appsupport@collinsgroup.fi
-Description: TNT Plus
+Maintainer: Your Name <your.email@example.com>
+Description: TNT App - A cross-platform video processing utility.
 Depends: libgl1-mesa-dev, libx11-6, libxcursor1, libxrandr2, libxinerama1, libxi6, libxxf86vm1
 EOF
 
@@ -90,7 +105,7 @@ EOF
         # Copy icon from downloaded assets (used by the desktop file)
         cp buildBlocks/tntAppLogoForDark.png $DEB_DIR/opt/tnt/
 
-        # Copy the .desktop file from the repo root
+        # Copy the .desktop file from the repo root (now successfully created above)
         cp tnt.desktop $DEB_DIR/usr/share/applications/
 
         # 5. Build the .deb package
