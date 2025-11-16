@@ -30,7 +30,8 @@ jobs:
           libxcursor-dev \
           libxrandr-dev \
           libxinerama-dev \
-          libxi-dev
+          libxi-dev \
+          libxxf86vm-dev
         
     - name: Download build assets
       run: |
