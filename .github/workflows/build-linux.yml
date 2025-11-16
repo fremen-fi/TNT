@@ -49,3 +49,10 @@ jobs:
       with:
         name: tnt-linux-amd64
         path: tnt-linux-amd64
+        
+    - name: Upload to BunnyCDN
+      run: |
+        curl -X PUT \
+          -H "AccessKey: ${{ secrets.BUNNY_ACCESS_KEY }}" \
+          --data-binary "@tnt-linux-amd64" \
+          "https://se.storage.bunnycdn.com/sw-stor/dev-TNT"
