@@ -36,6 +36,118 @@ type VersionInfo struct {
 	ReleaseNotes string `json:"release_notes"`
 }
 
+type AudioNormalizer struct {
+	window       fyne.Window
+	fileList     *widget.List
+	files        []string
+	outputDir    string
+	processBtn   *widget.Button
+	progressBar  *widget.ProgressBar
+	statusLog    *widget.Entry
+	outputLabel  *widget.Label
+	
+	modeTabs *container.AppTabs
+	modeWarning *widget.Label
+
+	// Mode toggle
+	advancedMode bool
+	modeToggle   *widget.Check
+	
+	// Simple mode
+	simpleGroupButtons *widget.RadioGroup
+	simpleGroup *fyne.Container
+	
+	// Advanced mode
+	formatSelect   *widget.Select
+	sampleRate     *widget.Select
+	bitDepth       *widget.Select
+	bitrateEntry   *widget.Entry
+	normalizeTarget *widget.Entry
+	normalizeTargetTp *widget.Entry
+	advancedContainer *fyne.Container
+	
+	// Common
+	loudnormCheck *widget.Check
+	loudnormCustomCheck *widget.Check
+	loudnormLabel *widget.Label
+	writeTagsLabel *widget.Label
+	normalizeTargetLabel *widget.Label
+	normalizeTargetLabelTp *widget.Label
+	normalizationStandard string
+	IsSpeechCheck *widget.Check
+	writeTags *widget.Check
+	noTranscode *widget.Check
+	dataCompLevel *widget.Slider
+	
+	// dynamics
+	dynamicsLabel *widget.Label
+	dynamicsDrop *widget.Select
+	EqLabel *widget.Label
+	EqDrop *widget.Select
+	//dynNormLabel *widget.Label
+	dynNorm *widget.Check
+	dynNormLabel *widget.Label
+	bypassProc *widget.Check
+	
+	multibandFilter string
+	
+	logFile *os.File
+	
+	// watchmode
+	watchMode *widget.Check
+	watching bool
+	watcherStop chan bool
+	jobQueue chan string
+	inputDir string
+	watcherWarnLabel *widget.Label
+	
+	watcherMutex sync.Mutex
+	
+	// batch processing
+	batchMode bool
+	
+	menuWindow fyne.Window
+	menuMutex  sync.Mutex
+	
+	mutex sync.Mutex
+}
+
+type ProcessConfig struct {
+	Format      string
+	SampleRate  string
+	BitDepth    string
+	Bitrate     string
+	UseLoudnorm bool
+	CustomLoudnorm bool
+	IsSpeech bool
+	writeTags bool
+	noTranscode bool
+	originIsAAC bool
+	dataCompLevel int8
+	DynamicsPreset string
+	bypassProc bool
+	EqTarget string
+	DynNorm bool
+}
+
+type DynamicsAnalysis struct {
+	PeakLevel     float64
+	RMSPeak       float64
+	RMSTrough     float64
+	CrestFactor   float64
+	DynamicRange  float64
+	RMSLevel      float64
+	NoiseFloor float64
+}
+
+type FrequencyBandAnalysis struct {
+	BandName     string
+	PeakLevel    float64
+	RMSLevel     float64
+	CrestFactor  float64
+	DynamicRange float64
+}
+
 func checkForUpdates(currentVersion string, window fyne.Window, logFile *os.File) {
 	logToFile(logFile, "Starting update check...")
 	time.Sleep(500 * time.Millisecond)
@@ -242,113 +354,6 @@ func (n *AudioNormalizer) sendLogReport() {
 			fmt.Sprintf("Log file copied to your Desktop:\n%s\n\nPlease attach it to the email. If no native email client was found, none was opened. In this case, send the email manually.", filepath.Base(copyLocation)), 
 			n.window)
 	}
-}
-
-type AudioNormalizer struct {
-	window       fyne.Window
-	fileList     *widget.List
-	files        []string
-	outputDir    string
-	processBtn   *widget.Button
-	progressBar  *widget.ProgressBar
-	statusLog    *widget.Entry
-	outputLabel  *widget.Label
-	
-	modeTabs *container.AppTabs
-	modeWarning *widget.Label
-
-	// Mode toggle
-	advancedMode bool
-	modeToggle   *widget.Check
-	
-	// Simple mode
-	simpleGroupButtons *widget.RadioGroup
-	simpleGroup *fyne.Container
-	
-	// Advanced mode
-	formatSelect   *widget.Select
-	sampleRate     *widget.Select
-	bitDepth       *widget.Select
-	bitrateEntry   *widget.Entry
-	normalizeTarget *widget.Entry
-	normalizeTargetTp *widget.Entry
-	advancedContainer *fyne.Container
-	
-	// Common
-	loudnormCheck *widget.Check
-	loudnormCustomCheck *widget.Check
-	loudnormLabel *widget.Label
-	writeTagsLabel *widget.Label
-	normalizeTargetLabel *widget.Label
-	normalizeTargetLabelTp *widget.Label
-	normalizationStandard string
-	IsSpeechCheck *widget.Check
-	writeTags *widget.Check
-	noTranscode *widget.Check
-	dataCompLevel *widget.Slider
-	
-	// dynamics
-	dynamicsLabel *widget.Label
-	dynamicsDrop *widget.Select
-	EqLabel *widget.Label
-	EqDrop *widget.Select
-	bypassProc *widget.Check
-	
-	multibandFilter string
-	
-	logFile *os.File
-	
-	// watchmode
-	watchMode *widget.Check
-	watching bool
-	watcherStop chan bool
-	jobQueue chan string
-	inputDir string
-	watcherWarnLabel *widget.Label
-	
-	watcherMutex sync.Mutex
-	
-	// batch processing
-	batchMode bool
-	
-	menuWindow fyne.Window
-	menuMutex  sync.Mutex
-	
-	mutex sync.Mutex
-}
-
-type ProcessConfig struct {
-	Format      string
-	SampleRate  string
-	BitDepth    string
-	Bitrate     string
-	UseLoudnorm bool
-	CustomLoudnorm bool
-	IsSpeech bool
-	writeTags bool
-	noTranscode bool
-	originIsAAC bool
-	dataCompLevel int8
-	DynamicsPreset string
-	bypassProc bool
-	EqTarget string
-}
-
-type DynamicsAnalysis struct {
-	PeakLevel     float64
-	RMSPeak       float64
-	RMSTrough     float64
-	CrestFactor   float64
-	DynamicRange  float64
-	RMSLevel      float64
-}
-
-type FrequencyBandAnalysis struct {
-	BandName     string
-	PeakLevel    float64
-	RMSLevel     float64
-	CrestFactor  float64
-	DynamicRange float64
 }
 
 func (n *AudioNormalizer) analyzeDynamics(inputPath string) *DynamicsAnalysis {
@@ -651,6 +656,11 @@ func (n *AudioNormalizer) parseAstatsOutput(output string) *DynamicsAnalysis {
 	dynRe := regexp.MustCompile(`Dynamic range:\s+([-\d.]+)`)
 	if match := dynRe.FindStringSubmatch(output); len(match) > 1 {
 		result.DynamicRange, _ = strconv.ParseFloat(match[1], 64)
+	}
+	
+	noiseFloorRe := regexp.MustCompile(`Noise floor dB:\s+([-\d.]+)`)
+	if match := noiseFloorRe.FindStringSubmatch(output); len(match) > 1 {
+		result.NoiseFloor, _ = strconv.ParseFloat(match[1], 64)
 	}
 	
 	return result
@@ -1253,7 +1263,7 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 		}
 	})
 	n.IsSpeechCheck.SetChecked(false)
-	
+		
 	// Create format select after container exists
 	n.formatSelect = widget.NewSelect(getPlatformFormats(), func(value string) {
 		n.updateAdvancedControls()
@@ -1363,12 +1373,12 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 	n.dynamicsLabel = widget.NewLabel("Dynamics processing level")
 	n.dynamicsDrop = widget.NewSelect([]string{"Off", "Light", "Moderate", "Broadcast"}, nil)
 	n.dynamicsDrop.SetSelected("Off")
-	dynamicsTab := container.NewHBox(n.dynamicsLabel, n.dynamicsDrop)
+	dynamicsRow := container.NewHBox(n.dynamicsDrop, n.dynamicsLabel)
 	
 	n.EqLabel = widget.NewLabel("EQ target curve")
 	n.EqDrop = widget.NewSelect([]string{"Off", "Flat", "Speech", "Broadcast"}, nil)
 	n.EqDrop.SetSelected("Off")
-	eqTab := container.NewHBox(n.EqLabel, n.EqDrop)
+	eqRow := container.NewHBox(n.EqDrop, n.EqLabel)
 	
 	n.bypassProc = widget.NewCheck("Bypass all processing", func(checked bool) {
 		if checked {
@@ -1380,7 +1390,11 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 		}
 	})
 	
-	processTab := container.NewVBox(dynamicsTab, eqTab, n.bypassProc)
+	n.dynNorm = widget.NewCheck("", nil)
+	n.dynNormLabel = widget.NewLabel("Use dynamic normalization")
+	dynNormRow := container.NewHBox(n.dynNorm, n.dynNormLabel)
+	
+	processTab := container.NewVBox(dynamicsRow, eqRow, dynNormRow, widget.NewSeparator(), n.bypassProc)
 	
 	checkUpdateButton := widget.NewButton("Check for updates", func() {
 		go checkForUpdates(currentVersion, n.window, n.logFile)
@@ -1995,6 +2009,7 @@ func (n *AudioNormalizer) getProcessConfig() ProcessConfig {
 		bypassProc: n.bypassProc.Checked,
 		DynamicsPreset: n.dynamicsDrop.Selected,
 		EqTarget: n.EqDrop.Selected,
+		DynNorm: n.dynNorm.Checked,
 	}
 	
 	if n.advancedMode {
@@ -2316,7 +2331,7 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 		n.logToFile(n.logFile, fmt.Sprintf("Built filter: %s", multibandFilter))
 	}
 	
-	if config.DynamicsPreset != "" && config.DynamicsPreset != "Off" && !config.bypassProc && config.DynamicsPreset != "Broadcast" {
+	if !config.bypassProc && (config.DynNorm || (config.DynamicsPreset != "" && config.DynamicsPreset != "Off" && config.DynamicsPreset != "Broadcast")) {
 		dynamicsAnalysis = n.analyzeDynamics(inputPath)
 		if dynamicsAnalysis == nil {
 			n.logStatus(fmt.Sprintf("✗ Failed to analyze dynamics: %s", filepath.Base(inputPath)))
@@ -2348,6 +2363,16 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 		n.logToFile(n.logFile, fmt.Sprintf("Built EQ filter: %s", eqFilter))
 	}
 	
+	var dynParams *DynaudnormParams
+	if config.DynNorm {
+		dynParams = n.analyzeDynaudnormParams(dynamicsAnalysis)
+	}
+	
+	var dynaudnormFilter string
+	if dynParams != nil {
+		dynaudnormFilter = n.buildDynaudnormFilter(dynParams)
+	}
+	
 	var loudnormFilterChain string
 	if config.UseLoudnorm && measured != nil {
 		if config.IsSpeech {
@@ -2373,6 +2398,9 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 	
 	if eqFilter != "" {
 		filterStages = append(filterStages, eqFilter, deEsser)
+	}
+	if dynaudnormFilter != "" {
+		filterStages = append(filterStages, dynaudnormFilter)
 	}
 	if multibandFilter != "" {
 		filterStages = append(filterStages, multibandFilter)
