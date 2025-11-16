@@ -63,7 +63,7 @@ jobs:
       run: |
         TAG_NAME="${{ github.event.inputs.tag }}"
         # Extract version without 'v' prefix for Debian package versioning (e.g., v1.1.0 -> 1.1.0)
-        VERSION_PART="${TAG_NAME/v/}" 
+        VERSION_PART="${TAG_NAME/v/}"
         PACKAGE_NAME="tnt-app"
         DEB_DIR="$PACKAGE_NAME-package"
         DEB_FILE_NAME="${PACKAGE_NAME}_${VERSION_PART}_amd64.deb"
@@ -111,7 +111,8 @@ EOF
         # 5. Build the .deb package
         dpkg-deb --build $DEB_DIR $DEB_FILE_NAME
         
-        # Export the filename to be used by subsequent steps
+        # Export the filename to be used by subsequent steps - This line is now guaranteed
+        # to be correctly indented and following the previous commands.
         echo "DEB_FILE_NAME=$DEB_FILE_NAME" >> $GITHUB_ENV
 
     - name: Upload artifact
