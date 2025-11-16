@@ -46,19 +46,18 @@ jobs:
       run: CGO_ENABLED=1 go build -o tnt-linux-amd64
 
     - name: Create Desktop Entry File
+      # Using printf instead of cat << EOF to avoid YAML parsing issues on line 52
       run: |
-        # Creates the tnt.desktop file on the runner's disk
-        cat << EOF > tnt.desktop
-[Desktop Entry]
-Name=TNT App
-Comment=A description of what your application does.
-Exec=/opt/tnt/tnt-linux-amd64
-Icon=/opt/tnt/tntAppLogoForDark.png
-Terminal=false
-Type=Application
-Categories=Utility;Graphics;
-StartupNotify=true
-EOF
+        printf "%s\n" \
+          "[Desktop Entry]" \
+          "Name=TNT App" \
+          "Comment=A description of what your application does." \
+          "Exec=/opt/tnt/tnt-linux-amd64" \
+          "Icon=/opt/tnt/tntAppLogoForDark.png" \
+          "Terminal=false" \
+          "Type=Application" \
+          "Categories=Utility;Graphics;" \
+          "StartupNotify=true" > tnt.desktop
 
     - name: Create .deb Package
       run: |
