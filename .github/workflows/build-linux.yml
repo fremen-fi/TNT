@@ -82,8 +82,8 @@ Version: $VERSION_PART
 Section: utils
 Priority: optional
 Architecture: amd64
-Maintainer: Your Name <your.email@example.com>
-Description: TNT App - A cross-platform video processing utility.
+Maintainer: Collins Group appsupport@collinsgroup.fi
+Description: TNT Plus
 Depends: libgl1-mesa-dev, libx11-6, libxcursor1, libxrandr2, libxinerama1, libxi6, libxxf86vm1
 EOF
 
