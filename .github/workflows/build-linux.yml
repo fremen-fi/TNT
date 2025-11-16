@@ -23,7 +23,7 @@ jobs:
     - name: Install Linux Dependencies
       run: |
         sudo apt-get update
-        # Install necessary packages for GLFW/OpenGL (go-gl) dependencies
+        # Install necessary packages for GLFW/OpenGL (go-gl) dependencies, plus dpkg-dev for .deb creation
         sudo apt-get install -y \
           libgl-dev \
           libx11-dev \
@@ -31,7 +31,8 @@ jobs:
           libxrandr-dev \
           libxinerama-dev \
           libxi-dev \
-          libxxf86vm-dev
+          libxxf86vm-dev \
+          dpkg-dev
         
     - name: Download build assets
       run: |
@@ -44,15 +45,69 @@ jobs:
     - name: Build
       run: CGO_ENABLED=1 go build -o tnt-linux-amd64
 
+    - name: Create .deb Package
+      run: |
+        TAG_NAME="${{ github.event.inputs.tag }}"
+        # Extract version without 'v' prefix for Debian package versioning (e.g., v1.1.0 -> 1.1.0)
+        VERSION_PART="${TAG_NAME/v/}" 
+        PACKAGE_NAME="tnt-app"
+        DEB_DIR="$PACKAGE_NAME-package"
+        DEB_FILE_NAME="${PACKAGE_NAME}_${VERSION_PART}_amd64.deb"
+
+        # 1. Setup the directory structure
+        mkdir -p $DEB_DIR/DEBIAN
+        mkdir -p $DEB_DIR/opt/tnt
+        mkdir -p $DEB_DIR/usr/share/applications
+
+        # 2. Create the control file
+        # Dependencies listed here match the libs installed by the workflow
+        cat << EOF > $DEB_DIR/DEBIAN/control
+Package: $PACKAGE_NAME
+Version: $VERSION_PART
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: Collins Group appsupport@collinsgroup.fi
+Description: TNT Plus
+Depends: libgl1-mesa-dev, libx11-6, libxcursor1, libxrandr2, libxinerama1, libxi6, libxxf86vm1
+EOF
+
+        # 3. Create the post-installation script
+        cat << EOF > $DEB_DIR/DEBIAN/postinst
+#!/bin/bash
+# Set execute permission on the executable
+chmod +x /opt/tnt/tnt-linux-amd64
+# Update the desktop file database (ensures app appears in menu instantly)
+update-desktop-database
+exit 0
+EOF
+        # Make postinst executable
+        chmod 0755 $DEB_DIR/DEBIAN/postinst
+
+        # 4. Move the built executable, icon, and .desktop file into the structure
+        mv tnt-linux-amd64 $DEB_DIR/opt/tnt/
+        
+        # Copy icon from downloaded assets (used by the desktop file)
+        cp buildBlocks/tntAppLogoForDark.png $DEB_DIR/opt/tnt/
+
+        # Copy the .desktop file from the repo root
+        cp tnt.desktop $DEB_DIR/usr/share/applications/
+
+        # 5. Build the .deb package
+        dpkg-deb --build $DEB_DIR $DEB_FILE_NAME
+        
+        # Export the filename to be used by subsequent steps
+        echo "DEB_FILE_NAME=$DEB_FILE_NAME" >> $GITHUB_ENV
+
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: tnt-linux-amd64
-        path: tnt-linux-amd64
+        name: tnt-linux-deb-package
+        path: ${{ env.DEB_FILE_NAME }}
         
     - name: Upload to BunnyCDN
       run: |
         curl -X PUT \
           -H "AccessKey: ${{ secrets.BUNNY_ACCESS_KEY }}" \
-          --data-binary "@tnt-linux-amd64" \
-          "https://se.storage.bunnycdn.com/sw-stor/dev-TNT"
+          --data-binary "@${{ env.DEB_FILE_NAME }}" \
+          "https://se.storage.bunnycdn.com/sw-stor/${{ env.DEB_FILE_NAME }}"
