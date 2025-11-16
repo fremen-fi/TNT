@@ -46,7 +46,7 @@ jobs:
       run: CGO_ENABLED=1 go build -o tnt-linux-amd64
 
     - name: Create Desktop Entry File
-      # Using printf instead of cat << EOF to avoid YAML parsing issues on line 52
+      # Using printf instead of cat << EOF to avoid YAML parsing issues on lines like 52
       run: |
         printf "%s\n" \
           "[Desktop Entry]" \
@@ -74,8 +74,8 @@ jobs:
         mkdir -p $DEB_DIR/usr/share/applications
 
         # 2. Create the control file with updated metadata
-        # Dependencies listed here match the libs installed by the workflow
-        cat << EOF > $DEB_DIR/DEBIAN/control
+        # IMPORTANT: Use <<- EOF to strip leading indentation and fix YAML parser error.
+        cat <<- EOF > $DEB_DIR/DEBIAN/control
 Package: $PACKAGE_NAME
 Version: $VERSION_PART
 Section: utils
@@ -87,7 +87,8 @@ Depends: libgl1-mesa-dev, libx11-6, libxcursor1, libxrandr2, libxinerama1, libxi
 EOF
 
         # 3. Create the post-installation script
-        cat << EOF > $DEB_DIR/DEBIAN/postinst
+        # IMPORTANT: Use <<- EOF to strip leading indentation and fix YAML parser error.
+        cat <<- EOF > $DEB_DIR/DEBIAN/postinst
 #!/bin/bash
 # Set execute permission on the executable
 chmod +x /opt/tnt/tnt-linux-amd64
