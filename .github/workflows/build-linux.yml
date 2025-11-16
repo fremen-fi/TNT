@@ -74,7 +74,7 @@ EOF
         mkdir -p $DEB_DIR/opt/tnt
         mkdir -p $DEB_DIR/usr/share/applications
 
-        # 2. Create the control file
+        # 2. Create the control file with updated metadata
         # Dependencies listed here match the libs installed by the workflow
         cat << EOF > $DEB_DIR/DEBIAN/control
 Package: $PACKAGE_NAME
@@ -82,7 +82,7 @@ Version: $VERSION_PART
 Section: utils
 Priority: optional
 Architecture: amd64
-Maintainer: Collins Group appsupport@collinsgroup.fi
+Maintainer: Collins Group <appsupport@collinsgroup.fi>
 Description: TNT Plus
 Depends: libgl1-mesa-dev, libx11-6, libxcursor1, libxrandr2, libxinerama1, libxi6, libxxf86vm1
 EOF
