@@ -1,6 +1,9 @@
 name: Build Linux Release
 
 on:
+  push:
+    branches:
+      - hotfix/v1.1.0
   workflow_dispatch:
     inputs:
       tag:
@@ -12,10 +15,11 @@ jobs:
   build-amd64:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository at tag
+      - name: Checkout repository at correct ref
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.tag }}
+          # Use tag if dispatched manually, otherwise use latest commit on branch
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
 
       - name: Set up Go
         uses: actions/setup-go@v4
@@ -59,11 +63,16 @@ jobs:
             'Categories=AudioVideo;Audio;Sound;' \
             'StartupNotify=true' > tnt.desktop
 
-      - name: Create .deb Package
+      - name: Create .deb Package Structure
         run: |
           set -e
-          TAG_NAME="${{ github.event.inputs.tag }}"
-          VERSION_PART="${TAG_NAME#v}"  # Strip leading 'v' if present
+          TAG_INPUT="${{ github.event.inputs.tag }}"
+          if [ -n "$TAG_INPUT" ]; then
+            VERSION_PART="${TAG_INPUT#v}"
+          else
+            # Derive version from latest tag if not manual
+            VERSION_PART="$(git describe --tags --abbrev=0 | sed 's/^v//')"
+          fi
           PACKAGE_NAME="tnt-app"
           DEB_DIR="${PACKAGE_NAME}-package"
           DEB_FILE_NAME="${PACKAGE_NAME}_${VERSION_PART}_amd64.deb"
@@ -73,17 +82,9 @@ jobs:
           mkdir -p "$DEB_DIR/opt/tnt"
           mkdir -p "$DEB_DIR/usr/share/applications"
 
-          # 2. Create control file (NOTE: no -dev in Depends)
-          cat > "$DEB_DIR/DEBIAN/control" <<EOF
-Package: $PACKAGE_NAME
-Version: $VERSION_PART
-Section: audio
-Priority: optional
-Architecture: amd64
-Maintainer: Collins Group <appsupport@collinsgroup.fi>
-Description: TNT Audio Processor: Transcode, normalize, and tag audio. Built for broadcasters, used by everyone.
-Depends: libgl1, libx11-6, libxcursor1, libxrandr2, libxinerama1, libxi6, libxxf86vm1
-EOF
+          # 2. Prepare Debian control file
+          cp packaging/version.txt "$DEB_DIR/DEBIAN/control"
+          sed -i "s/VERSION_PLACEHOLDER/$VERSION_PART/" "$DEB_DIR/DEBIAN/control"
 
           # 3. Create postinst script
           cat > "$DEB_DIR/DEBIAN/postinst" <<EOF
@@ -102,6 +103,7 @@ EOF
           # 5. Build .deb package
           dpkg-deb --build "$DEB_DIR" "$DEB_FILE_NAME"
 
+          # 6. Set output for later steps
           echo "DEB_FILE_NAME=$DEB_FILE_NAME" >> $GITHUB_ENV
 
       - name: Show artifact .deb name (debug)
