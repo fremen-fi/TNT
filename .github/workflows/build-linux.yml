@@ -28,6 +28,11 @@ jobs:
         curl -o buildBlocks/tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
         curl -o buildBlocks/tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
         curl -o ffmpegSource/ffmpegLinuxAmd64 "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegLinuxAmd64?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+        
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libgl1-mesa-dev xorg-dev
 
     - name: Build
       run: go build -o tnt-linux-amd64
