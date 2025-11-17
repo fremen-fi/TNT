@@ -1,9 +1,6 @@
 name: Build Linux Release
 
 on:
-  push:
-    branches:
-      - hotfix/v1.1.0
   workflow_dispatch:
     inputs:
       tag:
@@ -15,111 +12,90 @@ jobs:
   build-amd64:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository at correct ref
-        uses: actions/checkout@v4
-        with:
-          # Use tag if dispatched manually, otherwise use latest commit on branch
-          ref: ${{ github.event.inputs.tag || github.ref_name }}
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.inputs.tag }}
 
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: '1.23'
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.23'
 
-      - name: Install Linux Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libgl1 \
-            libx11-6 \
-            libxcursor1 \
-            libxrandr2 \
-            libxinerama1 \
-            libxi6 \
-            libxxf86vm1 \
-            dpkg-dev
+    - name: Download build assets
+      run: |
+        mkdir -p buildBlocks ffmpegSource
+        curl -o buildBlocks/Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+        curl -o buildBlocks/tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+        curl -o buildBlocks/tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+        curl -o ffmpegSource/ffmpegLinuxAmd64 "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegLinuxAmd64?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
 
-      - name: Download build assets
-        run: |
-          mkdir -p buildBlocks ffmpegSource
-          curl -fsSL -o buildBlocks/Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          curl -fsSL -o buildBlocks/tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          curl -fsSL -o buildBlocks/tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          curl -fsSL -o ffmpegSource/ffmpegLinuxAmd64 "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegLinuxAmd64?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+    - name: Build
+      run: go build -o tnt-linux-amd64
 
-      - name: Build (Go)
-        run: CGO_ENABLED=1 go build -o tnt-linux-amd64
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: tnt-linux-amd64
+        path: tnt-linux-amd64
+        
+    - name: Create .desktop file
+      run: |
+        cat > tnt.desktop << 'DESKTOP_EOF'
+        [Desktop Entry]
+        Name=TNT
+        Comment=Professional audio processing tool
+        Exec=/usr/bin/tnt
+        Icon=tnt
+        Terminal=false
+        Type=Application
+        Categories=Audio;AudioVideo;
+        DESKTOP_EOF
 
-      - name: Create Desktop Entry File
-        run: |
-          printf '%s\n' \
-            '[Desktop Entry]' \
-            'Name=TNT Audio Processor' \
-            'Comment=Transcode, normalize, and tag audio for broadcasting and beyond.' \
-            'Exec=/opt/tnt/tnt-linux-amd64' \
-            'Icon=/opt/tnt/tntAppLogoForDark.png' \
-            'Terminal=false' \
-            'Type=Application' \
-            'Categories=AudioVideo;Audio;Sound;' \
-            'StartupNotify=true' > tnt.desktop
+    - name: Create postinst script
+      run: |
+        cat > postinst << 'POSTINST_EOF'
+        #!/bin/bash
+        chmod +x /usr/bin/tnt
+        update-desktop-database || true
+        exit 0
+        POSTINST_EOF
+        chmod +x postinst
 
-      - name: Create .deb Package Structure
-        run: |
-          set -e
-          TAG_INPUT="${{ github.event.inputs.tag }}"
-          if [ -n "$TAG_INPUT" ]; then
-            VERSION_PART="${TAG_INPUT#v}"
-          else
-            # Derive version from latest tag if not manual
-            VERSION_PART="$(git describe --tags --abbrev=0 | sed 's/^v//')"
-          fi
-          PACKAGE_NAME="tnt-app"
-          DEB_DIR="${PACKAGE_NAME}-package"
-          DEB_FILE_NAME="${PACKAGE_NAME}_${VERSION_PART}_amd64.deb"
+    - name: Build deb package
+      run: |
+        VERSION="${{ github.event.inputs.tag }}"
+        VERSION="${VERSION#v}"
+        DEB_DIR="tnt_${VERSION}_amd64"
+        
+        mkdir -p "${DEB_DIR}/DEBIAN"
+        mkdir -p "${DEB_DIR}/usr/bin"
+        mkdir -p "${DEB_DIR}/usr/share/applications"
+        
+        cp tnt-linux-amd64 "${DEB_DIR}/usr/bin/tnt"
+        cp tnt.desktop "${DEB_DIR}/usr/share/applications/"
+        cp postinst "${DEB_DIR}/DEBIAN/"
+        
+        cat > "${DEB_DIR}/DEBIAN/control" << 'CONTROL_EOF'
+        Package: tnt
+        Version: ${VERSION}
+        Section: sound
+        Priority: optional
+        Architecture: amd64
+        Maintainer: Collins Group <appsupport@collinsgroup.fi>
+        Description: TNT Plus - Professional audio processing tool
+         Audio normalization and transcoding tool built for broadcast professionals.
+        CONTROL_EOF
+        
+        sed -i "s/\${VERSION}/${VERSION}/" "${DEB_DIR}/DEBIAN/control"
+        
+        dpkg-deb --build "${DEB_DIR}"
+        echo "DEB_FILE=tnt_${VERSION}_amd64.deb" >> $GITHUB_ENV
 
-          # 1. Setup directory structure
-          mkdir -p "$DEB_DIR/DEBIAN"
-          mkdir -p "$DEB_DIR/opt/tnt"
-          mkdir -p "$DEB_DIR/usr/share/applications"
-
-          # 2. Prepare Debian control file
-          cp packaging/version.txt "$DEB_DIR/DEBIAN/control"
-          sed -i "s/VERSION_PLACEHOLDER/$VERSION_PART/" "$DEB_DIR/DEBIAN/control"
-
-          # 3. Create postinst script
-          cat > "$DEB_DIR/DEBIAN/postinst" <<EOF
-#!/bin/bash
-chmod +x /opt/tnt/tnt-linux-amd64
-update-desktop-database || true
-exit 0
-EOF
-          chmod 0755 "$DEB_DIR/DEBIAN/postinst"
-
-          # 4. Move assets
-          mv tnt-linux-amd64 "$DEB_DIR/opt/tnt/"
-          cp buildBlocks/tntAppLogoForDark.png "$DEB_DIR/opt/tnt/"
-          cp tnt.desktop "$DEB_DIR/usr/share/applications/"
-
-          # 5. Build .deb package
-          dpkg-deb --build "$DEB_DIR" "$DEB_FILE_NAME"
-
-          # 6. Set output for later steps
-          echo "DEB_FILE_NAME=$DEB_FILE_NAME" >> $GITHUB_ENV
-
-      - name: Show artifact .deb name (debug)
-        run: echo "${{ env.DEB_FILE_NAME }}"
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: tnt-linux-deb-package
-          path: ${{ env.DEB_FILE_NAME }}
-
-      - name: Upload to BunnyCDN
-        env:
-          BUNNY_ACCESS_KEY: ${{ secrets.BUNNY_ACCESS_KEY }}
-        run: |
-          curl -X PUT \
-            -H "AccessKey: $BUNNY_ACCESS_KEY" \
-            --data-binary "@${{ env.DEB_FILE_NAME }}" \
-            "https://se.storage.bunnycdn.com/sw-stor/${{ env.DEB_FILE_NAME }}"
+    - name: Upload to BunnyCDN
+      env:
+        BUNNY_ACCESS_KEY: ${{ secrets.BUNNY_ACCESS_KEY }}
+      run: |
+        curl -X PUT \
+          -H "AccessKey: $BUNNY_ACCESS_KEY" \
+          --data-binary "@${{ env.DEB_FILE }}" \
+          "https://se.storage.bunnycdn.com/sw-stor/${{ env.DEB_FILE }}"
