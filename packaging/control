@@ -1,0 +1,9 @@
+Package: tnt-app
+Version: VERSION_PLACEHOLDER
+Section: audio
+Priority: optional
+Architecture: amd64
+Maintainer: Collins Group <appsupport@collinsgroup.fi>
+Description: TNT Audio Processor
+ Transcode, normalize, and tag audio. Built for broadcasters, used by everyone.
+Depends: libgl1, libx11-6, libxcursor1, libxrandr2, libxinerama1, libxi6, libxxf86vm1
