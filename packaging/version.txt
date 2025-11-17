@@ -1,0 +1,7 @@
+	  - name: Prepare control file
+run: |
+  VERSION_PART="${{ github.event.inputs.tag }}"
+  VERSION_PART="${VERSION_PART#v}" # Remove leading v if present
+  mkdir -p tnt-app-package/DEBIAN
+  cp packaging/control tnt-app-package/DEBIAN/control
+  sed -i "s/VERSION_PLACEHOLDER/$VERSION_PART/" tnt-app-package/DEBIAN/control
