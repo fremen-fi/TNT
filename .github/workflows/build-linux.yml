@@ -1,4 +1,5 @@
 name: Build Linux Release
+
 on:
   workflow_dispatch:
     inputs:
@@ -11,116 +12,112 @@ jobs:
   build-amd64:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-      with:
-        ref: ${{ github.event.inputs.tag }}
+      - name: Checkout repository at tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag }}
 
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.23'
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.23'
 
-    - name: Install Linux Dependencies
-      run: |
-        sudo apt-get update
-        # Install necessary packages for GLFW/OpenGL (go-gl) dependencies, plus dpkg-dev for .deb creation
-        sudo apt-get install -y \
-          libgl-dev \
-          libx11-dev \
-          libxcursor-dev \
-          libxrandr-dev \
-          libxinerama-dev \
-          libxi-dev \
-          libxxf86vm-dev \
-          dpkg-dev
-        
-    - name: Download build assets
-      run: |
-        mkdir -p buildBlocks ffmpegSource
-        curl -o buildBlocks/Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-        curl -o buildBlocks/tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-        curl -o buildBlocks/tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-        curl -o ffmpegSource/ffmpegLinuxAmd64 "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegLinuxAmd64?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+      - name: Install Linux Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgl1 \
+            libx11-6 \
+            libxcursor1 \
+            libxrandr2 \
+            libxinerama1 \
+            libxi6 \
+            libxxf86vm1 \
+            dpkg-dev
 
-    - name: Build
-      run: CGO_ENABLED=1 go build -o tnt-linux-amd64
+      - name: Download build assets
+        run: |
+          mkdir -p buildBlocks ffmpegSource
+          curl -fsSL -o buildBlocks/Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          curl -fsSL -o buildBlocks/tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          curl -fsSL -o buildBlocks/tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          curl -fsSL -o ffmpegSource/ffmpegLinuxAmd64 "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegLinuxAmd64?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
 
-    - name: Create Desktop Entry File
-      # Using printf instead of cat << EOF to avoid YAML parsing issues on lines like 52
-      run: |
-        printf "%s\n" \
-          "[Desktop Entry]" \
-          "Name=TNT App" \
-          "Comment=A description of what your application does." \
-          "Exec=/opt/tnt/tnt-linux-amd64" \
-          "Icon=/opt/tnt/tntAppLogoForDark.png" \
-          "Terminal=false" \
-          "Type=Application" \
-          "Categories=Utility;Graphics;" \
-          "StartupNotify=true" > tnt.desktop
+      - name: Build (Go)
+        run: CGO_ENABLED=1 go build -o tnt-linux-amd64
 
-    - name: Create .deb Package
-      run: |
-        TAG_NAME="${{ github.event.inputs.tag }}"
-        # Extract version without 'v' prefix for Debian package versioning (e.g., v1.1.0 -> 1.1.0)
-        VERSION_PART="${TAG_NAME/v/}"
-        PACKAGE_NAME="tnt-app"
-        DEB_DIR="$PACKAGE_NAME-package"
-        DEB_FILE_NAME="${PACKAGE_NAME}_${VERSION_PART}_amd64.deb"
+      - name: Create Desktop Entry File
+        run: |
+          printf '%s\n' \
+            '[Desktop Entry]' \
+            'Name=TNT Audio Processor' \
+            'Comment=Transcode, normalize, and tag audio for broadcasting and beyond.' \
+            'Exec=/opt/tnt/tnt-linux-amd64' \
+            'Icon=/opt/tnt/tntAppLogoForDark.png' \
+            'Terminal=false' \
+            'Type=Application' \
+            'Categories=AudioVideo;Audio;Sound;' \
+            'StartupNotify=true' > tnt.desktop
 
-        # 1. Setup the directory structure
-        mkdir -p $DEB_DIR/DEBIAN
-        mkdir -p $DEB_DIR/opt/tnt
-        mkdir -p $DEB_DIR/usr/share/applications
+      - name: Create .deb Package
+        run: |
+          set -e
+          TAG_NAME="${{ github.event.inputs.tag }}"
+          VERSION_PART="${TAG_NAME#v}"  # Strip leading 'v' if present
+          PACKAGE_NAME="tnt-app"
+          DEB_DIR="${PACKAGE_NAME}-package"
+          DEB_FILE_NAME="${PACKAGE_NAME}_${VERSION_PART}_amd64.deb"
 
-        # 2. Create the control file
-        cat <<- EOF > $DEB_DIR/DEBIAN/control
+          # 1. Setup directory structure
+          mkdir -p "$DEB_DIR/DEBIAN"
+          mkdir -p "$DEB_DIR/opt/tnt"
+          mkdir -p "$DEB_DIR/usr/share/applications"
+
+          # 2. Create control file (NOTE: no -dev in Depends)
+          cat > "$DEB_DIR/DEBIAN/control" <<EOF
 Package: $PACKAGE_NAME
 Version: $VERSION_PART
-Section: utils
+Section: audio
 Priority: optional
 Architecture: amd64
 Maintainer: Collins Group <appsupport@collinsgroup.fi>
-Description: TNT Plus
-Depends: libgl1-mesa-dev, libx11-6, libxcursor1, libxrandr2, libxinerama1, libxi6, libxxf86vm1
+Description: TNT Audio Processor: Transcode, normalize, and tag audio. Built for broadcasters, used by everyone.
+Depends: libgl1, libx11-6, libxcursor1, libxrandr2, libxinerama1, libxi6, libxxf86vm1
 EOF
 
-        # 3. Create the post-installation script
-        cat <<- EOF > $DEB_DIR/DEBIAN/postinst
+          # 3. Create postinst script
+          cat > "$DEB_DIR/DEBIAN/postinst" <<EOF
 #!/bin/bash
-# Set execute permission on the executable
 chmod +x /opt/tnt/tnt-linux-amd64
-# Update the desktop file database (ensures app appears in menu instantly)
-update-desktop-database
+update-desktop-database || true
 exit 0
 EOF
-        # Make postinst executable
-        chmod 0755 $DEB_DIR/DEBIAN/postinst
+          chmod 0755 "$DEB_DIR/DEBIAN/postinst"
 
-        # 4. Move assets
-        mv tnt-linux-amd64 $DEB_DIR/opt/tnt/
-        
-        # Copy icon from downloaded assets
-        cp buildBlocks/tntAppLogoForDark.png $DEB_DIR/opt/tnt/
+          # 4. Move assets
+          mv tnt-linux-amd64 "$DEB_DIR/opt/tnt/"
+          cp buildBlocks/tntAppLogoForDark.png "$DEB_DIR/opt/tnt/"
+          cp tnt.desktop "$DEB_DIR/usr/share/applications/"
 
-        # Copy the .desktop file
-        cp tnt.desktop $DEB_DIR/usr/share/applications/
+          # 5. Build .deb package
+          dpkg-deb --build "$DEB_DIR" "$DEB_FILE_NAME"
 
-        # 5. Build the .deb package
-        dpkg-deb --build $DEB_DIR $DEB_FILE_NAME
-        
-        # Export the filename to be used by subsequent steps (Removed the duplicate line)
-        echo "DEB_FILE_NAME=$DEB_FILE_NAME" >> $GITHUB_ENV
+          echo "DEB_FILE_NAME=$DEB_FILE_NAME" >> $GITHUB_ENV
 
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: tnt-linux-deb-package
-        path: ${{ env.DEB_FILE_NAME }}
-        
-    - name: Upload to BunnyCDN
-      run: |
-        curl -X PUT \
-          -H "AccessKey: ${{ secrets.BUNNY_ACCESS_KEY }}" \
-          --data-binary "@${{ env.DEB_FILE_NAME }}" \
-          "https://se.storage.bunnycdn.com/sw-stor/${{ env.DEB_FILE_NAME }}"
+      - name: Show artifact .deb name (debug)
+        run: echo "${{ env.DEB_FILE_NAME }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tnt-linux-deb-package
+          path: ${{ env.DEB_FILE_NAME }}
+
+      - name: Upload to BunnyCDN
+        env:
+          BUNNY_ACCESS_KEY: ${{ secrets.BUNNY_ACCESS_KEY }}
+        run: |
+          curl -X PUT \
+            -H "AccessKey: $BUNNY_ACCESS_KEY" \
+            --data-binary "@${{ env.DEB_FILE_NAME }}" \
+            "https://se.storage.bunnycdn.com/sw-stor/${{ env.DEB_FILE_NAME }}"
