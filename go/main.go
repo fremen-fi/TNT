@@ -562,12 +562,20 @@ func (n *AudioNormalizer) buildBandAcompressor(band *FrequencyBandAnalysis, atta
 	if limiterCeilingDb > -1.0 {
 		limiterCeilingDb = -1.0
 	}
+	if limiterCeilingDb < -24.0 {  // alimiter minimum is 0.0625 = -24dBFS
+		limiterCeilingDb = -24.0
+	}
 	limiterLin := math.Pow(10, limiterCeilingDb/20)
 	
 	n.logToFile(n.logFile, fmt.Sprintf("Band %s: Threshold=%.1f dB, Ratio=%.1f:1, Limiter=%.1f dB, Makeup=%.1f dB",
 		band.BandName, adaptiveThresholdDb, ratio, limiterCeilingDb, makeupGainDb))
 	
-	return fmt.Sprintf("acompressor=threshold=%.6f:ratio=%.1f:attack=%.1f:release=%.1f:makeup=1.0:knee=2.8,alimiter=limit=%.6f:attack=5:release=50,volume=%.3fdB",
+	logBandComp := fmt.Sprintf("MBC: acompressor=threshold=%.6f:ratio=%.1f:attack=%.1f:release=%.1f:makeup=1.0:knee=2.8,alimiter=limit=%.6f:attack=5:release=50,volume=%.3f",
+	thresholdLin, ratio, attackMs, releaseMs, limiterLin, makeupLin)
+	
+	n.logToFile(n.logFile, logBandComp)
+	
+	return fmt.Sprintf("acompressor=threshold=%.6f:ratio=%.1f:attack=%.1f:release=%.1f:makeup=1.0:knee=2.8,alimiter=limit=%.6f:attack=5:release=50,volume=%.3f",
 		thresholdLin, ratio, attackMs, releaseMs, limiterLin, makeupLin)
 }
 
@@ -2099,7 +2107,12 @@ func (n *AudioNormalizer) process() {
 }
 
 func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bool {
+	n.logToFile(n.logFile, fmt.Sprintf("DEBUG config values: EqTarget='%s', DynamicsPreset='%s', bypassProc=%v", 
+	config.EqTarget, config.DynamicsPreset, config.bypassProc))
 	actualCodec := config.Format
+	var workingPath string = inputPath
+	var tempFiles []string
+	defer func() { cleanupTempFiles(tempFiles) }()
 	
 	if platformCodec := getPlatformCodecMap()[config.Format]; platformCodec != "" {
 		actualCodec = platformCodec
@@ -2163,30 +2176,9 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 	n.logStatus(fmt.Sprintf("Processing: %s, outputting to %s", filepath.Base(inputPath), outputPath))
 	
 	var measured map[string]string
-		
-	if config.writeTags {
-		// Use accurate ebur128 for tagging
-		measured = n.measureLoudnessEbuR128(inputPath)
-		if measured == nil {
-			n.logStatus(fmt.Sprintf("✗ Failed to measure: %s", filepath.Base(inputPath)))
-			return false
-		}
-	} else if config.UseLoudnorm {
-		// If using multiband compression, measure AFTER compression
-		if n.multibandFilter != "" {
-			measured = n.measureLoudnessFromFilter(inputPath, n.multibandFilter)
-		} else {
-			// No multiband, measure original
-			measured = n.measureLoudness(inputPath)
-		}
-		if measured == nil {
-			n.logStatus(fmt.Sprintf("✗ Failed to measure: %s", filepath.Base(inputPath)))
-			return false
-		}
-	}
 	
 	// Build ffmpeg command
-	args := []string{"-i", inputPath, "-vn"}
+	args := []string{"-i", workingPath, "-vn"}
 	
 	// Add format-specific arguments
 	if n.noTranscode.Checked {
@@ -2253,7 +2245,7 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 			}
 		}
 	}
-	
+		
 	// Add speech optimization for Opus
 	if config.IsSpeech && actualCodec == "libopus" && !n.noTranscode.Checked {
 		args = append(args, "-application", "voip")
@@ -2301,13 +2293,21 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 		targetTp = "-1"
 	}
 	
-	var dynamicsAnalysis *DynamicsAnalysis
-	var bandAnalysis map[string]*FrequencyBandAnalysis
-	var eqBandAnalysis []FrequencyBand
+	// Staged processing with temp files (192kHz 64-bit to prevent clipping)
+	var eqFilter string
+	var dynamicsFilter string
+	var multibandFilter string
+	var dynaudnormFilter string
 	
-	// EQ frequency response analysis
+	n.logToFile(n.logFile, fmt.Sprintf("DEBUG: About to check EQ section - config.EqTarget='%s', config.EqTarget != ''=%v, config.EqTarget != 'Off'=%v, !config.bypassProc=%v", 
+	config.EqTarget, 
+	config.EqTarget != "", 
+	config.EqTarget != "Off", 
+	!config.bypassProc))
+	
+	// Stage 1: EQ analysis and application
 	if config.EqTarget != "" && config.EqTarget != "Off" && !config.bypassProc {
-		eqBandAnalysis = n.analyzeFrequencyResponseBands(inputPath)
+		eqBandAnalysis := n.analyzeFrequencyResponseBands(workingPath)
 		if eqBandAnalysis == nil || len(eqBandAnalysis) == 0 {
 			n.logStatus(fmt.Sprintf("✗ Failed to analyze frequency response: %s", filepath.Base(inputPath)))
 			return false
@@ -2318,60 +2318,173 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 			n.logToFile(n.logFile, fmt.Sprintf("  %s (%s): RMS=%.2f dB, Peak=%.2f dB, Crest=%.2f dB",
 				band.Frequency, band.FilterType, band.RMSLevel, band.PeakLevel, band.CrestFactor))
 		}
+		
+		eqFilter = n.buildEqFilter(eqBandAnalysis, config.EqTarget)
+		n.logToFile(n.logFile, fmt.Sprintf("DEBUG: eqFilter value = '%s'", eqFilter))
+
+		if eqFilter != "" {
+			eqTempPath := filepath.Join(os.TempDir(), fmt.Sprintf("tnt_eq_%d.wav", time.Now().UnixNano()))
+			tempFiles = append(tempFiles, eqTempPath)
+			n.logToFile(n.logFile, fmt.Sprintf("Added temp file: %s (total: %d)", eqTempPath, len(tempFiles)))
+			
+			n.logStatus(fmt.Sprintf("→ Applying EQ: %s", filepath.Base(inputPath)))
+			cmd := exec.Command(ffmpegPath,
+				"-i", workingPath,
+				"-af", eqFilter,
+				"-ar", "192000",
+				"-acodec", "pcm_f64le",
+				"-y", eqTempPath,
+			)
+			hideWindow(cmd)
+			
+			if err := cmd.Run(); err != nil {
+				n.logStatus(fmt.Sprintf("✗ Failed to apply EQ: %s", filepath.Base(inputPath)))
+				n.logToFile(n.logFile, fmt.Sprintf("EQ application failed: %v", err))
+				return false
+			}
+			
+			workingPath = eqTempPath
+			n.logStatus(fmt.Sprintf("✓ EQ applied: %s", filepath.Base(inputPath)))
+		}
 	}
 	
-	if config.DynamicsPreset == "Broadcast" && !config.bypassProc {
-		bandAnalysis = n.analyzeFrequencyBands(inputPath)
-		if bandAnalysis == nil || len(bandAnalysis) == 0 {
-			n.logStatus(fmt.Sprintf("✗ Failed to analyze dynamics: %s", filepath.Base(inputPath)))
+	n.logToFile(n.logFile, "")
+	n.logToFile(n.logFile, "")
+	n.logToFile(n.logFile, fmt.Sprintf("args: %s", args))
+	n.logToFile(n.logFile, "")
+	
+	n.logToFile(n.logFile, fmt.Sprintf("DEBUG: About to check Dynamics section - config.DynamicsPreset='%s', config.DynamicsPreset != ''=%v, config.DynamicsPreset != 'Off'=%v, !config.bypassProc=%v",
+	config.DynamicsPreset,
+	config.DynamicsPreset != "",
+	config.DynamicsPreset != "Off",
+	!config.bypassProc))
+	
+	// Stage 2: Dynamics analysis and application
+	if config.DynamicsPreset != "" && config.DynamicsPreset != "Off" && !config.bypassProc {
+		if config.DynamicsPreset == "Broadcast" {
+			// MBC: analyze frequency bands from EQ'd file
+			bandAnalysis := n.analyzeFrequencyBands(workingPath)
+			if bandAnalysis == nil || len(bandAnalysis) == 0 {
+				n.logStatus(fmt.Sprintf("✗ Failed to analyze frequency bands: %s", filepath.Base(inputPath)))
+				return false
+			}
+			multibandFilter = n.buildMultibandCompression(bandAnalysis, config.DynamicsPreset)
+		} else {
+			// SBC: analyze dynamics from EQ'd file
+			dynamicsAnalysis := n.analyzeDynamics(workingPath)
+			if dynamicsAnalysis == nil {
+				n.logStatus(fmt.Sprintf("✗ Failed to analyze dynamics: %s", filepath.Base(inputPath)))
+				return false
+			}
+			
+			n.logToFile(n.logFile, fmt.Sprintf("Dynamics Analysis for %s:", filepath.Base(inputPath)))
+			n.logToFile(n.logFile, fmt.Sprintf("  Peak Level: %.2f dBFS", dynamicsAnalysis.PeakLevel))
+			n.logToFile(n.logFile, fmt.Sprintf("  RMS Peak: %.2f dBFS", dynamicsAnalysis.RMSPeak))
+			n.logToFile(n.logFile, fmt.Sprintf("  RMS Trough: %.2f dBFS", dynamicsAnalysis.RMSTrough))
+			n.logToFile(n.logFile, fmt.Sprintf("  RMS Level: %.2f dBFS", dynamicsAnalysis.RMSLevel))
+			n.logToFile(n.logFile, fmt.Sprintf("  Crest Factor: %.2f", dynamicsAnalysis.CrestFactor))
+			n.logToFile(n.logFile, fmt.Sprintf("  Dynamic Range: %.2f dB", dynamicsAnalysis.DynamicRange))
+			
+			dynamicsFilter = n.calculateAdaptiveCompression(dynamicsAnalysis, config.DynamicsPreset)
+		}
+		
+		// Apply whichever compression filter was built
+		compressionFilter := multibandFilter
+		if compressionFilter == "" {
+			compressionFilter = dynamicsFilter
+		}
+		
+		if compressionFilter != "" {
+			compTempPath := filepath.Join(os.TempDir(), fmt.Sprintf("tnt_comp_%d.wav", time.Now().UnixNano()))
+			tempFiles = append(tempFiles, compTempPath)
+			n.logToFile(n.logFile, fmt.Sprintf("Added temp file: %s (total: %d)", compTempPath, len(tempFiles)))
+			
+			n.logStatus(fmt.Sprintf("→ Applying compression: %s", filepath.Base(inputPath)))
+			cmd := exec.Command(ffmpegPath,
+				"-i", workingPath,
+				"-af", compressionFilter,
+				"-ar", "192000",
+				"-acodec", "pcm_f64le",
+				"-y", compTempPath,
+			)
+			hideWindow(cmd)
+			
+			if err := cmd.Run(); err != nil {
+				n.logStatus(fmt.Sprintf("✗ Failed to apply compression: %s", filepath.Base(inputPath)))
+				n.logToFile(n.logFile, fmt.Sprintf("Compression application failed: %v", err))
+				return false
+			}
+			
+			workingPath = compTempPath
+			n.logStatus(fmt.Sprintf("✓ Compression applied: %s", filepath.Base(inputPath)))
+		}
+	}
+	
+	n.logToFile(n.logFile, "")
+	n.logToFile(n.logFile, "")
+	n.logToFile(n.logFile, fmt.Sprintf("args: %s", args))
+	n.logToFile(n.logFile, "")
+	
+	// Stage 3: Dynaudnorm if enabled (analyze and apply to temp before loudness measurement)
+	if config.DynNorm && !config.bypassProc {
+		dynamicsAnalysis := n.analyzeDynamics(workingPath)
+		if dynamicsAnalysis == nil {
+			n.logStatus(fmt.Sprintf("✗ Failed to analyze for dynaudnorm: %s", filepath.Base(inputPath)))
 			return false
 		}
 		
-		multibandFilter := n.buildMultibandCompression(bandAnalysis, config.DynamicsPreset)
-		n.logToFile(n.logFile, fmt.Sprintf("Built filter: %s", multibandFilter))
-	}
-	
-	if !config.bypassProc && (config.DynNorm || (config.DynamicsPreset != "" && config.DynamicsPreset != "Off" && config.DynamicsPreset != "Broadcast")) {
-		dynamicsAnalysis = n.analyzeDynamics(inputPath)
-		if dynamicsAnalysis == nil {
-			n.logStatus(fmt.Sprintf("✗ Failed to analyze dynamics: %s", filepath.Base(inputPath)))
-			return false
+		dynParams := n.analyzeDynaudnormParams(dynamicsAnalysis)
+		if dynParams != nil {
+			dynaudnormFilter = n.buildDynaudnormFilter(dynParams)
+			
+			if dynaudnormFilter != "" {
+				dynTempPath := filepath.Join(os.TempDir(), fmt.Sprintf("tnt_dyn_%d.wav", time.Now().UnixNano()))
+				tempFiles = append(tempFiles, dynTempPath)
+				n.logToFile(n.logFile, fmt.Sprintf("Added temp file: %s (total: %d)", dynTempPath, len(tempFiles)))
+				
+				n.logStatus(fmt.Sprintf("→ Applying dynamic normalization: %s", filepath.Base(inputPath)))
+				cmd := exec.Command(ffmpegPath,
+					"-i", workingPath,
+					"-af", dynaudnormFilter,
+					"-ar", "192000",
+					"-acodec", "pcm_f64le",
+					"-y", dynTempPath,
+				)
+				hideWindow(cmd)
+				
+				if err := cmd.Run(); err != nil {
+					n.logStatus(fmt.Sprintf("✗ Failed to apply dynaudnorm: %s", filepath.Base(inputPath)))
+					n.logToFile(n.logFile, fmt.Sprintf("Dynaudnorm application failed: %v", err))
+					return false
+				}
+				
+				workingPath = dynTempPath
+				n.logStatus(fmt.Sprintf("✓ Dynamic normalization applied: %s", filepath.Base(inputPath)))
+				
+				// Now measure the fully processed audio for loudnorm
+				if config.UseLoudnorm {
+					measured = n.measureLoudness(workingPath)
+					if measured == nil {
+						n.logStatus(fmt.Sprintf("✗ Failed to measure: %s", filepath.Base(inputPath)))
+						return false
+					}
+				}
+				
+				if config.writeTags {
+					measured = n.measureLoudnessEbuR128(workingPath)
+					if measured == nil {
+						n.logStatus(fmt.Sprintf("✗ Failed to measure: %s", filepath.Base(inputPath)))
+						return false
+					}
+				}
+			}
 		}
-		n.logToFile(n.logFile, fmt.Sprintf("Dynamics Analysis for %s:", filepath.Base(inputPath)))
-		n.logToFile(n.logFile, fmt.Sprintf("  Peak Level: %.2f dBFS", dynamicsAnalysis.PeakLevel))
-		n.logToFile(n.logFile, fmt.Sprintf("  RMS Peak: %.2f dBFS", dynamicsAnalysis.RMSPeak))
-		n.logToFile(n.logFile, fmt.Sprintf("  RMS Trough: %.2f dBFS", dynamicsAnalysis.RMSTrough))
-		n.logToFile(n.logFile, fmt.Sprintf("  RMS Level: %.2f dBFS", dynamicsAnalysis.RMSLevel))
-		n.logToFile(n.logFile, fmt.Sprintf("  Crest Factor: %.2f", dynamicsAnalysis.CrestFactor))
-		n.logToFile(n.logFile, fmt.Sprintf("  Dynamic Range: %.2f dB", dynamicsAnalysis.DynamicRange))
 	}
 	
-	var dynamicsFilter string
-	if dynamicsAnalysis != nil && config.DynamicsPreset != "Off" {
-		dynamicsFilter = n.calculateAdaptiveCompression(dynamicsAnalysis, config.DynamicsPreset)
-	}
-	
-	var multibandFilter string
-	if bandAnalysis != nil && len(bandAnalysis) > 0 && config.DynamicsPreset != "Off" {
-		multibandFilter = n.buildMultibandCompression(bandAnalysis, config.DynamicsPreset)
-	}
-	
-	// Build EQ filter chain from frequency response analysis
-	var eqFilter string
-	if eqBandAnalysis != nil && len(eqBandAnalysis) > 0 && config.EqTarget != "Off" {
-		eqFilter = n.buildEqFilter(eqBandAnalysis, config.EqTarget)
-		n.logToFile(n.logFile, fmt.Sprintf("Built EQ filter: %s", eqFilter))
-	}
-	
-	var dynParams *DynaudnormParams
-	if config.DynNorm {
-		dynParams = n.analyzeDynaudnormParams(dynamicsAnalysis)
-	}
-	
-	var dynaudnormFilter string
-	if dynParams != nil {
-		dynaudnormFilter = n.buildDynaudnormFilter(dynParams)
-	}
+	n.logToFile(n.logFile, "")
+	n.logToFile(n.logFile, "")
+	n.logToFile(n.logFile, fmt.Sprintf("args: %s", args))
+	n.logToFile(n.logFile, "")
 	
 	var loudnormFilterChain string
 	if config.UseLoudnorm && measured != nil {
@@ -2390,23 +2503,15 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 		}
 	}
 	
-	// Build final filter chain - EQ goes BEFORE dynamics/loudnorm
+	n.logToFile(n.logFile, "")
+	n.logToFile(n.logFile, "")
+	n.logToFile(n.logFile, fmt.Sprintf("args: %s", args))
+	n.logToFile(n.logFile, "")
+	
+	// Build final filter chain - only normalization and dynaudnorm (EQ/compression already applied to workingPath)
 	var finalFilterChain string
 	var filterStages []string
 	
-	deEsser := "deesser=i=0.6:s=o"
-	
-	if eqFilter != "" {
-		filterStages = append(filterStages, eqFilter, deEsser)
-	}
-	if dynaudnormFilter != "" {
-		filterStages = append(filterStages, dynaudnormFilter)
-	}
-	if multibandFilter != "" {
-		filterStages = append(filterStages, multibandFilter)
-	} else if dynamicsFilter != "" {
-		filterStages = append(filterStages, dynamicsFilter)
-	}
 	if loudnormFilterChain != "" {
 		filterStages = append(filterStages, loudnormFilterChain)
 	}
@@ -2414,6 +2519,8 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 	if len(filterStages) > 0 {
 		finalFilterChain = strings.Join(filterStages, ",")
 	}
+	
+	args[1] = workingPath
 	
 	// Add dithering for 16-bit PCM output
 	if actualCodec == "PCM" && config.BitDepth == "16" {
@@ -2423,6 +2530,11 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 			finalFilterChain = "aresample=resampler=soxr:dither_method=triangular"
 		}
 	}
+	
+	n.logToFile(n.logFile, "")
+	n.logToFile(n.logFile, "")
+	n.logToFile(n.logFile, fmt.Sprintf("args: %s", args))
+	n.logToFile(n.logFile, "")
 	
 	if finalFilterChain != "" {
 		args = append(args, "-af", finalFilterChain)
@@ -2487,6 +2599,7 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 	if err != nil {
 		n.logStatus(fmt.Sprintf("✗ Failed: %s - %v", filepath.Base(inputPath), err))
 		n.logToFile(n.logFile, fmt.Sprintf("Failed %s - %v", filepath.Base(inputPath), err))
+		n.logToFile(n.logFile, fmt.Sprintf("Error path - cleaning up %d temp files", len(tempFiles)))
 		return false
 	}
 	
@@ -2522,14 +2635,13 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 		n.logToFile(n.logFile, fmt.Sprintf("LUFS I target: %s", target))
 		n.logToFile(n.logFile, fmt.Sprintf("TP target: %s", targetTp))
 	}
-	
-	// REMOVED: if err := cmd.Run() - CombinedOutput already ran the command!
-	
+		
 	n.logStatus(fmt.Sprintf("✓ Success: %s", filepath.Base(inputPath)))
 	n.logToFile(n.logFile, fmt.Sprintf("✓ Success: %s", filepath.Base(inputPath)))
 	n.logStatus("")
 	n.logStatus(fmt.Sprintf("Your files can be found from %s. Thank you.", n.outputDir))
 	
+	n.logToFile(n.logFile, fmt.Sprintf("Cleaning up %d temp files", len(tempFiles)))
 	return true
 }
 
@@ -2762,5 +2874,14 @@ func (a *appleTheme) Size(name fyne.ThemeSizeName) float32 {
 		return 12
 	default:
 		return theme.DefaultTheme().Size(name)
+	}
+}
+
+func cleanupTempFiles(files []string) {
+	for _, file := range files {
+		if err := os.Remove(file); err != nil {
+			// Log but don't fail - cleanup is best-effort
+			fmt.Printf("Failed to remove temp file %s: %v\n", file, err)
+		}
 	}
 }
