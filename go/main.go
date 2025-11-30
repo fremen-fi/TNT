@@ -507,16 +507,16 @@ func (n *AudioNormalizer) buildMultibandCompression(bandAnalysis map[string]*Fre
 	
 	switch preset {
 	case "Light":
-		attackMs = 100
+		attackMs = 150
 		releaseMs = 300
 		baseRatio = 2.5
 	case "Moderate":
-		attackMs = 150
-		releaseMs = 400
+		attackMs = 100
+		releaseMs = 200
 		baseRatio = 4.0
 	case "Broadcast":
-		attackMs = 200
-		releaseMs = 500
+		attackMs = 10
+		releaseMs = 20
 		baseRatio = 6.0
 	}
 	
@@ -564,6 +564,8 @@ func (n *AudioNormalizer) buildBandAcompressor(band *FrequencyBandAnalysis, atta
 			limiterLin = 1.0
 		}
 		
+		
+		
 		return fmt.Sprintf("acompressor=threshold=%.6f:ratio=%.1f:attack=%.1f:release=%.1f:makeup=1.0,alimiter=limit=%.6f:attack=5:release=50,volume=%.3f",
 			thresholdLin, ratio, attackMs, releaseMs, limiterLin, makeup)
 	}
@@ -576,10 +578,10 @@ func (n *AudioNormalizer) buildBandAcompressor(band *FrequencyBandAnalysis, atta
 	} else {
 		// Normal material: use RMS + offset approach
 		thresholdOffset := 6.0
-		adaptiveThresholdDb = band.RMSLevel + thresholdOffset
-		if adaptiveThresholdDb > fallbackThresholdDb {
-			adaptiveThresholdDb = fallbackThresholdDb
+		if mods.RatioMultiplier > 3.0 {  // DS > 21
+			thresholdOffset = 3.0
 		}
+		adaptiveThresholdDb = band.RMSLevel + thresholdOffset
 	}
 	
 	thresholdLin := math.Pow(10, adaptiveThresholdDb/20)
@@ -600,19 +602,23 @@ func (n *AudioNormalizer) buildBandAcompressor(band *FrequencyBandAnalysis, atta
 	makeupLin := math.Pow(10, makeupGainDb/20)
 	
 	// Limiter ceiling
-	limiterCeilingDb := band.PeakLevel
+	var limiterCeilingDb float64
 	
 	// For very compressed material with hot peaks, raise limiter above peak
 	if mods.RatioMultiplier < 0.3 {
-		limiterCeilingDb = band.PeakLevel - 0.2  // limit 0.2 dB
-		if limiterCeilingDb > 0.0 {  // Cap at -0 dBFS to avoid insanity
+		limiterCeilingDb = band.PeakLevel - 0.2
+		if limiterCeilingDb > 0.0 {
 			limiterCeilingDb = 0.0
 		}
+	} else {
+		// Normal/dynamic material: set limiter below peak
+		limiterCeilingDb = band.PeakLevel - 2.0
 	}
 	
-	if limiterCeilingDb < -24.0 {  // alimiter minimum is 0.0625 = -24dBFS
+	if limiterCeilingDb < -24.0 {
 		limiterCeilingDb = -24.0
 	}
+	
 	limiterLin := math.Pow(10, limiterCeilingDb/20)
 	
 	if limiterLin > 1.0 {
@@ -625,16 +631,48 @@ func (n *AudioNormalizer) buildBandAcompressor(band *FrequencyBandAnalysis, atta
 	ratio *= mods.RatioMultiplier
 	
 	// Scale limiter timing with DS modifiers too
-	limiterAttack := 5.0 * mods.AttackMultiplier
-	limiterRelease := 50.0 * mods.ReleaseMultiplier
+	limiterAttack := 25.0 * mods.AttackMultiplier
+	limiterRelease := 150.0 * mods.ReleaseMultiplier
 	
 	// Clamp ratio minimum
-	if ratio < 1.1 {
-		ratio = 1.1
+	if ratio < 1.0 {
+		ratio = 1.0
 	}
 	
 	if ratio > 20.0 {
 		ratio = 20.0
+	}
+	
+	if thresholdLin < 0.00099 {
+		thresholdLin = 0.00099
+	}
+	
+	if thresholdLin > 1.0 {
+		thresholdLin = 1.0
+	}
+	
+	if attackMs < 0.01 {
+		attackMs = 0.01
+	}
+	
+	if attackMs > 2000.0 {
+		attackMs = 2000.0
+	}
+	
+	if releaseMs < 0.01 {
+		releaseMs = 0.01
+	}
+	
+	if releaseMs > 9000.0 {
+		releaseMs = 9000.0
+	}
+	
+	if makeupLin < 1.0 {
+		makeupLin = 1.0
+	}
+	
+	if makeupLin > 64.0 {
+		makeupLin =64.0
 	}
 	
 	n.logToFile(n.logFile, fmt.Sprintf("Band %s: Threshold=%.1f dB, Ratio=%.1f:1, Limiter=%.1f dB, Makeup=%.1f dB",
@@ -756,7 +794,7 @@ func (n *AudioNormalizer) calculateAdaptiveCompression(analysis *DynamicsAnalysi
 	var limiterCeiling float64
 	
 	// Decide if we need limiting based on crest factor
-	needsLimiting := analysis.CrestFactor > 4.0
+	needsLimiting := analysis.CrestFactor > 5.0
 	
 	switch preset {
 	case "Light":
@@ -773,7 +811,7 @@ func (n *AudioNormalizer) calculateAdaptiveCompression(analysis *DynamicsAnalysi
 		ratio = getBaseRatioFromCrest(analysis.CrestFactor)
 		attack = 20
 		release = 200
-		limiterCeiling = -0.5
+		limiterCeiling = -1.0
 		
 	case "Broadcast":
 		// Aggressive limiting and compression
@@ -781,7 +819,7 @@ func (n *AudioNormalizer) calculateAdaptiveCompression(analysis *DynamicsAnalysi
 		ratio = getBaseRatioFromCrest(analysis.CrestFactor)
 		attack = 10
 		release = 30
-		limiterCeiling = -0.3
+		limiterCeiling = -1.0
 	}
 	
 	// Apply DS modifiers if available
@@ -795,6 +833,9 @@ func (n *AudioNormalizer) calculateAdaptiveCompression(analysis *DynamicsAnalysi
 			mods.AttackMultiplier, mods.ReleaseMultiplier, mods.RatioMultiplier))
 	}
 	
+	makeupGain := calculateMakeupGain(analysis, threshold, ratio)
+	thresholdLin := math.Pow(10, threshold/20)
+	
 	if ratio < 1.1 {
 		ratio = 1.1
 	}
@@ -803,20 +844,66 @@ func (n *AudioNormalizer) calculateAdaptiveCompression(analysis *DynamicsAnalysi
 		ratio = 20.0
 	}
 	
-	makeupGain := calculateMakeupGain(analysis, threshold, ratio)
+	if thresholdLin > 1.0 {
+		threshold = 1.0
+	}
+	
+	if thresholdLin < 0.00097563 {
+		threshold = 0.00097563
+	}
+	
+	if ratio < 1.0 {
+		ratio = 1.0
+	}
+	
+	if ratio > 20.0 {
+		ratio = 20.0
+	}
+	
+	if attack > 2000.0 {
+		attack = 2000.0
+	}
+	
+	if attack < 0.01 {
+		attack = 0.01
+	}
+	
+	if release < 0.01 {
+		release = 0.01
+	}
+	
+	if release > 9000.0 {
+		release = 9000.0
+	}
+	
+	if makeupGain < 1.0 {
+		makeupGain = 1.0
+	}
+	
+	if makeupGain > 64.0 {
+		makeupGain = 64.0
+	}
+	
 	
 	// Build filter chain
 	var filterChain string
 	
 	// Always add compression
 	filterChain = fmt.Sprintf(
-		"acompressor=threshold=%.1fdB:ratio=%.1f:attack=%.0f:release=%.0f:knee=2.5:makeup=%.1f",
-		threshold, ratio, attack, release, makeupGain,
+		"acompressor=threshold=%.1f:ratio=%.1f:attack=%.0f:release=%.0f:knee=2.5:makeup=%.1f",
+		thresholdLin, ratio, attack, release, makeupGain,
 	)
+	
+	n.logToFile(n.logFile, "")
+	n.logToFile(n.logFile, filterChain)
+	n.logToFile(n.logFile, "")
 	
 	// Add limiter if needed
 	if needsLimiting {
 		limiterLinear := math.Pow(10, limiterCeiling/20)
+		if limiterLinear > 1.0 {
+			limiterLinear = 1.0
+		}
 		filterChain += fmt.Sprintf(",alimiter=limit=%.6f:attack=5:release=50", limiterLinear)
 	}
 	
@@ -1706,14 +1793,18 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 			n.logToFile(n.logFile, fmt.Sprintf("Added temp file: %s (total: %d)", eqTempPath, len(tempFiles)))
 			
 			n.logStatus(fmt.Sprintf("→ Applying EQ: %s", filepath.Base(inputPath)))
+			
+			fullEqFilter := eqFilter + ",deesser=i=0.6:s=o"
+			
 			cmd := exec.Command(ffmpegPath,
 				"-i", workingPath,
-				"-af", eqFilter,
+				"-af", fullEqFilter,
 				"-ar", "192000",
 				"-acodec", "pcm_f64le",
 				"-y", eqTempPath,
 			)
 			hideWindow(cmd)
+			n.logToFile(n.logFile, fmt.Sprintf("%s", cmd))
 			
 			if err := cmd.Run(); err != nil {
 				n.logStatus(fmt.Sprintf("✗ Failed to apply EQ: %s", filepath.Base(inputPath)))
@@ -1746,7 +1837,63 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 		}
 	}
 	
-	// Stage 2: Dynamics analysis and application
+	// Stage 2: Dynaudnorm if enabled (analyze and apply to temp before loudness measurement)
+	if config.DynNorm && !config.bypassProc {
+		dynamicsAnalysis := n.analyzeDynamics(workingPath)
+		if dynamicsAnalysis == nil {
+			n.logStatus(fmt.Sprintf("✗ Failed to analyze for dynaudnorm: %s", filepath.Base(inputPath)))
+			return false
+		}
+		
+		dynParams := n.analyzeDynaudnormParams(dynamicsAnalysis)
+		if dynParams != nil {
+			dynaudnormFilter = n.buildDynaudnormFilter(dynParams)
+			
+			if dynaudnormFilter != "" {
+				dynTempPath := filepath.Join(os.TempDir(), fmt.Sprintf("tnt_dyn_%d.wav", time.Now().UnixNano()))
+				tempFiles = append(tempFiles, dynTempPath)
+				n.logToFile(n.logFile, fmt.Sprintf("Added temp file: %s (total: %d)", dynTempPath, len(tempFiles)))
+				
+				n.logStatus(fmt.Sprintf("→ Applying dynamic normalization: %s", filepath.Base(inputPath)))
+				cmd := exec.Command(ffmpegPath,
+					"-i", workingPath,
+					"-af", dynaudnormFilter,
+					"-ar", "192000",
+					"-acodec", "pcm_f64le",
+					"-y", dynTempPath,
+				)
+				hideWindow(cmd)
+				
+				if err := cmd.Run(); err != nil {
+					n.logStatus(fmt.Sprintf("✗ Failed to apply dynaudnorm: %s", filepath.Base(inputPath)))
+					n.logToFile(n.logFile, fmt.Sprintf("Dynaudnorm application failed: %v", err))
+					return false
+				}
+				
+				workingPath = dynTempPath
+				n.logStatus(fmt.Sprintf("✓ Dynamic normalization applied: %s", filepath.Base(inputPath)))
+				
+				// Now measure the fully processed audio for loudnorm
+				if config.UseLoudnorm {
+					measured = n.measureLoudness(workingPath)
+					if measured == nil {
+						n.logStatus(fmt.Sprintf("✗ Failed to measure: %s", filepath.Base(inputPath)))
+						return false
+					}
+				}
+				
+				if config.writeTags {
+					measured = n.measureLoudnessEbuR128(workingPath)
+					if measured == nil {
+						n.logStatus(fmt.Sprintf("✗ Failed to measure: %s", filepath.Base(inputPath)))
+						return false
+					}
+				}
+			}
+		}
+	}
+	
+	// Stage 3: Dynamics analysis and application
 	if config.DynamicsPreset != "" && config.DynamicsPreset != "Off" && !config.bypassProc {
 		
 		// Check if MBC needs input attenuation for hot peaks
@@ -1827,8 +1974,15 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 			n.logToFile(n.logFile, fmt.Sprintf("Added temp file: %s (total: %d)", compTempPath, len(tempFiles)))
 			
 			n.logStatus(fmt.Sprintf("→ Applying compression: %s", filepath.Base(inputPath)))
+			
+			// Use attenuatedPath if MBC created it, otherwise workingPath
+			compressionInput := workingPath
+			if config.DynamicsPreset == "Broadcast" && attenuatedPath != workingPath {
+				compressionInput = attenuatedPath
+			}
+			
 			cmd := exec.Command(ffmpegPath,
-				"-i", workingPath,
+				"-i", compressionInput,
 				"-af", compressionFilter,
 				"-ar", "192000",
 				"-acodec", "pcm_f64le",
@@ -1848,68 +2002,12 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 	}
 	
 	n.logToFile(n.logFile, "")
-	n.logToFile(n.logFile, "")
 	n.logToFile(n.logFile, fmt.Sprintf("args: %s", args))
 	n.logToFile(n.logFile, "")
+
 	
-	// Stage 3: Dynaudnorm if enabled (analyze and apply to temp before loudness measurement)
-	if config.DynNorm && !config.bypassProc {
-		dynamicsAnalysis := n.analyzeDynamics(workingPath)
-		if dynamicsAnalysis == nil {
-			n.logStatus(fmt.Sprintf("✗ Failed to analyze for dynaudnorm: %s", filepath.Base(inputPath)))
-			return false
-		}
-		
-		dynParams := n.analyzeDynaudnormParams(dynamicsAnalysis)
-		if dynParams != nil {
-			dynaudnormFilter = n.buildDynaudnormFilter(dynParams)
-			
-			if dynaudnormFilter != "" {
-				dynTempPath := filepath.Join(os.TempDir(), fmt.Sprintf("tnt_dyn_%d.wav", time.Now().UnixNano()))
-				tempFiles = append(tempFiles, dynTempPath)
-				n.logToFile(n.logFile, fmt.Sprintf("Added temp file: %s (total: %d)", dynTempPath, len(tempFiles)))
-				
-				n.logStatus(fmt.Sprintf("→ Applying dynamic normalization: %s", filepath.Base(inputPath)))
-				cmd := exec.Command(ffmpegPath,
-					"-i", workingPath,
-					"-af", dynaudnormFilter,
-					"-ar", "192000",
-					"-acodec", "pcm_f64le",
-					"-y", dynTempPath,
-				)
-				hideWindow(cmd)
-				
-				if err := cmd.Run(); err != nil {
-					n.logStatus(fmt.Sprintf("✗ Failed to apply dynaudnorm: %s", filepath.Base(inputPath)))
-					n.logToFile(n.logFile, fmt.Sprintf("Dynaudnorm application failed: %v", err))
-					return false
-				}
-				
-				workingPath = dynTempPath
-				n.logStatus(fmt.Sprintf("✓ Dynamic normalization applied: %s", filepath.Base(inputPath)))
-				
-				// Now measure the fully processed audio for loudnorm
-				if config.UseLoudnorm {
-					measured = n.measureLoudness(workingPath)
-					if measured == nil {
-						n.logStatus(fmt.Sprintf("✗ Failed to measure: %s", filepath.Base(inputPath)))
-						return false
-					}
-				}
-				
-				if config.writeTags {
-					measured = n.measureLoudnessEbuR128(workingPath)
-					if measured == nil {
-						n.logStatus(fmt.Sprintf("✗ Failed to measure: %s", filepath.Base(inputPath)))
-						return false
-					}
-				}
-			}
-		}
-	}
-	
-	// Stage 4: Measure loudness for normalization (if not already measured by DynNorm)
-	if config.UseLoudnorm && measured == nil {
+	// Stage 4: Measure loudness for normalization (after all processing)
+	if config.UseLoudnorm {
 		measured = n.measureLoudness(workingPath)
 		if measured == nil {
 			n.logStatus(fmt.Sprintf("✗ Failed to measure: %s", filepath.Base(inputPath)))
@@ -1917,14 +2015,14 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 		}
 	}
 	
-	if config.writeTags && measured == nil {
+	if config.writeTags {
 		measured = n.measureLoudnessEbuR128(workingPath)
 		if measured == nil {
 			n.logStatus(fmt.Sprintf("✗ Failed to measure: %s", filepath.Base(inputPath)))
 			return false
 		}
-	}	
-	n.logToFile(n.logFile, "")
+	}
+		
 	n.logToFile(n.logFile, "")
 	n.logToFile(n.logFile, fmt.Sprintf("args: %s", args))
 	n.logToFile(n.logFile, "")

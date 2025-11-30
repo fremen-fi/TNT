@@ -393,21 +393,21 @@ func (n *AudioNormalizer) calculateTargetCurve(bands []FrequencyBand, eqTarget s
 			case "50Hz":
 				adjustment = -9.0  // -6 to -12 dB cut (using -9 dB)
 			case "100Hz":
-				adjustment = -4.5  // -3 to -6 dB cut (using -4.5 dB)
+				adjustment = -3.5  // -3 to -6 dB cut (using -4.5 dB)
 			case "200Hz":
 				adjustment = +1.0  // 0 to +2 dB (using +1 dB for slight warmth)
 			case "400Hz":
-				adjustment = -4.0  // -3 to -5 dB cut (reduce boxiness)
+				adjustment = -3.0  // -3 to -5 dB cut (reduce boxiness)
 			case "800Hz":
 				adjustment = +0.5  // 0 to +1 dB (slight boost for projection)
 			case "1.6kHz":
 				adjustment = +3.0  // +2 to +4 dB boost (intelligibility core)
 			case "3.2kHz":
-				adjustment = +2.0  // +1 to +3 dB boost (presence)
+				adjustment = +1.0  // +1 to +3 dB boost (presence)
 			case "6.4kHz":
 				adjustment = +1.0  // 0 to +2 dB (add air)
 			case "12.8kHz":
-				adjustment = +1.5  // 0 to +3 dB (add openness)
+				adjustment = +0.5  // 0 to +3 dB (add openness)
 			case "12.8kHz+":
 				adjustment = 0.0   // Flat or slight high-pass
 			default:
@@ -456,25 +456,25 @@ func (n *AudioNormalizer) calculateTargetCurve(bands []FrequencyBand, eqTarget s
 			var adjustment float64
 			switch band.Frequency {
 			case "50Hz":
-				adjustment = -12.0  // Aggressive high-pass
+				adjustment = -6.0  // Aggressive high-pass
 			case "100Hz":
-				adjustment = -8.0   // -6 to -10 dB deep cut
+				adjustment = -4.0   // -6 to -10 dB deep cut
 			case "200Hz":
 				adjustment = -0.5   // -2 to +1 dB (using -0.5 for clarity)
 			case "400Hz":
-				adjustment = -5.5   // -4 to -7 dB (eliminate boxiness)
+				adjustment = -3.5   // -4 to -7 dB (eliminate boxiness)
 			case "800Hz":
 				adjustment = +2.0   // +1 to +3 dB (forwardness)
 			case "1.6kHz":
-				adjustment = +4.5   // +3 to +6 dB (maximize intelligibility)
+				adjustment = +2.5   // +3 to +6 dB (maximize intelligibility)
 			case "3.2kHz":
-				adjustment = +3.5   // +2 to +5 dB (presence and crispness)
+				adjustment = +2.5   // +2 to +5 dB (presence and crispness)
 			case "6.4kHz":
-				adjustment = +3.0   // +2 to +4 dB (sparkle and polish)
+				adjustment = +1.0   // +2 to +4 dB (sparkle and polish)
 			case "12.8kHz":
 				adjustment = -1.5   // -3 to 0 dB (reduce hiss)
 			case "12.8kHz+":
-				adjustment = -1.5   // Slight roll-off
+				adjustment = -3.5   // Slight roll-off
 			default:
 				adjustment = 0.0
 			}
@@ -543,7 +543,7 @@ func (n *AudioNormalizer) getOctavesFrom1k(freqStr string) float64 {
 	case "12.8kHz":
 		return 3.68   // log2(12800/1000)
 	case "12.8kHz+":
-		return 4.5    // Approximate for >12.8kHz
+		return 4.0    // Approximate for >12.8kHz
 	default:
 		return 0.0
 	}

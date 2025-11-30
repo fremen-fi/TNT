@@ -89,7 +89,7 @@ func (n *AudioNormalizer) parseDynamicsScore(output string) *DynamicsScoreAnalys
 type CompressionModifiers struct {
 	AttackMultiplier  float64
 	ReleaseMultiplier float64
-	RatioMultiplier   float64  // The target ratio (1.4, 2.1, 4.0, etc)
+	RatioMultiplier   float64  // The target ratio (1.4, 2.1, 4.0, or over 4.0 up to 8.0 etc)
 }
 
 func getCompressionModifiers(ds float64) CompressionModifiers {
@@ -103,7 +103,7 @@ func getCompressionModifiers(ds float64) CompressionModifiers {
 		// Very compressed - slow down, barely compress
 		mods.AttackMultiplier = 4.0
 		mods.ReleaseMultiplier = 4.0
-		mods.RatioMultiplier = 0.25
+		mods.RatioMultiplier = 0.15
 		
 	} else if ds < 15.0 {
 		// Moderately compressed - slow down, gentle
