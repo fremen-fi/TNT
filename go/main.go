@@ -634,13 +634,27 @@ func (n *AudioNormalizer) buildBandAcompressor(band *FrequencyBandAnalysis, atta
 	limiterAttack := 25.0 * mods.AttackMultiplier
 	limiterRelease := 150.0 * mods.ReleaseMultiplier
 	
+	knee := 4.0
+	
 	// Clamp ratio minimum
 	if ratio < 1.0 {
 		ratio = 1.0
+		knee = 1.0
+	} else if ratio < 2.0 {
+		knee = 2.0
+	} else if ratio < 4.0 {
+		knee = 3.0
+	} else if ratio < 8.0 {
+		knee = 4.0
+	} else if ratio < 12.0 {
+		knee = 6.0
+	} else if ratio > 12.0 {
+		knee = 7.5
 	}
 	
 	if ratio > 20.0 {
 		ratio = 20.0
+		knee = 8.0
 	}
 	
 	if thresholdLin < 0.00099 {
@@ -678,13 +692,13 @@ func (n *AudioNormalizer) buildBandAcompressor(band *FrequencyBandAnalysis, atta
 	n.logToFile(n.logFile, fmt.Sprintf("Band %s: Threshold=%.1f dB, Ratio=%.1f:1, Limiter=%.1f dB, Makeup=%.1f dB",
 		band.BandName, adaptiveThresholdDb, ratio, limiterCeilingDb, makeupGainDb))
 	
-	logBandComp := fmt.Sprintf("MBC: acompressor=threshold=%.6f:ratio=%.1f:attack=%.1f:release=%.1f:makeup=1.0:knee=6.8,alimiter=limit=%.6f:attack=%.0f:release=%.0f:level=false,volume=%.3f",
-	thresholdLin, ratio, attackMs, releaseMs, limiterLin, limiterAttack, limiterRelease, makeupLin)
+	logBandComp := fmt.Sprintf("MBC: acompressor=threshold=%.6f:ratio=%.1f:attack=%.1f:release=%.1f:makeup=1.0:knee=%.1f,alimiter=limit=%.6f:attack=%.0f:release=%.0f:level=false,volume=%.3f",
+	thresholdLin, ratio, attackMs, releaseMs, knee, limiterLin, limiterAttack, limiterRelease, makeupLin)
 	
 	n.logToFile(n.logFile, logBandComp)
 	
-	return fmt.Sprintf("acompressor=threshold=%.6f:ratio=%.1f:attack=%.1f:release=%.1f:makeup=1.0:knee=6.8,alimiter=limit=%.6f:attack=%.0f:release=%.0f:level=false,volume=%.3f",
-	thresholdLin, ratio, attackMs, releaseMs, limiterLin, limiterAttack, limiterRelease, makeupLin)
+	return fmt.Sprintf("acompressor=threshold=%.6f:ratio=%.1f:attack=%.1f:release=%.1f:makeup=1.0:knee=%1.f,alimiter=limit=%.6f:attack=%.0f:release=%.0f:level=false,volume=%.3f",
+	thresholdLin, ratio, attackMs, releaseMs, knee, limiterLin, limiterAttack, limiterRelease, makeupLin)
 	
 	//return fmt.Sprintf("acompressor=threshold=%.6f:ratio=%.1f:attack=%.1f:release=%.1f:makeup=1.0:knee=6.8,volume=%.3f",
 	//thresholdLin, ratio, attackMs, releaseMs, makeupLin)
@@ -801,16 +815,16 @@ func (n *AudioNormalizer) calculateAdaptiveCompression(analysis *DynamicsAnalysi
 		// Gentle compression on peaks
 		threshold = analysis.RMSLevel + 6.0
 		ratio = getBaseRatioFromCrest(analysis.CrestFactor)
-		attack = 30
-		release = 100
+		attack = 100
+		release = 250
 		limiterCeiling = -1.0
 		
 	case "Moderate":
 		// Standard broadcast compression
 		threshold = analysis.RMSLevel + 5.0
 		ratio = getBaseRatioFromCrest(analysis.CrestFactor)
-		attack = 20
-		release = 200
+		attack = 40
+		release = 150
 		limiterCeiling = -1.0
 		
 	case "Broadcast":
@@ -836,24 +850,29 @@ func (n *AudioNormalizer) calculateAdaptiveCompression(analysis *DynamicsAnalysi
 	makeupGain := calculateMakeupGain(analysis, threshold, ratio)
 	thresholdLin := math.Pow(10, threshold/20)
 	
-	if ratio < 1.1 {
-		ratio = 1.1
-	}
-	
-	if ratio > 20.0 {
-		ratio = 20.0
-	}
+	knee := 4.0
 	
 	if thresholdLin > 1.0 {
-		threshold = 1.0
+		thresholdLin = 1.0
 	}
 	
-	if thresholdLin < 0.00097563 {
-		threshold = 0.00097563
+	if thresholdLin < 0.00099 {
+		thresholdLin = 0.00099
 	}
 	
 	if ratio < 1.0 {
 		ratio = 1.0
+		knee = 1.0
+	} else if ratio < 2.0 {
+		knee = 2.0
+	} else if ratio < 4.0 {
+		knee = 3.0
+	} else if ratio < 8.0 {
+		knee = 4.0
+	} else if ratio < 12.0 {
+		knee = 6.0
+	} else if ratio > 12.0 {
+		knee = 7.5
 	}
 	
 	if ratio > 20.0 {
@@ -890,8 +909,8 @@ func (n *AudioNormalizer) calculateAdaptiveCompression(analysis *DynamicsAnalysi
 	
 	// Always add compression
 	filterChain = fmt.Sprintf(
-		"acompressor=threshold=%.1f:ratio=%.1f:attack=%.0f:release=%.0f:knee=2.5:makeup=%.1f",
-		thresholdLin, ratio, attack, release, makeupGain,
+		"acompressor=threshold=%.6f:ratio=%.1f:attack=%.0f:release=%.0f:knee=%.1f:makeup=%.1f",
+		thresholdLin, ratio, attack, release, knee, makeupGain,
 	)
 	
 	n.logToFile(n.logFile, "")
@@ -1794,7 +1813,7 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 			
 			n.logStatus(fmt.Sprintf("→ Applying EQ: %s", filepath.Base(inputPath)))
 			
-			fullEqFilter := eqFilter + ",deesser=i=0.6:s=o"
+			fullEqFilter := eqFilter + ",deesser=i=1.0:m=1.0:f=0.05:s=o"
 			
 			cmd := exec.Command(ffmpegPath,
 				"-i", workingPath,

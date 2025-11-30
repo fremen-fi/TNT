@@ -44,16 +44,16 @@ func (n *AudioNormalizer) analyzeFrequencyResponseBands(inputPath string) []Freq
 		switch band.FilterType {
 		case "lowpass":
 			// Everything below 50Hz
-			filterChain = "lowpass=f=50,astats=metadata=1:reset=1"
+			filterChain = "highpass=f=25:p=1:r=f64:p=2,lowpass=f=50,astats"
 			
 		case "highpass":
 			// Everything above 12.8kHz
-			filterChain = "highpass=f=12800,astats=metadata=1:reset=1"
+			filterChain = "highpass=f=12800,astats"
 			
 		case "bandpass":
 			// Extract center frequency and calculate bandwidth
 			centerFreq, bandwidth := n.getBandpassParams(band.Frequency)
-			filterChain = fmt.Sprintf("bandpass=f=%d:width_type=o:width=1,astats=metadata=1:reset=1", centerFreq)
+			filterChain = fmt.Sprintf("bandpass=f=%d:width_type=o:width=1,astats", centerFreq)
 			n.logToFile(n.logFile, fmt.Sprintf("Band %s: center=%dHz, bandwidth=%.1fHz (1 octave)", 
 				band.Frequency, centerFreq, bandwidth))
 		}
@@ -272,6 +272,24 @@ func (n *AudioNormalizer) buildEqFilter(bands []FrequencyBand, eqTarget string) 
 	
 	n.logToFile(n.logFile, fmt.Sprintf("Building EQ filter for target: %s", eqTarget))
 	
+	// Define high-pass and low-pass filters per preset
+	var highpassFilter, lowpassFilter string
+	
+	switch eqTarget {
+	case "Flat":
+		highpassFilter = "highpass=f=25:p=2"
+		lowpassFilter = "" // No lowpass for Flat
+	case "Speech":
+		highpassFilter = "highpass=f=80:p=2"
+		lowpassFilter = "lowpass=f=13000:p=1"
+	case "Broadcast":
+		highpassFilter = "highpass=f=70:p=2"
+		lowpassFilter = "lowpass=f=14000:p=2"
+	default:
+		highpassFilter = ""
+		lowpassFilter = ""
+	}
+	
 	// Calculate target curve
 	targetLevels := n.calculateTargetCurve(bands, eqTarget)
 	
@@ -314,9 +332,9 @@ func (n *AudioNormalizer) buildEqFilter(bands []FrequencyBand, eqTarget string) 
 		
 		switch band.FilterType {
 		case "lowpass":
-			filterParts = append(filterParts, fmt.Sprintf("lowshelf=f=50:g=%.2f:width_type=q:width=0.7", gain))
+			filterParts = append(filterParts, fmt.Sprintf("highpass=f=25:p=1:r=f64:p=2,lowshelf=f=50:g=%.2f:width_type=q:width=0.7", gain))
 		case "highpass":
-			filterParts = append(filterParts, fmt.Sprintf("highshelf=f=12800:g=%.2f:width_type=q:width=0.7", gain))
+			filterParts = append(filterParts, fmt.Sprintf("lowpass=f=17500:p=2:r=f64,highshelf=f=12800:g=%.2f:width_type=q:width=0.7", gain))
 		case "bandpass":
 			centerFreq, bandwidth := n.getBandpassParams(band.Frequency)
 			filterParts = append(filterParts, fmt.Sprintf("anequalizer=c0 f=%d w=%.0f g=%.2f t=0|c1 f=%d w=%.0f g=%.2f t=0", 
@@ -324,13 +342,27 @@ func (n *AudioNormalizer) buildEqFilter(bands []FrequencyBand, eqTarget string) 
 		}
 	}
 	
-	if len(filterParts) == 0 {
+	// Build final chain with HPF, EQ bands, LPF
+	var finalParts []string
+	
+	if highpassFilter != "" {
+		finalParts = append(finalParts, highpassFilter)
+	}
+	
+	finalParts = append(finalParts, filterParts...)
+	
+	if lowpassFilter != "" {
+		finalParts = append(finalParts, lowpassFilter)
+	}
+	
+	if len(finalParts) == 0 {
 		n.logToFile(n.logFile, "No EQ adjustments needed")
 		return ""
 	}
 	
 	// Join all filter parts with commas
-	eqChain := strings.Join(filterParts, ",")
+	eqChain := strings.Join(finalParts, ",")
+
 	n.logToFile(n.logFile, fmt.Sprintf("Final EQ chain: %s", eqChain))
 	
 	return eqChain
@@ -357,9 +389,8 @@ func (n *AudioNormalizer) calculateTargetCurve(bands []FrequencyBand, eqTarget s
 		
 		for i, band := range bands {
 			// Calculate pink noise reference level for this band
-			octavesFrom1k := n.getOctavesFrom1k(band.Frequency)
 			// Pink noise: +3 dB per octave down from 1kHz (more energy in bass)
-			pinkNoiseRef := overallRMS - (octavesFrom1k * 3.0)
+			pinkNoiseRef := overallRMS
 			
 			// If measured level exceeds reference, attenuate
 			if band.RMSLevel > pinkNoiseRef {
@@ -395,7 +426,7 @@ func (n *AudioNormalizer) calculateTargetCurve(bands []FrequencyBand, eqTarget s
 			case "100Hz":
 				adjustment = -3.5  // -3 to -6 dB cut (using -4.5 dB)
 			case "200Hz":
-				adjustment = +1.0  // 0 to +2 dB (using +1 dB for slight warmth)
+				adjustment = -2.5  // 0 to +2 dB (using +1 dB for slight warmth)
 			case "400Hz":
 				adjustment = -3.0  // -3 to -5 dB cut (reduce boxiness)
 			case "800Hz":
@@ -405,11 +436,11 @@ func (n *AudioNormalizer) calculateTargetCurve(bands []FrequencyBand, eqTarget s
 			case "3.2kHz":
 				adjustment = +1.0  // +1 to +3 dB boost (presence)
 			case "6.4kHz":
-				adjustment = +1.0  // 0 to +2 dB (add air)
+				adjustment = +0.0  // 0 to +2 dB (add air)
 			case "12.8kHz":
-				adjustment = +0.5  // 0 to +3 dB (add openness)
+				adjustment = -2.0  // 0 to +3 dB (add openness)
 			case "12.8kHz+":
-				adjustment = 0.0   // Flat or slight high-pass
+				adjustment = -2.0   // Flat or slight high-pass
 			default:
 				adjustment = 0.0
 			}
@@ -456,25 +487,25 @@ func (n *AudioNormalizer) calculateTargetCurve(bands []FrequencyBand, eqTarget s
 			var adjustment float64
 			switch band.Frequency {
 			case "50Hz":
-				adjustment = -6.0  // Aggressive high-pass
+				adjustment = -2.0  // Aggressive high-pass
 			case "100Hz":
-				adjustment = -4.0   // -6 to -10 dB deep cut
+				adjustment = -1.0   // -6 to -10 dB deep cut
 			case "200Hz":
-				adjustment = -0.5   // -2 to +1 dB (using -0.5 for clarity)
+				adjustment = -2.5   // -2 to +1 dB (using -0.5 for clarity)
 			case "400Hz":
-				adjustment = -3.5   // -4 to -7 dB (eliminate boxiness)
+				adjustment = -4.5   // -4 to -7 dB (eliminate boxiness)
 			case "800Hz":
-				adjustment = +2.0   // +1 to +3 dB (forwardness)
+				adjustment = +1.0   // +1 to +3 dB (forwardness)
 			case "1.6kHz":
 				adjustment = +2.5   // +3 to +6 dB (maximize intelligibility)
 			case "3.2kHz":
-				adjustment = +2.5   // +2 to +5 dB (presence and crispness)
+				adjustment = +3.5   // +2 to +5 dB (presence and crispness)
 			case "6.4kHz":
-				adjustment = +1.0   // +2 to +4 dB (sparkle and polish)
+				adjustment = +2.0   // +2 to +4 dB (sparkle and polish)
 			case "12.8kHz":
-				adjustment = -1.5   // -3 to 0 dB (reduce hiss)
+				adjustment = -0.5   // -3 to 0 dB (reduce hiss)
 			case "12.8kHz+":
-				adjustment = -3.5   // Slight roll-off
+				adjustment = -2.5   // Slight roll-off
 			default:
 				adjustment = 0.0
 			}
@@ -543,7 +574,7 @@ func (n *AudioNormalizer) getOctavesFrom1k(freqStr string) float64 {
 	case "12.8kHz":
 		return 3.68   // log2(12800/1000)
 	case "12.8kHz+":
-		return 4.0    // Approximate for >12.8kHz
+		return 5.0    // Approximate for >12.8kHz
 	default:
 		return 0.0
 	}
