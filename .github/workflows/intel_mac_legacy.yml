@@ -1,0 +1,44 @@
+name: Build Intel Mac
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-13  # Intel runner
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.23'
+    
+    - name: Download build assets
+      run: |
+        mkdir -p go/buildBlocks go/ffmpegSource
+        curl -o go/buildBlocks/Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+        curl -o go/buildBlocks/tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+        curl -o go/buildBlocks/tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+        curl -o go/ffmpegSource/ffmpegMacX86 "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegMacX86?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+        chmod +x go/ffmpegSource/ffmpegMacX86
+        
+    - name: Install Fyne
+      run: go install fyne.io/fyne/v2/cmd/fyne@latest
+        
+    - name: Build
+      run: |
+        cd go
+        GOARCH=amd64 go build -buildmode=pie -ldflags="-s -w" -o tnt
+        
+    - name: Package
+      run: |
+        cd go
+        fyne package -os darwin -name TNT -icon ../Icon.png -executable tnt -app-id com.collinsgroup.tnt
+        
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: tnt-intel-unsigned
+        path: go/TNT.app
