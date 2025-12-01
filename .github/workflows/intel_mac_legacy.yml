@@ -30,6 +30,9 @@ jobs:
     - name: Build
       run: |
         cd go
+        export CGO_CFLAGS="-mmacosx-version-min=10.11"
+        export CGO_LDFLAGS="-mmacosx-version-min=10.11"
+        export MACOSX_DEPLOYMENT_TARGET=10.11
         GOARCH=amd64 go build -buildmode=pie -ldflags="-s -w" -o tnt
         
     - name: Package
