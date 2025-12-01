@@ -1089,6 +1089,10 @@ type Preferences struct {
 	NormalizeTargetTp string `json:"normalize_target_tp"`
 	NormalizationStandard string `json:"normalization_standard"`
 	DataCompLevel int8 `json:"data_comp_level"`
+	EqPreset string `json:"eq_preset"`
+	DynPreset string `json:"dyn_preset"`
+	DynNorm bool `json:"dyn_norm_enabled"`
+	SelectedTab string `json:"selected_tab"`
 }
 
 func (n *AudioNormalizer) loadPreferences() {
@@ -1120,6 +1124,14 @@ func (n *AudioNormalizer) loadPreferences() {
 	n.normalizationStandard = prefs.NormalizationStandard
 	n.updateNormalizationLabel(prefs.NormalizationStandard)
 	n.dataCompLevel.SetValue(float64(prefs.DataCompLevel))
+	n.EqDrop.SetSelected(prefs.EqPreset)
+	n.dynamicsDrop.SetSelected(prefs.DynPreset)
+	n.dynNorm.SetChecked(prefs.DynNorm)
+	if prefs.SelectedTab == "Fast" {
+		n.modeTabs.Select(n.modeTabs.Items[0])
+	} else {
+		n.modeTabs.Select(n.modeTabs.Items[1])
+	}
 }
 
 func (n *AudioNormalizer) savePreferences() {
@@ -1137,6 +1149,10 @@ func (n *AudioNormalizer) savePreferences() {
 		NormalizeTargetTp: n.normalizeTargetTp.Text,
 		NormalizationStandard: n.normalizationStandard,
 		DataCompLevel: int8(n.dataCompLevel.Value),
+		EqPreset: n.EqDrop.Selected,
+		DynPreset: n.dynamicsDrop.Selected,
+		DynNorm: n.dynNorm.Checked,
+		SelectedTab: n.modeTabs.Selected().Text,
 	}
 	
 	configDir, _ := os.UserConfigDir()
@@ -1145,6 +1161,15 @@ func (n *AudioNormalizer) savePreferences() {
 	
 	data, _ := json.MarshalIndent(prefs, "", "  ")
 	os.WriteFile(filepath.Join(prefsDir, "preferences.json"), data, 0644)
+}
+
+func (n *AudioNormalizer) resetPreferences() {
+	configDir, _ := os.UserConfigDir()
+	prefsPath := filepath.Join(configDir, "TNT", "preferences.json")
+	
+	os.Remove(prefsPath)
+	
+	dialog.ShowInformation("Preferences Reset", "Preferences have been reset. Restart TNT to apply defaults.", n.window)
 }
 
 func (n *AudioNormalizer) updateNormalizationLabel(standard string) {
@@ -1293,11 +1318,15 @@ func (n *AudioNormalizer) removeFile(index int) {
 
 func (n *AudioNormalizer) updateAdvancedControls() {
 	isPCM := n.formatSelect.Selected == "PCM"
+	isOpus := n.formatSelect.Selected == "Opus"
 	
-	if n.IsSpeechCheck.Checked {
-		if n.formatSelect.Selected != "libopus" && n.formatSelect.Selected != "PCM" {
-			n.formatSelect.SetSelected("libopus")
-		}
+	if isOpus {
+		n.IsSpeechCheck.Show()
+		n.IsSpeechCheck.Enable()
+	} else {
+		n.IsSpeechCheck.Hide()
+		n.IsSpeechCheck.SetChecked(false)
+		n.IsSpeechCheck.Disable()
 	}
 	
 	if isPCM {
@@ -1515,9 +1544,9 @@ func (n *AudioNormalizer) getProcessConfig() ProcessConfig {
 		case "Small file (AAC 256kbps)":
 			config.Format = "AAC"
 			config.Bitrate = "256"
-		case "Most compatible (MP3 160kbps)":
+		case "Most compatible (MP3 320kbps)":
 			config.Format = "MPEG-II L3"
-			config.Bitrate = "160"
+			config.Bitrate = "320"
 		case "Production (PCM 48kHz/24bit)":
 			config.Format = "PCM"
 			config.SampleRate = "48000"

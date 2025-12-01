@@ -1,10 +1,10 @@
-//go:build darwin && arm64
+//go:build darwin && amd64
 
 package main
 
 import _ "embed"
 
-//go:embed ffmpegSource/ffmpegMacM
+//go:embed ffmpegSource/ffmpegMacX86
 var ffmpegBinary []byte
 
 var codecMap = map[string]string{
