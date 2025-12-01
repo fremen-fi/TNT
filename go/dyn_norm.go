@@ -71,7 +71,7 @@ func (n *AudioNormalizer) buildDynaudnormFilter(params *DynaudnormParams) string
 	// overlap: 0.75 for smooth gain transitions
 	
 	filter := fmt.Sprintf(
-		"dynaudnorm=framelen=500:gausssize=31:targetrms=%.6f:threshold=%.6f:altboundary=true:overlap=0.95",
+		"dynaudnorm=framelen=650:gausssize=36:targetrms=%.6f:threshold=%.6f:altboundary=true:overlap=0.95",
 		params.TargetRMS,
 		params.Threshold,
 	)
