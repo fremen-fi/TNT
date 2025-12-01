@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-13  # Intel runner
+    runs-on: macos-13
     
     steps:
     - uses: actions/checkout@v4
@@ -39,9 +39,44 @@ jobs:
       run: |
         cd go
         fyne package -os darwin -name TNT -icon ../Icon.png -executable tnt --appID com.collinsgroup.tnt
+    
+    - name: Import Certificate
+      run: |
+        echo "${{ secrets.MACOS_CERTIFICATE }}" | base64 --decode > certificate.p12
+        security create-keychain -p actions temp.keychain
+        security default-keychain -s temp.keychain
+        security unlock-keychain -p actions temp.keychain
+        security import certificate.p12 -k temp.keychain -P "${{ secrets.MACOS_CERTIFICATE_PASSWORD }}" -T /usr/bin/codesign
+        security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions temp.keychain
+        rm certificate.p12
         
-    - name: Upload artifact
+    - name: Sign App
+      run: |
+        cd go
+        find TNT.app -print0 | xargs -0 xattr -c 2>/dev/null || true
+        xattr -cr TNT.app 2>/dev/null || true
+        codesign --force --deep --options runtime --sign "Developer ID Application: Collins Group oy (478AR6Y9JJ)" TNT.app
+        codesign --verify --deep --strict --verbose=2 TNT.app
+        
+    - name: Create DMG
+      run: |
+        cd go
+        hdiutil create -volname "TNT" -srcfolder TNT.app -ov -format UDZO -fs HFS+ TNT-Legacy-temp.dmg
+        hdiutil convert TNT-Legacy-temp.dmg -format UDZO -o TNT-Intel-Legacy.dmg
+        rm TNT-Legacy-temp.dmg
+        
+    - name: Notarize DMG
+      run: |
+        cd go
+        xcrun notarytool store-credentials "notary-profile" \
+          --apple-id "${{ secrets.NOTARY_APPLE_ID }}" \
+          --team-id "${{ secrets.NOTARY_TEAM_ID }}" \
+          --password "${{ secrets.NOTARY_PASSWORD }}"
+        xcrun notarytool submit TNT-Intel-Legacy.dmg --keychain-profile "notary-profile" --wait
+        xcrun stapler staple TNT-Intel-Legacy.dmg
+        
+    - name: Upload DMG
       uses: actions/upload-artifact@v4
       with:
-        name: tnt-intel-unsigned
-        path: go/TNT.app
+        name: TNT-Intel-Legacy
+        path: go/TNT-Intel-Legacy.dmg
