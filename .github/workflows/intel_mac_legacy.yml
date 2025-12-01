@@ -30,9 +30,6 @@ jobs:
     - name: Build
       run: |
         cd go
-        export CGO_CFLAGS="-mmacosx-version-min=10.11"
-        export CGO_LDFLAGS="-mmacosx-version-min=10.11"
-        export MACOSX_DEPLOYMENT_TARGET=10.11
         GOARCH=amd64 go build -buildmode=pie -ldflags="-s -w" -o tnt
         
     - name: Package
@@ -61,9 +58,9 @@ jobs:
     - name: Create DMG
       run: |
         cd go
-        hdiutil create -volname "TNT" -srcfolder TNT.app -ov -format UDZO -fs HFS+ TNT-Legacy-temp.dmg
-        hdiutil convert TNT-Legacy-temp.dmg -format UDZO -o TNT-Intel-Legacy.dmg
-        rm TNT-Legacy-temp.dmg
+        npm install -g create-dmg
+        create-dmg TNT.app --overwrite --dmg-title="TNT" || true
+        mv TNT*.dmg TNT-Intel.dmg
         
     - name: Notarize DMG
       run: |
@@ -72,11 +69,11 @@ jobs:
           --apple-id "${{ secrets.NOTARY_APPLE_ID }}" \
           --team-id "${{ secrets.NOTARY_TEAM_ID }}" \
           --password "${{ secrets.NOTARY_PASSWORD }}"
-        xcrun notarytool submit TNT-Intel-Legacy.dmg --keychain-profile "notary-profile" --wait
-        xcrun stapler staple TNT-Intel-Legacy.dmg
+        xcrun notarytool submit TNT-Intel.dmg --keychain-profile "notary-profile" --wait
+        xcrun stapler staple TNT-Intel.dmg
         
     - name: Upload DMG
       uses: actions/upload-artifact@v4
       with:
-        name: TNT-Intel-Legacy
-        path: go/TNT-Intel-Legacy.dmg
+        name: TNT-Intel
+        path: go/TNT-Intel.dmg
