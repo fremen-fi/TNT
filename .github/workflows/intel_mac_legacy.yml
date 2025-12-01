@@ -30,7 +30,7 @@ jobs:
     - name: Build
       run: |
         cd go
-        go build -buildmode=pie -ldflags="-s -w" -o tnt
+        GOARCH=amd64 go build -buildmode=pie -ldflags="-s -w" -o tnt
         
     - name: Package
       run: |
