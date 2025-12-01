@@ -35,7 +35,7 @@ jobs:
     - name: Package
       run: |
         cd go
-        fyne package -os darwin -name TNT -icon ../Icon.png -executable tnt -app-id com.collinsgroup.tnt
+        fyne package -os darwin -name TNT -icon ../Icon.png -executable tnt --appID com.collinsgroup.tnt
         
     - name: Upload artifact
       uses: actions/upload-artifact@v4
