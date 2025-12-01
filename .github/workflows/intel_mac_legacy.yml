@@ -77,3 +77,10 @@ jobs:
       with:
         name: TNT-Intel
         path: go/TNT-Intel.dmg
+        
+    - name: Upload to BunnyCDN
+      run: |
+        curl -X PUT \
+          -H "AccessKey: ${{ secrets.BUNNY_ACCESS_KEY }}" \
+          --data-binary "@go/TNT-Intel.dmg" \
+          "https://se.storage.bunnycdn.com/sw-stor/TNT-Intel.dmg"
