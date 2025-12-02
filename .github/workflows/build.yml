@@ -47,6 +47,87 @@ jobs:
             --data-binary "@Distribution/TNT.dmg" \
             "https://se.storage.bunnycdn.com/sw-stor/TNT.dmg"
 
+  build-mac-intel:
+    runs-on: macos-13
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.23'
+    
+    - name: Download build assets
+      run: |
+        mkdir -p go/buildBlocks go/ffmpegSource
+        curl -o go/buildBlocks/Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+        curl -o go/buildBlocks/tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+        curl -o go/buildBlocks/tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+        curl -o go/ffmpegSource/ffmpegMacX86 "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegMacX86?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+        chmod +x go/ffmpegSource/ffmpegMacX86
+        
+    - name: Install Fyne
+      run: go install fyne.io/fyne/v2/cmd/fyne@latest
+        
+    - name: Build
+      run: |
+        cd go
+        GOARCH=amd64 go build -buildmode=pie -ldflags="-s -w" -o tnt
+        
+    - name: Package
+      run: |
+        cd go
+        fyne package -os darwin -name TNT -icon ../Icon.png -executable tnt --appID com.collinsgroup.tnt
+    
+    - name: Import Certificate
+      run: |
+        echo "${{ secrets.MACOS_CERTIFICATE }}" | base64 --decode > certificate.p12
+        security create-keychain -p actions temp.keychain
+        security default-keychain -s temp.keychain
+        security unlock-keychain -p actions temp.keychain
+        security import certificate.p12 -k temp.keychain -P "${{ secrets.MACOS_CERTIFICATE_PASSWORD }}" -T /usr/bin/codesign
+        security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions temp.keychain
+        rm certificate.p12
+        
+    - name: Sign App
+      run: |
+        cd go
+        find TNT.app -print0 | xargs -0 xattr -c 2>/dev/null || true
+        xattr -cr TNT.app 2>/dev/null || true
+        codesign --force --deep --options runtime --sign "Developer ID Application: Collins Group oy (478AR6Y9JJ)" TNT.app
+        codesign --verify --deep --strict --verbose=2 TNT.app
+        
+    - name: Create DMG
+      run: |
+        cd go
+        npm install -g create-dmg
+        create-dmg TNT.app --overwrite --dmg-title="TNT" || true
+        mv TNT*.dmg TNT-Intel.dmg
+        
+    - name: Notarize DMG
+      run: |
+        cd go
+        xcrun notarytool store-credentials "notary-profile" \
+          --apple-id "${{ secrets.NOTARY_APPLE_ID }}" \
+          --team-id "${{ secrets.NOTARY_TEAM_ID }}" \
+          --password "${{ secrets.NOTARY_PASSWORD }}"
+        xcrun notarytool submit TNT-Intel.dmg --keychain-profile "notary-profile" --wait
+        xcrun stapler staple TNT-Intel.dmg
+        
+    - name: Upload DMG
+      uses: actions/upload-artifact@v4
+      with:
+        name: TNT-Intel
+        path: go/TNT-Intel.dmg
+        
+    - name: Upload to BunnyCDN
+      run: |
+        curl -X PUT \
+          -H "AccessKey: ${{ secrets.BUNNY_ACCESS_KEY }}" \
+          --data-binary "@go/TNT-Intel.dmg" \
+          "https://se.storage.bunnycdn.com/sw-stor/TNT-Intel.dmg"
+
   build-windows:
     runs-on: windows-latest
     steps:
