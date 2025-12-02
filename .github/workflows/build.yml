@@ -1,0 +1,196 @@
+name: Release Build
+
+on:
+  push:
+    tags:
+      - 'v*-alpha.*'
+      - 'v*-beta.*'
+      - 'v*-rc.*'
+
+jobs:
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.23'
+
+      - name: Install Fyne CLI
+        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+
+      - name: Download build assets
+        run: |
+          mkdir -p buildBlocks ffmpegSource
+          curl -o buildBlocks/Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          curl -o buildBlocks/tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          curl -o buildBlocks/tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          curl -o ffmpegSource/ffmpegMacM "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegMacM?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+
+      - name: Run mac_build.sh
+        run: |
+          chmod +x mac_build.sh
+          ./mac_build.sh
+        env:
+          # Add any required secrets for signing/notarization
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Upload to BunnyCDN
+        run: |
+          curl -X PUT \
+            -H "AccessKey: ${{ secrets.BUNNY_ACCESS_KEY }}" \
+            --data-binary "@Distribution/TNT.dmg" \
+            "https://se.storage.bunnycdn.com/sw-stor/TNT.dmg"
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.23'
+
+      - name: Install Fyne CLI
+        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+
+      - name: Download build assets
+        run: |
+          mkdir -p buildBlocks ffmpegSource
+          curl -o buildBlocks/Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          curl -o buildBlocks/tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          curl -o buildBlocks/tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          curl -o ffmpegSource/ffmpeg.exe "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegWindows?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+        shell: pwsh
+
+      - name: Build Windows executable
+        run: |
+          cd go
+          go build -o ../Distribution/TNT.exe
+        shell: pwsh
+
+      - name: Create InnoSetup installer
+        run: |
+          # PLACEHOLDER: Add InnoSetup compilation here
+          # Example: iscc tnt-installer.iss
+          echo "InnoSetup step placeholder"
+        shell: pwsh
+
+      - name: Sign installer
+        uses: azure/trusted-signing-action@v0.3.16
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: https://neu.codesigning.azure.net/
+          code-signing-account-name: collins-group
+          certificate-profile-name: TNTPLUS
+          files-folder: Distribution/
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Upload to BunnyCDN
+        run: |
+          $file = Get-ChildItem -Path Distribution\*.exe | Select-Object -First 1
+          $uri = "https://se.storage.bunnycdn.com/sw-stor/$($file.Name)"
+          Invoke-RestMethod -Uri $uri -Method Put -InFile $file.FullName -Headers @{
+            "AccessKey" = "${{ secrets.BUNNY_ACCESS_KEY }}"
+          }
+        shell: pwsh
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.23'
+
+      - name: Download build assets
+        run: |
+          mkdir -p buildBlocks ffmpegSource
+          curl -o buildBlocks/Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          curl -o buildBlocks/tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          curl -o buildBlocks/tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          curl -o ffmpegSource/ffmpegLinuxAmd64 "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegLinuxAmd64?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev xorg-dev
+
+      - name: Build Linux binary
+        run: |
+          cd go
+          go build -o ../tnt-linux-amd64
+
+      - name: Create .desktop file
+        run: |
+          cat > tnt.desktop << 'DESKTOP_EOF'
+          [Desktop Entry]
+          Name=TNT
+          Comment=Professional audio processing tool
+          Exec=/usr/bin/tnt
+          Icon=tnt
+          Terminal=false
+          Type=Application
+          Categories=Audio;AudioVideo;
+          DESKTOP_EOF
+
+      - name: Create postinst script
+        run: |
+          cat > postinst << 'POSTINST_EOF'
+          #!/bin/bash
+          chmod +x /usr/bin/tnt
+          update-desktop-database || true
+          exit 0
+          POSTINST_EOF
+          chmod +x postinst
+
+      - name: Build deb package
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          DEB_DIR="tnt_${VERSION}_amd64"
+          
+          mkdir -p "${DEB_DIR}/DEBIAN"
+          mkdir -p "${DEB_DIR}/usr/bin"
+          mkdir -p "${DEB_DIR}/usr/share/applications"
+          
+          cp tnt-linux-amd64 "${DEB_DIR}/usr/bin/tnt"
+          cp tnt.desktop "${DEB_DIR}/usr/share/applications/"
+          cp postinst "${DEB_DIR}/DEBIAN/"
+          
+          cat > "${DEB_DIR}/DEBIAN/control" << CONTROL_EOF
+          Package: tnt
+          Version: ${VERSION}
+          Section: sound
+          Priority: optional
+          Architecture: amd64
+          Maintainer: Collins Group <appsupport@collinsgroup.fi>
+          Description: TNT Plus - Professional audio processing tool
+           Audio normalization and transcoding tool built for broadcast professionals.
+          CONTROL_EOF
+          
+          dpkg-deb --build "${DEB_DIR}"
+          echo "DEB_FILE=tnt_${VERSION}_amd64.deb" >> $GITHUB_ENV
+
+      - name: Upload to BunnyCDN
+        env:
+          BUNNY_ACCESS_KEY: ${{ secrets.BUNNY_ACCESS_KEY }}
+        run: |
+          curl -X PUT \
+            -H "AccessKey: $BUNNY_ACCESS_KEY" \
+            --data-binary "@${{ env.DEB_FILE }}" \
+            "https://se.storage.bunnycdn.com/sw-stor/${{ env.DEB_FILE }}"
