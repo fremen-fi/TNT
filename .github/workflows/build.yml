@@ -234,6 +234,8 @@ jobs:
 
       - name: Create InnoSetup installer
         run: |
+          New-Item -ItemType Directory -Force -Path packaging
+          Copy-Item -Path Distribution\TNT.exe -Destination packaging\tnt.exe
           iscc packaging/inno_setup.iss
         shell: pwsh
 
@@ -353,7 +355,7 @@ jobs:
           CONTROL_EOF
           
           dpkg-deb --build "${DEB_DIR}"
-          echo "DEB_FILE=${DEB_NAME}.deb" >> $GITHUB_ENV
+          echo "DEB_FILE=${DEB_NAME}_amd64.deb" >> $GITHUB_ENV
 
       - name: Upload to BunnyCDN
         env:
