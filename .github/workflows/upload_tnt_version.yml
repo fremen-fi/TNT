@@ -1,4 +1,4 @@
-name: Upload Mac App to BunnyCDN
+name: Upload TNT JSON
 
 on:
   push:
