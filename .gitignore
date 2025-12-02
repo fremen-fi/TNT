@@ -5,3 +5,4 @@ App/
 ffmpegSource/
 buildBlocks/
 *.app
+Distribution/
