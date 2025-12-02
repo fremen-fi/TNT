@@ -159,9 +159,7 @@ jobs:
 
       - name: Create InnoSetup installer
         run: |
-          # PLACEHOLDER: Add InnoSetup compilation here
-          # Example: iscc tnt-installer.iss
-          echo "InnoSetup step placeholder"
+          iscc packaging/inno_setup.iss
         shell: pwsh
 
       - name: Sign installer
