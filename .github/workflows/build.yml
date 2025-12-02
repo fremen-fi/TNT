@@ -205,10 +205,10 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path buildBlocks
           New-Item -ItemType Directory -Force -Path ffmpegSource
-          curl -o buildBlocks/Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          curl -o buildBlocks/tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          curl -o buildBlocks/tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          curl -o ffmpegSource/ffmpeg.exe "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegWindows?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          curl -o go/buildBlocks/Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          curl -o go/buildBlocks/tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          curl -o go/buildBlocks/tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          curl -o go/ffmpegSource/ffmpeg.exe "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegWindows?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
         shell: pwsh
 
       - name: Build Windows executable
