@@ -188,81 +188,81 @@ jobs:
             "https://se.storage.bunnycdn.com/sw-stor/${{ steps.filename.outputs.dmg_name }}"
 
   build-windows:
-  runs-on: windows-latest
-  steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
-  
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.23'
-  
-    - name: Install Fyne CLI
-      run: go install fyne.io/fyne/v2/cmd/fyne@latest
-  
-    - name: Download build assets
-      run: |
-        New-Item -ItemType Directory -Force -Path go\buildBlocks
-        New-Item -ItemType Directory -Force -Path go\ffmpegSource
-        Invoke-WebRequest -Uri "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=3ivfiLlvQ6EB2UyHVqIDc5QA" -OutFile "go\buildBlocks\Wotfard-Regular.ttf"
-        Invoke-WebRequest -Uri "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA" -OutFile "go\buildBlocks\tntAppLogoForDark.png"
-        Invoke-WebRequest -Uri "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA" -OutFile "go\buildBlocks\tntAppLogoForLight.png"
-        Invoke-WebRequest -Uri "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegWindows?value=3ivfiLlvQ6EB2UyHVqIDc5QA" -OutFile "go\ffmpegSource\ffmpeg.exe"
-      shell: pwsh
-  
-    - name: Build Windows executable
-      run: |
-        cd go
-        go build -o ../Distribution/TNT.exe
-      shell: pwsh
-  
-    - name: Determine filename
-      id: filename
-      run: |
-        $TAG = "${{ github.ref }}".Replace("refs/tags/v", "")
-        if ($TAG -match "-") {
-          # Pre-release: v1.3.0-beta.1 -> beta-TNT.exe
-          $PREFIX = $TAG.Split("-")[1].Split(".")[0]
-          echo "exe_name=${PREFIX}-TNT.exe" >> $env:GITHUB_OUTPUT
-        } else {
-          # Stable release: v1.3.0 -> TNT.exe
-          echo "exe_name=TNT.exe" >> $env:GITHUB_OUTPUT
-        }
-      shell: pwsh
-  
-    - name: Create InnoSetup installer
-      run: |
-        iscc packaging/inno_setup.iss
-      shell: pwsh
-  
-    - name: Rename for distribution
-      run: |
-        Move-Item -Path Distribution/TNT.exe -Destination "Distribution/${{ steps.filename.outputs.exe_name }}"
-      shell: pwsh
-  
-    - name: Sign installer
-      uses: azure/trusted-signing-action@v0.3.16
-      with:
-        azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-        azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
-        azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
-        endpoint: https://neu.codesigning.azure.net/
-        code-signing-account-name: collins-group
-        certificate-profile-name: TNTPLUS
-        files-folder: Distribution/
-        files-folder-filter: exe
-        file-digest: SHA256
-        timestamp-rfc3161: http://timestamp.acs.microsoft.com
-        timestamp-digest: SHA256
-  
-    - name: Upload to BunnyCDN
-      run: |
-        $uri = "https://se.storage.bunnycdn.com/sw-stor/${{ steps.filename.outputs.exe_name }}"
-        Invoke-RestMethod -Uri $uri -Method Put -InFile "Distribution/${{ steps.filename.outputs.exe_name }}" -Headers @{
-          "AccessKey" = "${{ secrets.BUNNY_ACCESS_KEY }}"
-        }
-      shell: pwsh
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.23'
+
+      - name: Install Fyne CLI
+        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+
+      - name: Download build assets
+        run: |
+          New-Item -ItemType Directory -Force -Path go\buildBlocks
+          New-Item -ItemType Directory -Force -Path go\ffmpegSource
+          Invoke-WebRequest -Uri "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=3ivfiLlvQ6EB2UyHVqIDc5QA" -OutFile "go\buildBlocks\Wotfard-Regular.ttf"
+          Invoke-WebRequest -Uri "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA" -OutFile "go\buildBlocks\tntAppLogoForDark.png"
+          Invoke-WebRequest -Uri "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA" -OutFile "go\buildBlocks\tntAppLogoForLight.png"
+          Invoke-WebRequest -Uri "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegWindows?value=3ivfiLlvQ6EB2UyHVqIDc5QA" -OutFile "go\ffmpegSource\ffmpeg.exe"
+        shell: pwsh
+
+      - name: Build Windows executable
+        run: |
+          cd go
+          go build -o ../Distribution/TNT.exe
+        shell: pwsh
+
+      - name: Determine filename
+        id: filename
+        run: |
+          $TAG = "${{ github.ref }}".Replace("refs/tags/v", "")
+          if ($TAG -match "-") {
+            # Pre-release: v1.3.0-beta.1 -> beta-TNT.exe
+            $PREFIX = $TAG.Split("-")[1].Split(".")[0]
+            echo "exe_name=${PREFIX}-TNT.exe" >> $env:GITHUB_OUTPUT
+          } else {
+            # Stable release: v1.3.0 -> TNT.exe
+            echo "exe_name=TNT.exe" >> $env:GITHUB_OUTPUT
+          }
+        shell: pwsh
+
+      - name: Create InnoSetup installer
+        run: |
+          iscc packaging/inno_setup.iss
+        shell: pwsh
+
+      - name: Rename for distribution
+        run: |
+          Move-Item -Path Distribution/TNT.exe -Destination "Distribution/${{ steps.filename.outputs.exe_name }}"
+        shell: pwsh
+
+      - name: Sign installer
+        uses: azure/trusted-signing-action@v0.3.16
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: https://neu.codesigning.azure.net/
+          code-signing-account-name: collins-group
+          certificate-profile-name: TNTPLUS
+          files-folder: Distribution/
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Upload to BunnyCDN
+        run: |
+          $uri = "https://se.storage.bunnycdn.com/sw-stor/${{ steps.filename.outputs.exe_name }}"
+          Invoke-RestMethod -Uri $uri -Method Put -InFile "Distribution/${{ steps.filename.outputs.exe_name }}" -Headers @{
+            "AccessKey" = "${{ secrets.BUNNY_ACCESS_KEY }}"
+          }
+        shell: pwsh
 
   build-linux:
     runs-on: ubuntu-latest
