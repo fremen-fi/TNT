@@ -213,8 +213,9 @@ jobs:
 
       - name: Build Windows executable
         run: |
+          Remove-Item -Path Distribution\TNT.exe -ErrorAction SilentlyContinue
           cd go
-          go build -o ../Distribution/TNT.exe
+          go build -o ..\Distribution\TNT.exe
         shell: pwsh
 
       - name: Determine filename
@@ -318,8 +319,19 @@ jobs:
 
       - name: Build deb package
         run: |
-          VERSION="${GITHUB_REF#refs/tags/v}"
-          DEB_DIR="tnt_${VERSION}_amd64"
+          TAG="${GITHUB_REF#refs/tags/v}"
+          VERSION=$(echo "$TAG" | cut -d'-' -f1)
+          
+          if [[ "$TAG" == *"-"* ]]; then
+            # Pre-release: alpha-tnt.deb
+            PREFIX=$(echo "$TAG" | cut -d'-' -f2 | cut -d'.' -f1)
+            DEB_NAME="${PREFIX}-tnt"
+          else
+            # Stable release: tnt.deb
+            DEB_NAME="tnt"
+          fi
+          
+          DEB_DIR="${DEB_NAME}_amd64"
           
           mkdir -p "${DEB_DIR}/DEBIAN"
           mkdir -p "${DEB_DIR}/usr/bin"
@@ -341,7 +353,7 @@ jobs:
           CONTROL_EOF
           
           dpkg-deb --build "${DEB_DIR}"
-          echo "DEB_FILE=tnt_${VERSION}_amd64.deb" >> $GITHUB_ENV
+          echo "DEB_FILE=${DEB_NAME}.deb" >> $GITHUB_ENV
 
       - name: Upload to BunnyCDN
         env:
