@@ -1,7 +1,7 @@
 {
-  "version": "1.2.0",
+  "version": "1.1.0",
   "download_url": "https://www.collinsgroup.fi/software/tnt/download-tnt",
-  "release_notes": "This release adds dynamic processing, EQ presets and a file size preview function.",
+  "release_notes": "Adds FLAC encoder and data compression methods for FLAC and Opus.\nHides disabled items from UI based on encoding format.\nRewritten help section.",
   "release_date": "12 November, 2025",
   "supported_platforms": "macOS (M-series)\nmacOS 13 (Intel, from 2015- )\nWindows (Intel)\nUbuntu/Debian (Intel)",
   "history": [{
