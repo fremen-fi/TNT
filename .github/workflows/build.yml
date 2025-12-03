@@ -215,7 +215,7 @@ jobs:
         run: |
           Remove-Item -Path Distribution\TNT.exe -ErrorAction SilentlyContinue
           cd go
-          fyne package -os windows -name TNT -icon ..\Icon.png --appID com.collinsgroup.tnt
+          fyne package -os windows -name TNT -icon ..\Icon.png --appID com.collinsgroup.tnt -ldflags "-H windowsgui"
           Move-Item -Path TNT.exe -Destination ..\Distribution\TNT.exe
         shell: pwsh
 
