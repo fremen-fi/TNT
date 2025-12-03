@@ -210,6 +210,16 @@ jobs:
           curl.exe -L -o go\buildBlocks\tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
           curl.exe -L -o go\ffmpegSource\ffmpeg.exe "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegWindows?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
         shell: pwsh
+        
+      - name: Verify FFmpeg exists
+        run: |
+          if (Test-Path go\ffmpegSource\ffmpeg.exe) {
+            Write-Host "FFmpeg found, size: $((Get-Item go\ffmpegSource\ffmpeg.exe).Length) bytes"
+          } else {
+            Write-Host "ERROR: FFmpeg not found!"
+            exit 1
+          }
+        shell: pwsh
       
       - name: Build Windows executable
         run: |
