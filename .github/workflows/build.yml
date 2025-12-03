@@ -208,7 +208,7 @@ jobs:
           curl.exe -L -o go\buildBlocks\Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
           curl.exe -L -o go\buildBlocks\tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
           curl.exe -L -o go\buildBlocks\tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          curl.exe -L -o go\ffmpegSource\ffmpeg.exe "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegWindows?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          curl.exe -L -o go\ffmpegSource\ffmpeg.exe "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpeg.exe?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
         shell: pwsh
         
       - name: Verify FFmpeg exists
