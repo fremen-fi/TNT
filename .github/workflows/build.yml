@@ -210,12 +210,13 @@ jobs:
           curl.exe -L -o go\buildBlocks\tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
           curl.exe -L -o go\ffmpegSource\ffmpeg.exe "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegWindows?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
         shell: pwsh
-
+      
       - name: Build Windows executable
         run: |
           Remove-Item -Path Distribution\TNT.exe -ErrorAction SilentlyContinue
           cd go
-          go build -o ..\Distribution\TNT.exe
+          fyne package -os windows -name TNT -icon ..\Icon.png --appID com.collinsgroup.tnt
+          Move-Item -Path TNT.exe -Destination ..\Distribution\TNT.exe
         shell: pwsh
 
       - name: Determine filename
