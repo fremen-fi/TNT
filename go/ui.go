@@ -116,7 +116,14 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 	n.writeTags.SetChecked(false)
 	n.writeTags.Disable()
 	
-	n.noTranscode = widget.NewCheck("Do not transcode", nil) 
+	n.noTranscode = widget.NewCheck("Do not transcode", func(b bool) {
+		if b {
+			n.bypassProc.SetChecked(true)
+			n.bypassProc.Disable()
+		} else {
+			n.bypassProc.Enable()
+		}
+	}) 
 	n.noTranscode.SetChecked(false)
 	n.noTranscode.Disable()
 	n.noTranscode.Hide()
@@ -414,6 +421,7 @@ Do not transcode: Preserves original audio encoding while writing tags
 • Does not alter audio data, only writes metadata
 • Cannot be used with PCM source files
 • Useful for adding metadata without re-encoding
+• Checking this box disables processing
 
 Speech: Optimizes encoding for voice content
 • Automatically selects Opus codec
@@ -447,6 +455,8 @@ PCM, or WAV in this tool is a pulse-code modulated, raw uncompressed audio strea
 			
 			menuProcessingTab := widget.NewLabel(
 `
+Setting 'Do not transcode' in the Advanced tab bypasses all processing.
+
 Dynamics processing
 Dynamics processing controls how TNT manages the volume variations in your audio. The software analyzes peak levels, average energy, and dynamic range before applying any processing. While designed for spoken content, dynamic processing may deliver pleasing results when used on music content. The first two presets are usually relatively transparent, with the last "Broadcast" preset being an aggressive multi-band compressor.
 

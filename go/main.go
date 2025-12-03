@@ -396,7 +396,7 @@ func (n *AudioNormalizer) analyzeFrequencyBands(inputPath string) map[string]*Fr
 		cmd := exec.Command(
 			ffmpegPath,
 			"-i", inputPath,
-			"-af", fmt.Sprintf("%s,astats=metadata=1:length=0.05", filter),
+			"-af", fmt.Sprintf("%s,astats", filter),
 			"-f", "null",
 			"-",
 		)
@@ -606,13 +606,13 @@ func (n *AudioNormalizer) buildBandAcompressor(band *FrequencyBandAnalysis, atta
 	
 	// For very compressed material with hot peaks, raise limiter above peak
 	if mods.RatioMultiplier < 0.3 {
-		limiterCeilingDb = band.PeakLevel - 0.2
+		limiterCeilingDb = band.PeakLevel - 0.1
 		if limiterCeilingDb > 0.0 {
 			limiterCeilingDb = 0.0
 		}
 	} else {
 		// Normal/dynamic material: set limiter below peak
-		limiterCeilingDb = band.PeakLevel - 2.0
+		limiterCeilingDb = band.PeakLevel - 0.8
 	}
 	
 	if limiterCeilingDb < -24.0 {
@@ -687,6 +687,20 @@ func (n *AudioNormalizer) buildBandAcompressor(band *FrequencyBandAnalysis, atta
 	
 	if makeupLin > 64.0 {
 		makeupLin =64.0
+	}
+	
+	if limiterAttack > 80.0 {
+		limiterAttack = 80.0
+	}
+	
+	if limiterRelease > 8000.0 {
+		limiterRelease = 8000.0
+	}
+	
+	if mods.RatioMultiplier < 0.3 {
+		limiterCeilingDb = 0.0
+		limiterAttack = 80.0
+		limiterRelease = 2000.0
 	}
 	
 	n.logToFile(n.logFile, fmt.Sprintf("Band %s: Threshold=%.1f dB, Ratio=%.1f:1, Limiter=%.1f dB, Makeup=%.1f dB",
@@ -1712,15 +1726,9 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 		}
 		args = append(args, "-acodec", codec)
 	} else if !n.noTranscode.Checked {
-		
-		usesSampleRate := actualCodec == "PCM"
-		
-		if usesSampleRate {
-			args = append(args, "-ar", "48000")
-			args = append(args, "-c:a", actualCodec)
-		} else {
-			args = append(args, "-c:a", actualCodec)
-		}
+		args = append(args, "-ar", "48000")
+		args = append(args, "-c:a", actualCodec)
+	}
 		
 		needsFullNumber := (actualCodec == "libfdk_aac" || actualCodec == "aac" || actualCodec == "libopus" || actualCodec == "libmp3lame")
 		noBitrateUsed := actualCodec == "PCM" || actualCodec == "flac"
@@ -1757,7 +1765,6 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 				args = append(args, "-b:a", fmt.Sprintf("%dk", bitrate))
 			}
 		}
-	}
 		
 	// Add speech optimization for Opus
 	if config.IsSpeech && actualCodec == "libopus" && !n.noTranscode.Checked {
@@ -1778,31 +1785,35 @@ func (n *AudioNormalizer) processFile(inputPath string, config ProcessConfig) bo
 		args = append(args, "-compression_level", fmt.Sprintf("%d", level))
 	}
 	
+	// Get target from saved normalization standard
 	target := "-23"
-	
-	if n.loudnormCustomCheck.Checked && n.normalizeTarget.Text != "" {
-		if strings.Contains(n.normalizeTarget.Text, "-") {
-			target = n.normalizeTarget.Text
-		} else {
-			target = "-" + n.normalizeTarget.Text
-		}
-	}
-	
-	if n.normalizeTarget.Text == "" {
-		target = "-23"
-	}
-	
 	targetTp := "-1"
 	
-	if n.loudnormCustomCheck.Checked && n.normalizeTargetTp.Text != "" {
-		if strings.Contains(n.normalizeTargetTp.Text, "-") {
-			targetTp = n.normalizeTargetTp.Text
-		} else {
-			targetTp = "-" + n.normalizeTargetTp.Text
+	switch n.normalizationStandard {
+	case "EBU R128 (-23 LUFS)":
+		target = "-23"
+		targetTp = "-1"
+	case "USA ATSC A/85 (-24 LUFS)":
+		target = "-24"
+		targetTp = "-2"
+	case "Custom":
+		// Only use input fields when Custom is selected
+		if n.normalizeTarget.Text != "" {
+			if strings.Contains(n.normalizeTarget.Text, "-") {
+				target = n.normalizeTarget.Text
+			} else {
+				target = "-" + n.normalizeTarget.Text
+			}
 		}
-	} 
-	
-	if n.normalizeTargetTp.Text == "" {
+		if n.normalizeTargetTp.Text != "" {
+			if strings.Contains(n.normalizeTargetTp.Text, "-") {
+				targetTp = n.normalizeTargetTp.Text
+			} else {
+				targetTp = "-" + n.normalizeTargetTp.Text
+			}
+		}
+	default:
+		target = "-23"
 		targetTp = "-1"
 	}
 	
