@@ -99,7 +99,7 @@ jobs:
             "https://se.storage.bunnycdn.com/sw-stor/${{ steps.filename.outputs.dmg_name }}"
 
   build-mac-intel:
-    runs-on: macos-14-large
+    runs-on: macos-13
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
