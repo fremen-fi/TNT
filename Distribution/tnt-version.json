@@ -1,9 +1,9 @@
 {
-  "version": "1.1.0",
-  "download_url": "https://www.collinsgroup.fi/software/tnt/download-tnt",
-  "release_notes": "Adds FLAC encoder and data compression methods for FLAC and Opus.\nHides disabled items from UI based on encoding format.\nRewritten help section.",
-  "release_date": "12 November, 2025",
-  "supported_platforms": "macOS (M-series), Windows (Intel), Ubuntu/Debian (Intel)",
+  "version": "1.2.0",
+  "download_url": "https://www.fremen.fi",
+  "release_notes": "Adds powerful processing features.",
+  "release_date": "5 December, 2025",
+  "supported_platforms": "macOS (M-series), macOS 14- (Intel), macOS 13 (EOL) (Intel), Windows (Intel), Ubuntu/Debian (Intel)",
   "history": [{
     "version": "1.1.0",
     "release_notes": "Adds FLAC encoder and data compression methods for FLAC and Opus.\nHides disabled items from UI based on encoding format.\nRewritten help section.",
