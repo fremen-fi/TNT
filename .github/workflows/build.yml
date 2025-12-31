@@ -19,27 +19,32 @@ jobs:
         uses: actions/setup-go@v4
         with:
           go-version: '1.23'
+      
+      - name: Download dependencies
+        run: |
+          cd go-refactor
+          go mod download
 
       - name: Download build assets
         run: |
-          mkdir -p go/buildBlocks go/ffmpegSource
-          curl -o go/buildBlocks/Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          curl -o go/buildBlocks/tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          curl -o go/buildBlocks/tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          curl -o go/ffmpegSource/ffmpegMacM "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegMacM?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          chmod +x go/ffmpegSource/ffmpegMacM
+          mkdir -p go-refactor/buildBlocks go-refactor/ffmpegSource
+          curl -o go-refactor/buildBlocks/Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          curl -o go-refactor/buildBlocks/tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          curl -o go-refactor/buildBlocks/tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          curl -o go-refactor/ffmpegSource/ffmpegMacM "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegMacM?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          chmod +x go-refactor/ffmpegSource/ffmpegMacM
 
       - name: Install Fyne
         run: go install fyne.io/fyne/v2/cmd/fyne@latest
 
       - name: Build
         run: |
-          cd go
+          cd go-refactor
           GOARCH=arm64 go build -buildmode=pie -ldflags="-s -w" -o tnt
 
       - name: Package
         run: |
-          cd go
+          cd go-refactor
           fyne package -os darwin -name TNT -icon ../Icon.png -executable tnt --appID com.collinsgroup.tnt
 
       - name: Import Certificate
@@ -54,7 +59,7 @@ jobs:
 
       - name: Sign App
         run: |
-          cd go
+          cd go-refactor
           find TNT.app -print0 | xargs -0 xattr -c 2>/dev/null || true
           xattr -cr TNT.app 2>/dev/null || true
           codesign --force --deep --options runtime --sign "Developer ID Application: Collins Group oy (478AR6Y9JJ)" TNT.app
@@ -75,14 +80,14 @@ jobs:
 
       - name: Create DMG
         run: |
-          cd go
+          cd go-refactor
           npm install -g create-dmg
           create-dmg TNT.app --overwrite --dmg-title="TNT" || true
           mv TNT*.dmg ${{ steps.filename.outputs.dmg_name }}
 
       - name: Notarize DMG
         run: |
-          cd go
+          cd go-refactor
           xcrun notarytool store-credentials "notary-profile" \
             --apple-id "${{ secrets.NOTARY_APPLE_ID }}" \
             --team-id "${{ secrets.NOTARY_TEAM_ID }}" \
@@ -92,7 +97,7 @@ jobs:
 
       - name: Upload to BunnyCDN
         run: |
-          cd go
+          cd go-refactor
           curl -X PUT \
             -H "AccessKey: ${{ secrets.BUNNY_ACCESS_KEY }}" \
             --data-binary "@${{ steps.filename.outputs.dmg_name }}" \
@@ -111,24 +116,24 @@ jobs:
 
       - name: Download build assets
         run: |
-          mkdir -p go/buildBlocks go/ffmpegSource
-          curl -o go/buildBlocks/Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          curl -o go/buildBlocks/tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          curl -o go/buildBlocks/tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          curl -o go/ffmpegSource/ffmpegMacX86 "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegMacX86?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          chmod +x go/ffmpegSource/ffmpegMacX86
+          mkdir -p go-refactor/buildBlocks go-refactor/ffmpegSource
+          curl -o go-refactor/buildBlocks/Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          curl -o go-refactor/buildBlocks/tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          curl -o go-refactor/buildBlocks/tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          curl -o go-refactor/ffmpegSource/ffmpegMacX86 "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegMacX86?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          chmod +x go-refactor/ffmpegSource/ffmpegMacX86
 
       - name: Install Fyne
         run: go install fyne.io/fyne/v2/cmd/fyne@latest
 
       - name: Build
         run: |
-          cd go
+          cd go-refactor
           GOARCH=amd64 go build -buildmode=pie -ldflags="-s -w" -o tnt
 
       - name: Package
         run: |
-          cd go
+          cd go-refactor
           fyne package -os darwin -name TNT -icon ../Icon.png -executable tnt --appID com.collinsgroup.tnt
 
       - name: Import Certificate
@@ -143,7 +148,7 @@ jobs:
 
       - name: Sign App
         run: |
-          cd go
+          cd go-refactor
           find TNT.app -print0 | xargs -0 xattr -c 2>/dev/null || true
           xattr -cr TNT.app 2>/dev/null || true
           codesign --force --deep --options runtime --sign "Developer ID Application: Collins Group oy (478AR6Y9JJ)" TNT.app
@@ -164,14 +169,14 @@ jobs:
 
       - name: Create DMG
         run: |
-          cd go
+          cd go-refactor
           npm install -g create-dmg
           create-dmg TNT.app --overwrite --dmg-title="TNT" || true
           mv TNT*.dmg ${{ steps.filename.outputs.dmg_name }}
 
       - name: Notarize DMG
         run: |
-          cd go
+          cd go-refactor
           xcrun notarytool store-credentials "notary-profile" \
             --apple-id "${{ secrets.NOTARY_APPLE_ID }}" \
             --team-id "${{ secrets.NOTARY_TEAM_ID }}" \
@@ -181,7 +186,7 @@ jobs:
 
       - name: Upload to BunnyCDN
         run: |
-          cd go
+          cd go-refactor
           curl -X PUT \
             -H "AccessKey: ${{ secrets.BUNNY_ACCESS_KEY }}" \
             --data-binary "@${{ steps.filename.outputs.dmg_name }}" \
@@ -224,7 +229,7 @@ jobs:
       - name: Build Windows executable
         run: |
           Remove-Item -Path Distribution\TNT.exe -ErrorAction SilentlyContinue
-          cd go
+          cd go-refactor
           $VERSION = "${{ github.ref_name }}"
           go build -ldflags "-H windowsgui -X main.version=$VERSION" -o TNT.exe
           Move-Item -Path TNT.exe -Destination ..\Distribution\TNT.exe
@@ -292,11 +297,11 @@ jobs:
 
       - name: Download build assets
         run: |
-          mkdir -p go/buildBlocks go/ffmpegSource
-          curl -o go/buildBlocks/Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          curl -o go/buildBlocks/tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          curl -o go/buildBlocks/tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          curl -o go/ffmpegSource/ffmpegLinuxAmd64 "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegLinuxAmd64?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          mkdir -p go-refactor/buildBlocks go-refactor/ffmpegSource
+          curl -o go-refactor/buildBlocks/Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          curl -o go-refactor/buildBlocks/tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          curl -o go-refactor/buildBlocks/tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          curl -o go-refactor/ffmpegSource/ffmpegLinuxAmd64 "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegLinuxAmd64?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
 
       - name: Install dependencies
         run: |
@@ -305,7 +310,7 @@ jobs:
 
       - name: Build Linux binary
         run: |
-          cd go
+          cd go-refactor
           go build -o ../tnt-linux-amd64
 
       - name: Create .desktop file
