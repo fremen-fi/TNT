@@ -2,11 +2,11 @@ package main
 
 import (
 	"fmt"
-	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
 	"math"
+	"github.com/fremen-fi/tnt/go/internal/ffmpeg"
 )
 
 // FrequencyBand represents analyzed frequency response data for one band
@@ -60,14 +60,14 @@ func (n *AudioNormalizer) analyzeFrequencyResponseBands(inputPath string) []Freq
 
 		n.logStatus(fmt.Sprintf("  Measuring %s band...", band.Frequency))
 		
-		cmd := exec.Command(
-			ffmpegPath,
+		cmd := ffmpeg.Command(
+			
 			"-i", inputPath,
 			"-af", filterChain,
 			"-f", "null",
 			"-",
 		)
-		hideWindow(cmd)
+		
 
 		output, err := cmd.CombinedOutput()
 		if err != nil {
