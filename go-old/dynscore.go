@@ -5,22 +5,29 @@ import (
 	"strings"
 	"regexp"
 	"strconv"
+	"os/exec"
 	"path/filepath"
 	"math"
-	
-	"github.com/fremen-fi/tnt/go/internal/audio"
-	"github.com/fremen-fi/tnt/go/internal/ffmpeg"
 )
 
-func (n *AudioNormalizer) calculateDynamicsScore(inputPath string) *audio.DynamicsScoreAnalysis {
+type DynamicsScoreAnalysis struct {
+	RMSPeak       float64
+	RMSLevel      float64
+	CrestFactor   float64
+	DynamicsScore float64
+}
+
+func (n *AudioNormalizer) calculateDynamicsScore(inputPath string) *DynamicsScoreAnalysis {
 	n.logStatus(fmt.Sprintf("→ Calculating Dynamics Score: %s", filepath.Base(inputPath)))
 	
-	cmd := ffmpeg.Command(
+	cmd := exec.Command(
+		ffmpegPath,
 		"-i", inputPath,
 		"-af", "astats",
 		"-f", "null",
 		"-",
 	)
+	hideWindow(cmd)
 	
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -31,8 +38,8 @@ func (n *AudioNormalizer) calculateDynamicsScore(inputPath string) *audio.Dynami
 	return n.parseDynamicsScore(string(output))
 }
 
-func (n *AudioNormalizer) parseDynamicsScore(output string) *audio.DynamicsScoreAnalysis {
-	result := &audio.DynamicsScoreAnalysis{}
+func (n *AudioNormalizer) parseDynamicsScore(output string) *DynamicsScoreAnalysis {
+	result := &DynamicsScoreAnalysis{}
 	
 	// Parse Channel 1 section
 	lines := strings.Split(output, "\n")

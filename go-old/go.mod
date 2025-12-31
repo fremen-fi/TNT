@@ -1,4 +1,4 @@
-module github.com/fremen-fi/tnt/go
+module github.com/fremen-fi/TNT/tree/main/go
 
 go 1.23
 
