@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"image/color"
+	"io"
 	"io/fs"
 	"math"
 	"net/http"
@@ -32,7 +33,14 @@ import (
 	"github.com/fremen-fi/tnt/go/platform"
 )
 
-const currentVersion = "1.2.0"
+const (
+	currentVersion = "1.2.1"
+	versionCheckURL = "https://software.collinsgroup.fi/tnt-version.json"
+	macARMDownloadURL = "https://software.collinsgroup.fi/TNT.dmg"
+	macIntelDownloadURL = "https://software.collinsgroup.fi/TNT-Intel.dmg"
+	linuxDownloadURL = "https://software.collinsgroup.fi/tnt.deb"
+	windowsDownloadURL = "https://software.collinsgroup.fi/TNT.exe"
+)
 
 type VersionInfo struct {
 	Version      string `json:"version"`
@@ -157,7 +165,7 @@ func checkForUpdates(currentVersion string, window fyne.Window, logFile *os.File
 	time.Sleep(500 * time.Millisecond)
 	
 	logToFile(logFile, "Fetching version info from server...")
-	resp, err := http.Get("https://software.collinsgroup.fi/tnt-version.json")
+	resp, err := http.Get(versionCheckURL)
 	if err != nil {
 		logToFile(logFile, fmt.Sprintf("HTTP error: %v", err))
 		return
@@ -183,16 +191,7 @@ func checkForUpdates(currentVersion string, window fyne.Window, logFile *os.File
 				fmt.Sprintf("Version %s is available!\n\n%s", versionInfo.Version, versionInfo.ReleaseNotes),
 				func(download bool) {
 					if download {
-						var cmd *exec.Cmd
-						switch runtime.GOOS {
-						case "windows":
-							cmd = exec.Command("cmd", "/c", "start", versionInfo.DownloadURL)
-						case "darwin":
-							cmd = exec.Command("open", versionInfo.DownloadURL)
-						case "linux":
-							cmd = exec.Command("xdg-open", versionInfo.DownloadURL)
-						}
-						cmd.Start()
+						downloadAndInstallUpdate(versionInfo, window)
 					}
 				},
 				window,
@@ -239,6 +238,107 @@ func compareVersions(v1, v2 string) int {
 	}
 	
 	return 0
+}
+
+func downloadAndInstallUpdate(versionInfo VersionInfo, window fyne.Window) {
+	logFile, _ := os.OpenFile(filepath.Join(os.TempDir(), "tnt_update.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	defer logFile.Close()
+	
+	logToFile(logFile, "Starting update download...")
+	
+	// Determine platform and file URL
+	var downloadURL string
+	var fileName string
+	
+	switch runtime.GOOS {
+	case "darwin":
+		if runtime.GOARCH == "arm64" {
+			downloadURL = macARMDownloadURL
+			fileName = "TNT.dmg"
+		} else {
+			downloadURL = macIntelDownloadURL
+			fileName = "TNT-Intel.dmg"
+		}
+	case "windows":
+		downloadURL = windowsDownloadURL
+		fileName = "TNT-Setup.exe"
+	case "linux":
+		downloadURL = linuxDownloadURL
+		fileName = "tnt.deb"
+	}
+	
+	logToFile(logFile, fmt.Sprintf("Download URL: %s", downloadURL))
+	
+	// Download file
+	var progressDialog dialog.Dialog
+	fyne.Do(func() {
+		progressDialog = dialog.NewCustom("Downloading Update", "Cancel", 
+			widget.NewProgressBarInfinite(), window)
+		progressDialog.Show()
+	})
+	
+	tempPath := filepath.Join(os.TempDir(), fileName)
+	
+	go func() {
+		resp, err := http.Get(downloadURL)
+		if err != nil {
+			logToFile(logFile, fmt.Sprintf("Download failed: %v", err))
+			fyne.Do(func() {
+				progressDialog.Hide()
+			})
+			dialog.ShowError(err, window)
+			return
+		}
+		defer resp.Body.Close()
+		
+		out, err := os.Create(tempPath)
+		if err != nil {
+			logToFile(logFile, fmt.Sprintf("File create failed: %v", err))
+			progressDialog.Hide()
+			dialog.ShowError(err, window)
+			return
+		}
+		defer out.Close()
+		
+		_, err = io.Copy(out, resp.Body)
+		if err != nil {
+			logToFile(logFile, fmt.Sprintf("File write failed: %v", err))
+			fyne.Do(func() {
+				progressDialog.Hide()
+			})
+			dialog.ShowError(err, window)
+			return
+		}
+		
+		fyne.Do(func() {
+			progressDialog.Hide()
+		})
+		logToFile(logFile, fmt.Sprintf("Downloaded to: %s", tempPath))
+		
+		// Show install prompt
+		fyne.Do(func() {
+			dialog.ShowConfirm(
+				"Update Ready",
+				fmt.Sprintf("Version %s has been downloaded.\n\nInstall now?", versionInfo.Version),
+				func(install bool) {
+					if install {
+						var cmd *exec.Cmd
+						switch runtime.GOOS {
+						case "darwin":
+							cmd = exec.Command("open", tempPath)
+						case "windows":
+							cmd = exec.Command("cmd", "/c", "start", "", tempPath)
+						case "linux":
+							cmd = exec.Command("xdg-open", tempPath)
+						}
+						cmd.Start()
+						logToFile(logFile, "Installer opened")
+					}
+				},
+				window,
+			)
+		})
+	}()
 }
 
 func extractFFmpeg() string {
