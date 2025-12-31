@@ -22,12 +22,12 @@ jobs:
 
       - name: Download build assets
         run: |
-          mkdir -p go/buildBlocks go/ffmpegSource
+          mkdir -p go/buildBlocks go/platform/ffmpegSource
           curl -o go/buildBlocks/Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
           curl -o go/buildBlocks/tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
           curl -o go/buildBlocks/tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          curl -o go/ffmpegSource/ffmpegMacM "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegMacM?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          chmod +x go/ffmpegSource/ffmpegMacM
+          curl -o go/platform/ffmpegSource/ffmpegMacM "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegMacM?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          chmod +x go/platform/ffmpegSource/ffmpegMacM
 
       - name: Install Fyne
         run: go install fyne.io/fyne/v2/cmd/fyne@latest
@@ -111,12 +111,12 @@ jobs:
 
       - name: Download build assets
         run: |
-          mkdir -p go/buildBlocks go/ffmpegSource
+          mkdir -p go/buildBlocks go/platform/ffmpegSource
           curl -o go/buildBlocks/Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
           curl -o go/buildBlocks/tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
           curl -o go/buildBlocks/tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          curl -o go/ffmpegSource/ffmpegMacX86 "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegMacX86?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          chmod +x go/ffmpegSource/ffmpegMacX86
+          curl -o go/platform/ffmpegSource/ffmpegMacX86 "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegMacX86?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          chmod +x go/platform/ffmpegSource/ffmpegMacX86
 
       - name: Install Fyne
         run: go install fyne.io/fyne/v2/cmd/fyne@latest
@@ -292,11 +292,11 @@ jobs:
 
       - name: Download build assets
         run: |
-          mkdir -p go/buildBlocks go/ffmpegSource
+          mkdir -p go/buildBlocks go/platform/ffmpegSource
           curl -o go/buildBlocks/Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
           curl -o go/buildBlocks/tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
           curl -o go/buildBlocks/tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          curl -o go/ffmpegSource/ffmpegLinuxAmd64 "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegLinuxAmd64?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          curl -o go/platform/ffmpegSource/ffmpegLinuxAmd64 "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegLinuxAmd64?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
 
       - name: Install dependencies
         run: |
