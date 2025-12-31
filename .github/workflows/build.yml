@@ -10,6 +10,7 @@ on:
 
 jobs:
   build-mac-arm64:
+    if: "!contains(github.ref, '-win')"
     runs-on: macos-latest
     steps:
       - name: Checkout Code
@@ -100,6 +101,7 @@ jobs:
 
   build-mac-intel:
     runs-on: macos-15-intel
+    if: "!contains(github.ref, '-win')"
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -188,6 +190,7 @@ jobs:
             "https://se.storage.bunnycdn.com/sw-stor/${{ steps.filename.outputs.dmg_name }}"
 
   build-windows:
+    if: "!contains(github.ref, '-mac') && !contains(github.ref, '-linux')"
     runs-on: windows-latest
     steps:
       - name: Checkout Code
@@ -280,6 +283,7 @@ jobs:
         shell: pwsh
 
   build-linux:
+    if: "!contains(github.ref, '-win') && !contains(github.ref, '-mac')"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
