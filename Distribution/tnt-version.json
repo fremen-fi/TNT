@@ -13,7 +13,7 @@
       "version": "1.1.0",
       "release_notes": "Adds FLAC encoder and data compression methods for FLAC and Opus.\nHides disabled items from UI based on encoding format.\nRewritten help section.",
       "release_date": "12 November, 2025"
-    }
+    },
     {
       "version": "1.0.2",
       "release_notes": "Preserve directory structure in batch processing (directory structure is copied to output directory so that for example Artist/Album/Track structure will remain intact)\nLoudness settings are now applied without needing to save UI configuration (saves you two clicks).",
