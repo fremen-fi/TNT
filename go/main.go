@@ -2453,7 +2453,7 @@ func (n *AudioNormalizer) parseLoudnormJSON(output string) map[string]string {
 	
 	n.logStatus(fmt.Sprintf("Measured JSON: %s", jsonMatch))
 	
-	var data map[string]interface{}
+	var data map[string]any
 	if err := json.Unmarshal([]byte(jsonMatch), &data); err != nil {
 		return nil
 }
