@@ -24,10 +24,10 @@ jobs:
       - name: Download build assets
         run: |
           mkdir -p go/buildBlocks go/platform/ffmpegSource
-          curl -o go/buildBlocks/Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          curl -o go/buildBlocks/tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          curl -o go/buildBlocks/tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          curl -o go/platform/ffmpegSource/ffmpegMacM "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegMacM?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          curl -o go/buildBlocks/Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=${{ secrets.CDN_PULL_TOKEN}}"
+          curl -o go/buildBlocks/tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=${{ secrets.CDN_PULL_TOKEN}}"
+          curl -o go/buildBlocks/tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=${{ secrets.CDN_PULL_TOKEN}}"
+          curl -o go/platform/ffmpegSource/ffmpegMacM "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegMacM?value=${{ secrets.CDN_PULL_TOKEN}}"
           chmod +x go/platform/ffmpegSource/ffmpegMacM
 
       - name: Install Fyne
@@ -120,10 +120,10 @@ jobs:
       - name: Download build assets
         run: |
           mkdir -p go/buildBlocks go/platform/ffmpegSource
-          curl -o go/buildBlocks/Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          curl -o go/buildBlocks/tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          curl -o go/buildBlocks/tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          curl -o go/platform/ffmpegSource/ffmpegMacX86 "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegMacX86?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          curl -o go/buildBlocks/Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=${{ secrets.CDN_PULL_TOKEN}}"
+          curl -o go/buildBlocks/tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=${{ secrets.CDN_PULL_TOKEN}}"
+          curl -o go/buildBlocks/tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=${{ secrets.CDN_PULL_TOKEN}}"
+          curl -o go/platform/ffmpegSource/ffmpegMacX86 "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegMacX86?value=${{ secrets.CDN_PULL_TOKEN}}"
           chmod +x go/platform/ffmpegSource/ffmpegMacX86
 
       - name: Install Fyne
@@ -190,7 +190,7 @@ jobs:
       - name: Upload macOS DMG Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mac-release-assets
+          name: mac-intel-release-assets
           path: go/${{ steps.filename.outputs.dmg_name }}
 
       - name: Upload to BunnyCDN
@@ -220,10 +220,10 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path go\buildBlocks
           New-Item -ItemType Directory -Force -Path go\platform\ffmpegSource
-          curl.exe -L -o go\buildBlocks\Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          curl.exe -L -o go\buildBlocks\tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          curl.exe -L -o go\buildBlocks\tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          curl.exe -L -o go\platform\ffmpegSource\ffmpeg.exe "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpeg.exe?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          curl.exe -L -o go\buildBlocks\Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=${{ secrets.CDN_PULL_TOKEN}}"
+          curl.exe -L -o go\buildBlocks\tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=${{ secrets.CDN_PULL_TOKEN}}"
+          curl.exe -L -o go\buildBlocks\tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=${{ secrets.CDN_PULL_TOKEN}}"
+          curl.exe -L -o go\platform\ffmpegSource\ffmpeg.exe "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpeg.exe?value=${{ secrets.CDN_PULL_TOKEN}}"
         shell: pwsh
         
       - name: Verify FFmpeg exists
@@ -316,10 +316,10 @@ jobs:
       - name: Download build assets
         run: |
           mkdir -p go/buildBlocks go/platform/ffmpegSource
-          curl -o go/buildBlocks/Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          curl -o go/buildBlocks/tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          curl -o go/buildBlocks/tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
-          curl -o go/platform/ffmpegSource/ffmpegLinuxAmd64 "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegLinuxAmd64?value=3ivfiLlvQ6EB2UyHVqIDc5QA"
+          curl -o go/buildBlocks/Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=${{ secrets.CDN_PULL_TOKEN}}"
+          curl -o go/buildBlocks/tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=${{ secrets.CDN_PULL_TOKEN}}"
+          curl -o go/buildBlocks/tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=${{ secrets.CDN_PULL_TOKEN}}"
+          curl -o go/platform/ffmpegSource/ffmpegLinuxAmd64 "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegLinuxAmd64?value=${{ secrets.CDN_PULL_TOKEN}}"
 
       - name: Install dependencies
         run: |
@@ -426,6 +426,7 @@ jobs:
         with:
           files: |
             mac-release-assets/*.dmg
+            mac-intel-release-assets/*.dmg
             linux-release-assets/*.deb
             windows-release-assets/*.exe 
         env:
