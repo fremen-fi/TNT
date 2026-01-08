@@ -21,7 +21,7 @@ When we use **emphasized** words that are inside "quotes", we refer to what mean
 
 When we refer to "we", "us" or "our", or similar, we mean **Fremen**, which is a part of **Collins Group**.
 
-From this section onwards, the contents in question are not licensed by any aforementioned licenses. Unless otherwise mentioned, the **"License"** in question is **Proprietary Source-Available License**.
+From this section onwards, the contents in question are not licensed by any aforementioned licenses. Unless otherwise mentioned, the **"License"** in question is **Proprietary Source-Available License**, whose most up-to-date version shall be viewed [here](https://www.fremen.fi/terms-of-use).
 
 ## Legal Compliance
 ### Obligation of Compliance
