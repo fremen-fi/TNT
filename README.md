@@ -28,3 +28,6 @@ For more information about the encoders, see the [manual entry](https://www.frem
 
 ## Processing
 Configure dynamics processing and EQ to shape your audio for different broadcast scenarios. TNT uses a [proprietary equation](https://www.fremen.fi/guru/dynamic-score) to find the best processing values for each audio file. For more information, see [processing in the manual](https://www.fremen.fi/tnt-manual/processing).
+
+## License
+[LICENSE.md](https://github.com/fremen-fi/TNT/blob/main/LICENSE.md), or view the most up-to-date [General License](https://www.fremen.fi/terms-of-use) on our website.
