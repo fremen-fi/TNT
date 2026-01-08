@@ -90,6 +90,12 @@ jobs:
             --password "${{ secrets.NOTARY_PASSWORD }}"
           xcrun notarytool submit ${{ steps.filename.outputs.dmg_name }} --keychain-profile "notary-profile" --wait
           xcrun stapler staple ${{ steps.filename.outputs.dmg_name }}
+          
+      - name: Upload macOS DMG Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-release-assets
+          path: go/${{ steps.filename.outputs.dmg_name }}
 
       - name: Upload to BunnyCDN
         run: |
