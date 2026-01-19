@@ -1,10 +1,16 @@
 {
-  "version": "1.2.1",
+  "version": "1.2.2",
   "download_url": "https://www.fremen.fi/software/tnt",
-  "release_notes": "Lets you update the version inside the app.",
-  "release_date": "31 December, 2025",
+  "release_notes": "Library linking fixes affecting all Debian users.",
+  "release_date": "19 January, 2025",
   "supported_platforms": "macOS (M-series), macOS 15- (Intel), macOS 13 & 14 (EOL) (Intel), Windows (Intel), Ubuntu/Debian (Intel)",
-  "history": [{
+  "history": [
+	  {
+		  "version": "1.2.1",
+		  "release_notes": "Lets you update the version in the app.",
+		  "release_date": "31 December, 2025"
+		},
+	  {
     "version": "1.2.0",
     "release_notes": "Adds powerful processing features.",
     "release_date": "5 December, 2025"
