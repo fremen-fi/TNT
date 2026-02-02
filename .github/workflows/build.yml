@@ -245,13 +245,13 @@ jobs:
       - name: Determine filename
         id: filename
         run: |
-            $TAG = "${{ github.ref_name }}".TrimStart("v")
-            if ($TAG -match "-(alpha|beta|rc)\.") {
+          $TAG = "${{ github.ref_name }}".TrimStart("v")
+          if ($TAG -match "-(alpha|beta|rc)\.") {
             $PREFIX = $Matches[1]
             echo "exe_name=${PREFIX}-TNT.exe" >> $env:GITHUB_OUTPUT
-            } else {
+          } else {
             echo "exe_name=TNT.exe" >> $env:GITHUB_OUTPUT
-            }
+          }
         shell: pwsh
 
       - name: Create InnoSetup installer
@@ -354,8 +354,8 @@ jobs:
           TAG="${GITHUB_REF#refs/tags/v}"
           VERSION=$(echo "$TAG" | cut -d'-' -f1)
 
-          if [[ "$TAG" =~ -(alpha|beta|rc)\. ]]; then
-            PREFIX=$(echo "$TAG" | sed -E 's/.*-(alpha|beta|rc)\..*/\1/')
+          if [[ "$TAG" == *"-"* ]]; then
+            PREFIX=$(echo "$TAG" | cut -d'-' -f2 | cut -d'.' -f1)
             DEB_NAME="${PREFIX}-tnt"
           else
             DEB_NAME="tnt"
@@ -369,7 +369,7 @@ jobs:
 
           cp tnt-linux-amd64 "${DEB_DIR}/usr/bin/tnt"
           cp tnt.desktop "${DEB_DIR}/usr/share/applications/"
-          cp postinst "${DEB_DIR
+          cp postinst "${DEB_DIR}/DEBIAN/"
 
           cat > "${DEB_DIR}/DEBIAN/control" << CONTROL_EOF
           Package: tnt
