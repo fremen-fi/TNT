@@ -78,8 +78,16 @@ jobs:
         run: |
           cd go
           npm install -g create-dmg
-          create-dmg TNT.app --overwrite --dmg-title="TNT" || true
-          mv TNT*.dmg ${{ steps.filename.outputs.dmg_name }}
+          mkdir -p dmg-temp
+          cp -R TNT.app dmg-temp/
+          create-dmg dmg-temp/TNT.app --overwrite --dmg-title="TNT" || true
+          CREATED_DMG=$(ls TNT*.dmg 2>/dev/null | head -n 1)
+          if [ -n "$CREATED_DMG" ]; then
+            mv "$CREATED_DMG" ${{ steps.filename.outputs.dmg_name }}
+          else
+            hdiutil create -volname "TNT" -srcfolder dmg-temp -ov -format UDZO ${{ steps.filename.outputs.dmg_name }}
+          fi
+          rm -rf dmg-temp
 
       - name: Notarize DMG
         run: |
@@ -174,8 +182,16 @@ jobs:
         run: |
           cd go
           npm install -g create-dmg
-          create-dmg TNT.app --overwrite --dmg-title="TNT" || true
-          mv TNT*.dmg ${{ steps.filename.outputs.dmg_name }}
+          mkdir -p dmg-temp
+          cp -R TNT.app dmg-temp/
+          create-dmg dmg-temp/TNT.app --overwrite --dmg-title="TNT" || true
+          CREATED_DMG=$(ls TNT*.dmg 2>/dev/null | head -n 1)
+          if [ -n "$CREATED_DMG" ]; then
+            mv "$CREATED_DMG" ${{ steps.filename.outputs.dmg_name }}
+          else
+            hdiutil create -volname "TNT" -srcfolder dmg-temp -ov -format UDZO ${{ steps.filename.outputs.dmg_name }}
+          fi
+          rm -rf dmg-temp
 
       - name: Notarize DMG
         run: |
