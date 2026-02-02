@@ -64,21 +64,13 @@ jobs:
       - name: Determine filename
         id: filename
         run: |
-            TAG="${GITHUB_REF#refs/tags/v}"
-            if [[ "$TAG" =~ -(alpha|beta|rc)\. ]]; then
+          TAG="${GITHUB_REF#refs/tags/v}"
+          if [[ "$TAG" =~ -(alpha|beta|rc)\. ]]; then
             PREFIX=$(echo "$TAG" | sed -E 's/.*-(alpha|beta|rc)\..*/\1/')
-            if [[ "${{ matrix.runs-on }}" == *"intel"* ]]; then
-                echo "dmg_name=${PREFIX}-TNT-Intel.dmg" >> $GITHUB_OUTPUT
-            else
-                echo "dmg_name=${PREFIX}-TNT.dmg" >> $GITHUB_OUTPUT
-            fi
-            else
-            if [[ "${{ matrix.runs-on }}" == *"intel"* ]]; then
-                echo "dmg_name=TNT-Intel.dmg" >> $GITHUB_OUTPUT
-            else
-                echo "dmg_name=TNT.dmg" >> $GITHUB_OUTPUT
-            fi
-            fi
+            echo "dmg_name=${PREFIX}-TNT-Intel.dmg" >> $GITHUB_OUTPUT
+          else
+            echo "dmg_name=TNT.dmg" >> $GITHUB_OUTPUT
+          fi
 
       - name: Create DMG
         run: |
@@ -166,21 +158,13 @@ jobs:
       - name: Determine filename
         id: filename
         run: |
-            TAG="${GITHUB_REF#refs/tags/v}"
-            if [[ "$TAG" =~ -(alpha|beta|rc)\. ]]; then
+          TAG="${GITHUB_REF#refs/tags/v}"
+          if [[ "$TAG" =~ -(alpha|beta|rc)\. ]]; then
             PREFIX=$(echo "$TAG" | sed -E 's/.*-(alpha|beta|rc)\..*/\1/')
-            if [[ "${{ matrix.runs-on }}" == *"intel"* ]]; then
-                echo "dmg_name=${PREFIX}-TNT-Intel.dmg" >> $GITHUB_OUTPUT
-            else
-                echo "dmg_name=${PREFIX}-TNT.dmg" >> $GITHUB_OUTPUT
-            fi
-            else
-            if [[ "${{ matrix.runs-on }}" == *"intel"* ]]; then
-                echo "dmg_name=TNT-Intel.dmg" >> $GITHUB_OUTPUT
-            else
-                echo "dmg_name=TNT.dmg" >> $GITHUB_OUTPUT
-            fi
-            fi
+            echo "dmg_name=${PREFIX}-TNT-Intel.dmg" >> $GITHUB_OUTPUT
+          else
+            echo "dmg_name=TNT-Intel.dmg" >> $GITHUB_OUTPUT
+          fi
 
 
       - name: Create DMG
