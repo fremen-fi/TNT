@@ -1,10 +1,28 @@
 {
-  "version": "1.2.2",
-  "download_url": "https://www.fremen.fi/software/tnt",
-  "release_notes": "Library linking fixes affecting all Debian users.",
-  "release_date": "19 January, 2025",
-  "supported_platforms": "macOS (M-series), macOS 15- (Intel), macOS 13 & 14 (EOL) (Intel), Windows (Intel), Ubuntu/Debian (Intel)",
+  "version": "1.3.0",
+  "os": ["darwin", "penguin"],
+  "download_url": [{
+	  "darwin": "https://software.collinsgroup.fi/TNT.dmg",
+	  "darwin-senior": "https://software.collinsgroup.fi/legacy/macos13/TNT-Intel.dmg",
+	  "orangutan": "",
+	  "penguin": "https://software.collinsgroup.fi/tnt_amd64.deb"
+  }],
+  "release_notes": "Automatically check mono compatibility before processing.",
+  "release_date": "2 February, 2026",
+  "supported_platforms": "macOS (M-series), macOS 15- (Intel), Windows (Intel), Ubuntu/Debian (Intel)",
   "history": [
+	  {
+	  "version": "1.2.2",
+		"os": ["darwin", "orangutan", "penguin"],
+		"download_url": [{
+			"darwin": "https://software.collinsgroup.fi/TNT.dmg",
+			"orangutan": "https://software.collinsgroup.fi/TNT.exe",
+			"penguin": "https://software.collinsgroup.fi/tnt_amd64.deb"
+		}],
+		"release_notes": "Library linking fixes affecting all Debian users.",
+		"release_date": "19 January, 2026",
+		"supported_platforms": "macOS (M-series), macOS 15- (Intel), Windows (Intel), Ubuntu/Debian (Intel)"
+	  },
 	  {
 		  "version": "1.2.1",
 		  "release_notes": "Lets you update the version in the app.",
