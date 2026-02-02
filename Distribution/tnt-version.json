@@ -46,7 +46,7 @@
       "version": "1.0.1",
       "release_date": "31 October, 2025",
       "release_notes": "macOS users get access to Apple AAC encoder.\nWindows users get access to Fraunhofer AAC encoder(deprecates native AAC).\nPreferences can now be saved.\nFixes library linking issues on macOS.\nReduces executable size on Windows.\nError reports can now be sent from the app.",
-	  "easter-egg": "this field is an easter egg for developer purposes."
+	  "easter-egg": "this field is an easter egg for developer purposes"
     }
   ]
 }
