@@ -16,18 +16,18 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 	logoImg := canvas.NewImageFromResource(getLogoForTheme(a))
 	logoImg.SetMinSize(fyne.NewSize(0, 100))
 	logoImg.FillMode = canvas.ImageFillContain
-	
+
 	go func() {
 		a.Settings().AddListener(func(s fyne.Settings) {
 			logoImg.Resource = getLogoForTheme(a)
 			canvas.Refresh(logoImg)
 		})
 	}()
-	
+
 	n.fileList = widget.NewList(
 		func() int { return len(n.files) },
 		func() fyne.CanvasObject {
-			return container.NewBorder(nil, nil, nil, 
+			return container.NewBorder(nil, nil, nil,
 				widget.NewButtonWithIcon("", theme.DeleteIcon(), nil),
 				widget.NewLabel("template"),
 			)
@@ -36,19 +36,21 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 			border := o.(*fyne.Container)
 			label := border.Objects[0].(*widget.Label)
 			btn := border.Objects[1].(*widget.Button)
-			
+
 			label.SetText(filepath.Base(n.files[i]))
 			btn.OnTapped = func() {
 				n.removeFile(i)
 			}
 		},
 	)
-	
+
+	n.checkPhaseBtn = widget.NewCheck("Phase check", nil)
+
 	// Mode toggle
 	n.modeToggle = widget.NewCheck("Advanced Mode", func(checked bool) {
 		n.advancedMode = checked
 	})
-	
+
 	// Simple mode widgets
 	n.simpleGroupButtons = widget.NewRadioGroup([]string{
 		"Small file (AAC 256kbps)",
@@ -56,41 +58,41 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 		"Production (PCM 48kHz/24bit)",
 	}, nil)
 	n.simpleGroupButtons.SetSelected("Production (PCM 48kHz/24bit)")
-	
+
 	// Advanced mode widgets
 	n.sampleRate = widget.NewSelect([]string{"44100", "48000", "88200", "96000", "192000"}, nil)
 	n.sampleRate.SetSelected("48000")
-	
+
 	n.bitDepth = widget.NewSelect([]string{"16", "24", "32 (float)", "64 (float)"}, nil)
 	n.bitDepth.SetSelected("24")
-	
+
 	n.bitrateEntry = widget.NewEntry()
 	n.bitrateEntry.SetPlaceHolder("Bitrate (kbps)")
 	n.bitrateEntry.SetText("256")
-	
+
 	n.normalizeTarget = widget.NewEntry()
 	n.normalizeTarget.SetPlaceHolder("LUFS target")
 	n.normalizeTarget.SetText("-23")
-	
+
 	n.normalizeTarget.OnChanged = func(s string) {
 		if n.loudnormCustomCheck.Checked {
 			n.updateNormalizationLabel("Custom")
 		}
 	}
-	
+
 	n.normalizeTargetTp = widget.NewEntry()
 	n.normalizeTargetTp.SetPlaceHolder("TP limit")
 	n.normalizeTargetTp.SetText("-1")
-	
+
 	n.normalizeTargetTp.OnChanged = func(s string) {
 		if n.loudnormCustomCheck.Checked {
 			n.updateNormalizationLabel("Custom")
 		}
 	}
-		
+
 	// Loudnorm checkbox
 	n.writeTagsLabel = widget.NewLabel("Write RG tags (EBU R128: -23 LUFS)")
-	
+
 	n.writeTags = widget.NewCheck("", func(checked bool) {
 		if checked  && n.checkPCM(){
 			n.loudnormCheck.Disable()
@@ -109,13 +111,13 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 			n.noTranscode.Hide()
 		}
 	})
-	
+
 	writeTagsRow := container.NewHBox(n.writeTags, n.writeTagsLabel)
 	n.writeTags.SetChecked(false)
-	
+
 	n.writeTags.SetChecked(false)
 	n.writeTags.Disable()
-	
+
 	n.noTranscode = widget.NewCheck("Do not transcode", func(b bool) {
 		if b {
 			n.bypassProc.SetChecked(true)
@@ -123,14 +125,14 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 		} else {
 			n.bypassProc.Enable()
 		}
-	}) 
+	})
 	n.noTranscode.SetChecked(false)
 	n.noTranscode.Disable()
 	n.noTranscode.Hide()
-	
+
 	n.dataCompLevel = widget.NewSlider(0, 10)
 	n.dataCompLevel.Step = 1
-		
+
 	n.loudnormCustomCheck = widget.NewCheck("Custom loudness", func(checked bool) {
 		if n.loudnormCustomCheck.Checked {
 			n.normalizeTarget.Enable()
@@ -150,11 +152,11 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 			n.updateNormalizationLabel(n.normalizationStandard)
 		}
 	})
-	
+
 	n.loudnormCustomCheck.SetChecked(false)
 	n.normalizeTarget.Disable()
 	n.normalizeTargetTp.Disable()
-	
+
 	n.watchMode = widget.NewCheck("Watch", func(checked bool) {
 		if checked {
 			n.startWatching()
@@ -165,7 +167,7 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 		}
 	})
 	n.watchMode.SetChecked(false)
-	
+
 	formatLabel := widget.NewLabel("Format:")
 	sampleRateLabel := widget.NewLabel("Sample Rate:")
 	bitDepthLabel := widget.NewLabel("Bit Depth:")
@@ -174,18 +176,18 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 	n.normalizeTargetLabelTp = widget.NewLabel("TP limit in dB")
 	dataCompLevelLabel := widget.NewLabel("Set data compression level (0 is off)")
 	dataCompLevelLabelCurrent := widget.NewLabel(fmt.Sprintf("Set: %d", int(n.dataCompLevel.Value)))
-	
+
 	n.normalizeTarget.Disable()
 	n.normalizeTargetTp.Disable()
 	n.normalizeTarget.Hide()
 	n.normalizeTargetTp.Hide()
 	n.normalizeTargetLabel.Hide()
 	n.normalizeTargetLabelTp.Hide()
-	
+
 	n.dataCompLevel.OnChanged = func(f float64) {
 		dataCompLevelLabelCurrent.SetText(fmt.Sprintf("Set: %d", int(f)))
 	}
-	
+
 	n.IsSpeechCheck = widget.NewCheck("Optimize Opus for speech", func(checked bool){
 		if checked {
 				n.formatSelect.SetSelected("Opus")
@@ -196,16 +198,16 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 		}
 	})
 	n.IsSpeechCheck.SetChecked(false)
-		
+
 	// Create format select after container exists
 	n.formatSelect = widget.NewSelect(getPlatformFormats(), func(value string) {
 		n.updateAdvancedControls()
-		
+
 		usesDataComp := value == "Opus" || value == "FLAC"
 		usesBitDepth := value == "PCM"
 		usesBitRate := value != "PCM" && value != "FLAC"
 		usesSampleRate := value == "PCM"
-		
+
 		if usesDataComp {
 			n.dataCompLevel.Show()
 			dataCompLevelLabel.Show()
@@ -215,7 +217,7 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 			dataCompLevelLabel.Hide()
 			dataCompLevelLabelCurrent.Hide()
 		}
-		
+
 		if usesBitDepth {
 			n.bitDepth.Show()
 			bitDepthLabel.Show()
@@ -225,7 +227,7 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 			n.bitDepth.Hide()
 			bitDepthLabel.Hide()
 		}
-		
+
 		if usesBitRate {
 			n.bitrateEntry.Show()
 			bitrateLabel.Show()
@@ -233,7 +235,7 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 			n.bitrateEntry.Hide()
 			bitrateLabel.Hide()
 		}
-		
+
 		if usesSampleRate {
 			n.sampleRate.Show()
 			sampleRateLabel.Show()
@@ -241,10 +243,10 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 			n.sampleRate.Hide()
 			sampleRateLabel.Hide()
 		}
-		
+
 	})
 	n.formatSelect.SetSelected(getPlatformFormats()[1])
-	
+
 	// Loudnorm checkbox
 	n.loudnormLabel = widget.NewLabel("Normalize (EBU R128: -23 LUFS)")
 	n.loudnormCheck = widget.NewCheck("", func(checked bool) {
@@ -256,12 +258,12 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 	})
 	loudnormRow := container.NewHBox(n.loudnormCheck, n.loudnormLabel)
 	n.loudnormCheck.SetChecked(false)
-	
+
 	n.modeWarning = widget.NewLabel("To use advanced features, trigger processing from Advanced or Processing view.")
 	n.modeWarning.Wrapping = fyne.TextWrapWord
-	
+
 	n.simpleGroup = container.NewVBox(n.modeWarning, n.simpleGroupButtons, loudnormRow)
-		
+
 	n.advancedContainer = container.NewVBox(
 		container.NewBorder(nil, nil, formatLabel, nil, widget.NewLabel("")),
 		container.NewBorder(nil, nil, sampleRateLabel, nil, n.sampleRate),
@@ -270,49 +272,49 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 		container.NewBorder(nil, nil, n.normalizeTargetLabel, nil, n.normalizeTarget),
 		container.NewBorder(nil, nil, n.normalizeTargetLabelTp, nil, n.normalizeTargetTp),
 		container.NewBorder(nil,nil, dataCompLevelLabel, dataCompLevelLabelCurrent, n.dataCompLevel),
-		
+
 		n.loudnormCustomCheck,
 		writeTagsRow,
 		n.noTranscode,
 		loudnormRow,
 		n.IsSpeechCheck,
 	)
-	
+
 	// Replace placeholder with actual format select
 	n.advancedContainer.Objects[0] = container.NewBorder(nil, nil, formatLabel, nil, n.formatSelect)
-	
+
 	n.normalizationStandard = "EBU R128 (-23 LUFS)"
-	
+
 	n.watcherWarnLabel = widget.NewLabel("")
-	
+
 	// File selection
 	selectFilesBtn := widget.NewButton("Select Files", n.selectFiles)
 	selectFolderBtn := widget.NewButton("Select Folder", n.selectFolder)
-	
+
 	n.outputLabel = widget.NewLabel("No output folder selected")
 	selectOutputBtn := widget.NewButton("Output Folder", n.selectOutputFolder)
-	
+
 	n.processBtn = widget.NewButton("Process", n.process)
 	n.processBtn.Disable()
-	
+
 	n.progressBar = widget.NewProgressBar()
 	n.progressBar.Hide()
-	
+
 	n.statusLog = widget.NewMultiLineEntry()
 	n.statusLog.Disable()
 	n.statusLog.SetPlaceHolder("Processing log will appear here...")
-	
-	// processing tab 
+
+	// processing tab
 	n.dynamicsLabel = widget.NewLabel("Dynamics processing level")
 	n.dynamicsDrop = widget.NewSelect([]string{"Off", "Light", "Moderate", "Broadcast"}, nil)
 	n.dynamicsDrop.SetSelected("Off")
 	dynamicsRow := container.NewHBox(n.dynamicsDrop, n.dynamicsLabel)
-	
+
 	n.EqLabel = widget.NewLabel("EQ target curve")
 	n.EqDrop = widget.NewSelect([]string{"Off", "Flat", "Speech", "Broadcast"}, nil)
 	n.EqDrop.SetSelected("Off")
 	eqRow := container.NewHBox(n.EqDrop, n.EqLabel)
-	
+
 	n.bypassProc = widget.NewCheck("Bypass all processing", func(checked bool) {
 		if checked {
 			n.dynamicsDrop.Disable()
@@ -322,24 +324,24 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 			n.EqDrop.Enable()
 		}
 	})
-	
+
 	n.dynNorm = widget.NewCheck("", nil)
 	n.dynNormLabel = widget.NewLabel("Use dynamic normalization")
 	dynNormRow := container.NewHBox(n.dynNorm, n.dynNormLabel)
-	
+
 	processTab := container.NewVBox(dynamicsRow, eqRow, dynNormRow, widget.NewSeparator(), n.bypassProc)
-	
+
 	checkUpdateButton := widget.NewButton("Check for updates", func() {
 		go checkForUpdates(currentVersion, n.window, n.logFile)
 	})
-	
+
 	helpBtn := widget.NewButton("Help", func() {
-			
-			menuGettingStarted := widget.NewLabel(				
+
+			menuGettingStarted := widget.NewLabel(
 `TNT is designed for broadcast professionals to streamline audio workflows. The application provides three core capabilities:
 
 • Transcode - Convert between audio formats
-• Normalize - Ensure consistent loudness levels  
+• Normalize - Ensure consistent loudness levels
 • Tag - Write ReplayGain metadata for playback guidance
 
 FAST MODE
@@ -358,7 +360,7 @@ WORKFLOW
 
 For more information visit https://www.fremen.fi/software/tnt and scroll to the bottom of the page.`)
 			menuGettingStarted.Wrapping = fyne.TextWrapWord
-			
+
 			menuSimpleTab := widget.NewLabel(`
 SIMPLE MODE
 
@@ -382,7 +384,7 @@ Processing in Simple mode requires just four clicks:
 
 The application processes files individually in the background. Completed files appear in your output folder as they finish, allowing you to continue working while processing continues.`)
 			menuSimpleTab.Wrapping = fyne.TextWrapWord
-			
+
 			menuAdvancedTab := widget.NewLabel(
 `ADVANCED MODE
 
@@ -429,7 +431,7 @@ Speech: Optimizes encoding for voice content
 • Uses speech-specific normalization when combined with Normalize
 • Do not use with music content`)
 			menuAdvancedTab.Wrapping = fyne.TextWrapWord
-			
+
 			menuFormatsTab := widget.NewLabel(
 `AUDIO FORMATS
 
@@ -452,7 +454,7 @@ FLAC is a lossless compression format that reduces file size without any quality
 PCM (WAV)
 PCM, or WAV in this tool is a pulse-code modulated, raw uncompressed audio stream. It's the highest quality, but it comes with a size-cost. This encoder doesn't have a bitrate setting, but has two other settings that result in a bitrate. First, sample rate (either 44.1, 48, 88.2, 96, 192 kHz) means "how often the original data is converted into audio in a second". With 48 kHz the audio is sampled forty-eight thousand times in a second. Second, the bit depth controls "how precisely we want to have each sample". The options are either 16, 24, 32 or 64, of which the last two are floating-point and used in specific scenarios. The file size for a thirty-second audio with 48 kHz, 24-bit audio is 8.64 MB.`)
 			menuFormatsTab.Wrapping = fyne.TextWrapWord
-			
+
 			menuProcessingTab := widget.NewLabel(
 `
 Setting 'Do not transcode' in the Advanced tab bypasses all processing.
@@ -526,7 +528,7 @@ All processing happens at 192kHz sample rate internally to ensure intersample pe
 The adaptive nature of TNT's processing means two identical preset selections may produce different filter parameters depending on the input audio's characteristics. This is intentional — the software adjusts its processing based on what it measures, ensuring optimal results for each file rather than applying static presets that may not suit the content.
 `)
 		menuProcessingTab.Wrapping = fyne.TextWrapWord
-		
+
 		menuWatchHelpTab := widget.NewLabel(
 `
 Watch mode automates repetitive processing tasks by monitoring a folder and automatically processing new files as they appear. For example, a newsdesk can configure TNT to watch their raw audio folder - whenever a reporter records new audio, TNT detects it within seconds and outputs the processed file to the specified destination. TNT must remain running (the window can be minimized or hidden).
@@ -536,7 +538,7 @@ Watch mode uses your current UI settings. To change processing parameters, simpl
 Watch mode only processes new files added after activation - it ignores existing files. To process a folder's current contents, select it via "Select Folder" first. Once complete, enable Watch mode to handle any newly added files.
 `)
 		menuWatchHelpTab.Wrapping = fyne.TextWrapWord
-			
+
 			tabs := container.NewAppTabs(
 				container.NewTabItem("Getting started", container.NewScroll(menuGettingStarted)),
 				container.NewTabItem("Simple", container.NewScroll(menuSimpleTab)),
@@ -544,15 +546,15 @@ Watch mode only processes new files added after activation - it ignores existing
 				container.NewTabItem("Processing", container.NewScroll(menuProcessingTab)),
 				container.NewTabItem("Watcher", container.NewScroll(menuWatchHelpTab)),
 				container.NewTabItem("Audio formats", container.NewScroll(menuFormatsTab)),			)
-			
+
 			tabs.SetTabLocation(container.TabLocationTop)
-			
+
 		helpWindow := fyne.CurrentApp().NewWindow("Help")
 		helpWindow.SetContent(tabs)
 		helpWindow.Resize(fyne.NewSize(600, 400))
 		helpWindow.Show()
 	})
-	
+
 	menuBtn := widget.NewButton("Menu", func() {
 		n.menuMutex.Lock()
 		if n.menuWindow != nil {
@@ -564,7 +566,7 @@ Watch mode only processes new files added after activation - it ignores existing
 		// Create normalization settings content
 		stdGroup := widget.NewRadioGroup([]string{"EBU R128 (-23 LUFS)", "USA ATSC A/85 (-24 LUFS)", "Custom"}, nil)
 		stdGroup.SetSelected(n.normalizationStandard)
-		
+
 		lufsEntry := widget.NewEntry()
 		lufsEntry.SetText(n.normalizeTarget.Text)
 		lufsEntry.OnChanged = func(s string) {
@@ -573,7 +575,7 @@ Watch mode only processes new files added after activation - it ignores existing
 				n.updateNormalizationLabel("Custom")
 			}
 		}
-		
+
 		tpEntry := widget.NewEntry()
 		tpEntry.SetText(n.normalizeTargetTp.Text)
 		tpEntry.Validator = func(s string) error {
@@ -595,7 +597,7 @@ Watch mode only processes new files added after activation - it ignores existing
 				n.updateNormalizationLabel("Custom")
 			}
 		}
-		
+
 		stdGroup.OnChanged = func(selected string) {
 			if selected == "Custom" {
 				lufsEntry.Enable()
@@ -603,7 +605,7 @@ Watch mode only processes new files added after activation - it ignores existing
 			} else {
 				lufsEntry.Disable()
 				tpEntry.Disable()
-				
+
 				// Update immediately when standard changes
 				switch selected {
 				case "EBU R128 (-23 LUFS)":
@@ -621,17 +623,17 @@ Watch mode only processes new files added after activation - it ignores existing
 				n.normalizationStandard = selected
 			}
 		}
-		
+
 		if stdGroup.Selected != "Custom" {
 			lufsEntry.Disable()
 			tpEntry.Disable()
 		}
-		
+
 		tpRow := container.NewVBox(tpEntry)
-		
+
 		normInstructions := widget.NewLabel("Values are interpreted as negative values regardless of input. Empty values default to -23 LUFS and -1 dBTP.")
 		normInstructions.Wrapping = fyne.TextWrapWord
-		
+
 		normContent := container.NewVBox(
 			normInstructions,
 			widget.NewLabel("Default normalization targets:"),
@@ -641,7 +643,7 @@ Watch mode only processes new files added after activation - it ignores existing
 			widget.NewLabel("Custom TP target:"),
 			tpRow,
 		)
-		
+
 		// Create save button content
 		saveBtn := widget.NewButton("Save current configuration", func() {
 			// Apply normalization settings
@@ -662,16 +664,16 @@ Watch mode only processes new files added after activation - it ignores existing
 			}
 			n.updateNormalizationLabel(stdGroup.Selected)
 			n.normalizationStandard = stdGroup.Selected
-			
+
 			n.savePreferences()
 			dialog.ShowInformation("Saved", "Preferences saved successfully", n.window)
 		})
-		
+
 		saveContentText := widget.NewLabel(`
 Save all current settings, including Mode (simple/advanced), Format and encoding settings, Normalization defaults and last output directory. Preferences are loaded automatically on startup.
 			`)
 		saveContentText.Wrapping = fyne.TextWrapWord
-		
+
 		userFactoryResetBtn := widget.NewButton("Reset to defaults", func() {
 			dialog.ShowConfirm("Reset preferences",
 		"This will delete all saved preferences. TNT will use default settings on next launch. Continue?",
@@ -683,7 +685,7 @@ Save all current settings, including Mode (simple/advanced), Format and encoding
 		n.window,
 		)
 		})
-		
+
 		saveContent := container.NewVBox(
 			saveContentText,
 			widget.NewSeparator(),
@@ -691,68 +693,95 @@ Save all current settings, including Mode (simple/advanced), Format and encoding
 			widget.NewSeparator(),
 			userFactoryResetBtn,
 		)
-				
+
 		versionUpdate := container.NewVBox(
 			widget.NewLabel("Check for updates"),
 			widget.NewLabel(fmt.Sprintf("You're currently running version %s", currentVersion)),
 			widget.NewSeparator(),
 			checkUpdateButton,
 		)
-		
+
 		settingsWatchModeText := widget.NewLabel(`
 Start watch mode
 Watch mode processes new files in a directory automatically.
 Origin directory is selected from main UI by clicking 'Select Folder' and the output directory is chosen via 'Select Output'. Watch mode doesn't process files already existing in a directory. To trigger processing by watcher, files need to spawn to the watched directory.
 Watch mode status is indicated by a text in the top left corner. If empty, watch mode is OFF.
 			`)
-			
+
 		settingsWatchModeText.Wrapping = fyne.TextWrapWord
-		
+
 		settingsWatchMode := container.NewVBox(
 			settingsWatchModeText,
 			widget.NewSeparator(),
 			n.watchMode,
 		)
-		
+
+		settingsFunctionsTabText := widget.NewLabel(`
+Functions
+		`)
+
+		settingsFunctionsTabText.Wrapping = fyne.TextWrapWord
+
+		functionsCheckPhaseText := widget.NewLabel(`
+Check mono compatibility before processing
+Check this if you wish to automatically check for the mono compatibility of the audio file. If the audio is assumed to not be compatible with monophonic reproduction systems, you will be asked if you want to continue or skip the file.
+		`)
+
+		functionsCheckPhaseText.Wrapping = fyne.TextWrapWord
+
+		settingsFunctions := container.NewVBox(
+			settingsFunctionsTabText,
+			widget.NewSeparator(),
+			// Phase check
+			functionsCheckPhaseText,
+			n.checkPhaseBtn,
+			// Watch mode settings
+			settingsWatchModeText,
+			settingsWatchModeText,
+			n.watchMode,
+			widget.NewSeparator(),
+		)
+
 		settingsSendErrorReportText := widget.NewLabel(`
 Send an error report.
 			`)
-			
+
 			settingsSendErrorReportText.Wrapping = fyne.TextWrapWord
-			
+
 		sendLogReportBtn := widget.NewButton("Send report", func() {
 			n.sendLogReport()
 		})
-			
+
 		settingsSendErrorReport := container.NewVBox(
 			settingsSendErrorReportText,
 			widget.NewSeparator(),
 			sendLogReportBtn,
-			
+
 		)
-		
+
 		tabs := container.NewAppTabs(
 			container.NewTabItem("Normalization", normContent),
 			container.NewTabItem("Save Configuration", saveContent),
+			container.NewTabItem("Functions", settingsFunctions),
 			container.NewTabItem("Watch mode", settingsWatchMode),
 			container.NewTabItem("Version upgrade", versionUpdate),
 			container.NewTabItem("Send error report", settingsSendErrorReport),
-		)			
-		
+		)
+
 		prefsWindow := fyne.CurrentApp().NewWindow("Preferences")
 		prefsWindow.SetContent(tabs)
 		prefsWindow.Resize(fyne.NewSize(500, 400))
-		
+
 		n.menuWindow = prefsWindow
 		prefsWindow.SetOnClosed(func() {
 			n.menuMutex.Lock()
 			n.menuWindow = nil
 			n.menuMutex.Unlock()
 		})
-		
+
 		prefsWindow.Show()
 	})
-	
+
 	clearAllBtn := widget.NewButton("Clear all", func() {
 		n.mutex.Lock()
 		n.files = make([]string, 0)
@@ -761,24 +790,24 @@ Send an error report.
 		n.updateProcessButton()
 		n.logStatus("Cleared all files from queue")
 	})
-	
+
 	previewSizeBtn := widget.NewButton("Preview Size", func() {
 		n.previewSize()
 	})
-	
+
 	topButtons := container.NewHBox(selectFilesBtn, selectFolderBtn)
 	outputSection := container.NewBorder(nil, nil, widget.NewLabel("Output:"), selectOutputBtn, n.outputLabel)
-	
+
 	topBar := container.NewHBox(helpBtn, menuBtn)
-	
+
 	modeTabs := container.NewAppTabs(
 		container.NewTabItem("Fast", container.NewPadded(n.simpleGroup)),
 		container.NewTabItem("Advanced", container.NewPadded(n.advancedContainer)),
 		container.NewTabItem("Processing", container.NewPadded(processTab)),
 	)
-	
+
 	n.modeTabs = modeTabs
-	
+
 	// Layout
 	settingsContainer := container.NewVBox(
 		n.watcherWarnLabel,
@@ -793,7 +822,7 @@ Send an error report.
 		//n.simpleGroup,
 		//n.advancedContainer,
 	)
-	
+
 	content := container.NewBorder(
 		container.NewVBox(
 			settingsContainer,
@@ -813,9 +842,21 @@ Send an error report.
 			n.fileList,
 		),
 	)
-	
+
 	split := container.NewVSplit(content, n.statusLog)
 	split.SetOffset(0.6)
-	
+
 	n.window.SetContent(split)
+}
+
+func (n *AudioNormalizer) showConfirmDialog(title, message string) bool {
+	result := make(chan bool, 1)
+
+	fyne.Do(func() {
+		dialog.ShowConfirm(title, message, func(response bool) {
+			result <- response
+		}, n.window)
+	})
+
+	return <-result
 }
