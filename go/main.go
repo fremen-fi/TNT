@@ -37,10 +37,10 @@ import (
 const (
 	currentVersion = "1.3.0"
 	versionCheckURL = "https://software.collinsgroup.fi/tnt-version.json"
-	macARMDownloadURL = "https://software.collinsgroup.fi/TNT.dmg"
-	macIntelDownloadURL = "https://software.collinsgroup.fi/TNT-Intel.dmg"
-	linuxDownloadURL = "https://software.collinsgroup.fi/tnt.deb"
-	windowsDownloadURL = "https://software.collinsgroup.fi/TNT.exe"
+	//macARMDownloadURL = "https://software.collinsgroup.fi/TNT.dmg"
+	//macIntelDownloadURL = "https://software.collinsgroup.fi/TNT-Intel.dmg"
+	//linuxDownloadURL = "https://software.collinsgroup.fi/tnt.deb"
+	//windowsDownloadURL = "https://software.collinsgroup.fi/TNT.exe"
 )
 
 type VersionInfo struct {
