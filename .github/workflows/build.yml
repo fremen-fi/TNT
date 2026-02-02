@@ -65,9 +65,11 @@ jobs:
         id: filename
         run: |
           TAG="${GITHUB_REF#refs/tags/v}"
-          if [[ "$TAG" =~ -(alpha|beta|rc)\. ]]; then
+          if [[ "$TAG" =~ -(mac|win|linux) ]]; then
+            echo "dmg_name=TNT.dmg" >> $GITHUB_OUTPUT
+          elif [[ "$TAG" =~ -(alpha|beta|rc)\. ]]; then
             PREFIX=$(echo "$TAG" | sed -E 's/.*-(alpha|beta|rc)\..*/\1/')
-            echo "dmg_name=${PREFIX}-TNT-Intel.dmg" >> $GITHUB_OUTPUT
+            echo "dmg_name=${PREFIX}-TNT.dmg" >> $GITHUB_OUTPUT
           else
             echo "dmg_name=TNT.dmg" >> $GITHUB_OUTPUT
           fi
@@ -159,13 +161,14 @@ jobs:
         id: filename
         run: |
           TAG="${GITHUB_REF#refs/tags/v}"
-          if [[ "$TAG" =~ -(alpha|beta|rc)\. ]]; then
+          if [[ "$TAG" =~ -(mac|win|linux) ]]; then
+            echo "dmg_name=TNT-Intel.dmg" >> $GITHUB_OUTPUT
+          elif [[ "$TAG" =~ -(alpha|beta|rc)\. ]]; then
             PREFIX=$(echo "$TAG" | sed -E 's/.*-(alpha|beta|rc)\..*/\1/')
             echo "dmg_name=${PREFIX}-TNT-Intel.dmg" >> $GITHUB_OUTPUT
           else
             echo "dmg_name=TNT-Intel.dmg" >> $GITHUB_OUTPUT
           fi
-
 
       - name: Create DMG
         run: |
@@ -246,7 +249,9 @@ jobs:
         id: filename
         run: |
           $TAG = "${{ github.ref_name }}".TrimStart("v")
-          if ($TAG -match "-(alpha|beta|rc)\.") {
+          if ($TAG -match "-(mac|win|linux)") {
+            echo "exe_name=TNT.exe" >> $env:GITHUB_OUTPUT
+          } elseif ($TAG -match "-(alpha|beta|rc)\.") {
             $PREFIX = $Matches[1]
             echo "exe_name=${PREFIX}-TNT.exe" >> $env:GITHUB_OUTPUT
           } else {
@@ -285,7 +290,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-release-assets
-          # InnoSetup sets this filename!
           path: Distribution/${{ steps.filename.outputs.exe_name }}
 
       - name: Upload to BunnyCDN
@@ -354,7 +358,9 @@ jobs:
           TAG="${GITHUB_REF#refs/tags/v}"
           VERSION=$(echo "$TAG" | cut -d'-' -f1)
 
-          if [[ "$TAG" == *"-"* ]]; then
+          if [[ "$TAG" =~ -(mac|win|linux) ]]; then
+            DEB_NAME="tnt"
+          elif [[ "$TAG" == *"-"* ]]; then
             PREFIX=$(echo "$TAG" | cut -d'-' -f2 | cut -d'.' -f1)
             DEB_NAME="${PREFIX}-tnt"
           else
