@@ -44,9 +44,10 @@ const (
 )
 
 type VersionInfo struct {
-	Version      string `json:"version"`
-	DownloadURL  string `json:"download_url"`
-	ReleaseNotes string `json:"release_notes"`
+	Version      string              `json:"version"`
+	OS           []string            `json:"os"`
+	DownloadURL  []map[string]string `json:"download_url"`
+	ReleaseNotes string              `json:"release_notes"`
 }
 
 type AudioNormalizer struct {
@@ -165,6 +166,22 @@ type FrequencyBandAnalysis struct {
 	DynamicRange float64
 }
 
+func getPlatformKey() string {
+	switch runtime.GOOS {
+	case "darwin":
+		if runtime.GOARCH == "arm64" {
+			return "darwin"
+		}
+		return "darwin-senior"
+	case "windows":
+		return "orangutan"
+	case "linux":
+		return "penguin"
+	default:
+		return runtime.GOOS
+	}
+}
+
 func checkForUpdates(currentVersion string, window fyne.Window, logFile *os.File) {
 	logToFile(logFile, "Starting update check...")
 	time.Sleep(500 * time.Millisecond)
@@ -254,31 +271,41 @@ func compareVersions(v1, v2 string) int {
 }
 
 func downloadAndInstallUpdate(versionInfo VersionInfo, window fyne.Window) {
-	logFile, _ := os.OpenFile(filepath.Join(os.TempDir(), "tnt_update.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-	defer logFile.Close()
+logFile, _ := os.OpenFile(filepath.Join(os.TempDir(), "tnt_update.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+defer logFile.Close()
 
-	logToFile(logFile, "Starting update download...")
+logToFile(logFile, "Starting update download...")
 
-	// Determine platform and file URL
-	var downloadURL string
-	var fileName string
+// Get platform-specific download URL
+platformKey := getPlatformKey()
+var downloadURL string
 
-	switch runtime.GOOS {
-	case "darwin":
-		if runtime.GOARCH == "arm64" {
-			downloadURL = macARMDownloadURL
-			fileName = "TNT.dmg"
-		} else {
-			downloadURL = macIntelDownloadURL
-			fileName = "TNT-Intel.dmg"
-		}
-	case "windows":
-		downloadURL = windowsDownloadURL
-		fileName = "TNT-Setup.exe"
-	case "linux":
-		downloadURL = linuxDownloadURL
-		fileName = "tnt.deb"
+// Search download_url array for matching platform
+for _, urlMap := range versionInfo.DownloadURL {
+	if url, ok := urlMap[platformKey]; ok {
+		downloadURL = url
+		break
 	}
+}
+
+if downloadURL == "" {
+	logToFile(logFile, fmt.Sprintf("No download URL found for platform: %s", platformKey))
+	dialog.ShowError(fmt.Errorf("Update not available for your platform"), window)
+	return
+}
+
+logToFile(logFile, fmt.Sprintf("Platform: %s, Download URL: %s", platformKey, downloadURL))
+
+// Determine file extension
+var fileName string
+switch platformKey {
+case "darwin", "darwin-senior":
+	fileName = "TNT.dmg"
+case "orangutan":
+	fileName = "TNT-Setup.exe"
+case "penguin":
+	fileName = "tnt.deb"
+}
 
 	logToFile(logFile, fmt.Sprintf("Download URL: %s", downloadURL))
 
