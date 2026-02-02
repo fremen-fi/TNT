@@ -671,6 +671,7 @@ Watch mode only processes new files added after activation - it ignores existing
 
 		saveContentText := widget.NewLabel(`
 Save all current settings, including Mode (simple/advanced), Format and encoding settings, Normalization defaults and last output directory. Preferences are loaded automatically on startup.
+Preferences aren't saved automatically.
 			`)
 		saveContentText.Wrapping = fyne.TextWrapWord
 
@@ -729,6 +730,22 @@ Check this if you wish to automatically check for the mono compatibility of the 
 
 		functionsCheckPhaseText.Wrapping = fyne.TextWrapWord
 
+		phaseCheckTab := container.NewVBox(
+			functionsCheckPhaseText,
+			n.checkPhaseBtn,
+		)
+
+		watchModeTab := container.NewVBox(
+			settingsWatchModeText,
+			n.watchMode,
+		)
+
+		settingsFunctionsTabs := container.NewAppTabs(
+			container.NewTabItem("Mono compatibility check", phaseCheckTab),
+			container.NewTabItem("Watch mode", watchModeTab),
+		)
+
+		/*
 		settingsFunctions := container.NewVBox(
 			settingsFunctionsTabText,
 			widget.NewSeparator(),
@@ -737,10 +754,10 @@ Check this if you wish to automatically check for the mono compatibility of the 
 			n.checkPhaseBtn,
 			// Watch mode settings
 			settingsWatchModeText,
-			settingsWatchModeText,
 			n.watchMode,
 			widget.NewSeparator(),
 		)
+		*/
 
 		settingsSendErrorReportText := widget.NewLabel(`
 Send an error report.
@@ -762,7 +779,7 @@ Send an error report.
 		tabs := container.NewAppTabs(
 			container.NewTabItem("Normalization", normContent),
 			container.NewTabItem("Save Configuration", saveContent),
-			container.NewTabItem("Functions", settingsFunctions),
+			container.NewTabItem("Functions", settingsFunctionsTabs),
 			container.NewTabItem("Watch mode", settingsWatchMode),
 			container.NewTabItem("Version upgrade", versionUpdate),
 			container.NewTabItem("Send error report", settingsSendErrorReport),

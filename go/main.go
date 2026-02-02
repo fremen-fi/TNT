@@ -230,8 +230,16 @@ func compareVersions(v1, v2 string) int {
 		parts2 = append(parts2, "0")
 	}
 
+//	for i := 0; i < limit; i++ {}
+//
+// by a range loop with an integer operand:
+//
+//	for i := range limit {}
+
+// below modernized
+
 	// Compare each part numerically
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		n1, _ := strconv.Atoi(parts1[i])
 		n2, _ := strconv.Atoi(parts2[i])
 
@@ -1216,6 +1224,7 @@ type Preferences struct {
 	DynPreset string `json:"dyn_preset"`
 	DynNorm bool `json:"dyn_norm_enabled"`
 	SelectedTab string `json:"selected_tab"`
+	PhaseCheck bool `json:"phase_check_auto"`
 }
 
 func (n *AudioNormalizer) loadPreferences() {
@@ -1250,6 +1259,7 @@ func (n *AudioNormalizer) loadPreferences() {
 	n.EqDrop.SetSelected(prefs.EqPreset)
 	n.dynamicsDrop.SetSelected(prefs.DynPreset)
 	n.dynNorm.SetChecked(prefs.DynNorm)
+	n.checkPhaseBtn.SetChecked(prefs.PhaseCheck)
 	if prefs.SelectedTab == "Fast" {
 		n.modeTabs.Select(n.modeTabs.Items[0])
 	} else {
@@ -1276,6 +1286,7 @@ func (n *AudioNormalizer) savePreferences() {
 		DynPreset: n.dynamicsDrop.Selected,
 		DynNorm: n.dynNorm.Checked,
 		SelectedTab: n.modeTabs.Selected().Text,
+		PhaseCheck: n.checkPhaseBtn.Checked,
 	}
 
 	configDir, _ := os.UserConfigDir()
@@ -1517,12 +1528,11 @@ func (n *AudioNormalizer) selectFolder() {
 			for _, file := range audioFiles {
 				// Check for duplicates inline
 				exists := false
-				for _, existing := range n.files {
-					if existing == file {
-						exists = true
-						break
-					}
+
+				existing := slices.Contains(n.files, file); if existing {
+					exists = true
 				}
+
 				if !exists {
 					n.files = append(n.files, file)
 				}
@@ -2530,11 +2540,10 @@ func isAudioFile(path string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
 	audioExts := []string{".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg", ".opus", ".wma", ".aiff", ".aif", ".ape"}
 
-	for _, audioExt := range audioExts {
-		if ext == audioExt {
-			return true
-		}
+	acceptedExt := slices.Contains(audioExts, ext); if acceptedExt {
+		return true
 	}
+
 	return false
 }
 
