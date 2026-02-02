@@ -35,7 +35,7 @@ import (
 )
 
 const (
-	currentVersion = "1.2.1"
+	currentVersion = "1.3.0"
 	versionCheckURL = "https://software.collinsgroup.fi/tnt-version.json"
 	macARMDownloadURL = "https://software.collinsgroup.fi/TNT.dmg"
 	macIntelDownloadURL = "https://software.collinsgroup.fi/TNT-Intel.dmg"
