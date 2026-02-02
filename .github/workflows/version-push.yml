@@ -1,0 +1,23 @@
+name: Upload TNT JSON
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'Distribution/tnt-version.json'
+  workflow_dispatch:
+
+jobs:
+  upload_tnt_version:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Upload to BunnyCDN
+        run: |
+          curl -X PUT \
+            -H "AccessKey: ${{ secrets.BUNNY_ACCESS_KEY }}" \
+            --data-binary "@Distribution/tnt-version.json" \
+            "https://se.storage.bunnycdn.com/sw-stor/tnt-version.json"
