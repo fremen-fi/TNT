@@ -10,7 +10,7 @@ on:
 
 jobs:
   build-mac-arm64:
-    if: "!contains(github.ref, '-win')"
+    if: "!contains(github.ref, '-win') && !contains(github.ref, '-linux')"
     runs-on: macos-latest
     steps:
       - name: Checkout Code
@@ -113,7 +113,7 @@ jobs:
 
   build-mac-intel:
     runs-on: macos-15-intel
-    if: "!contains(github.ref, '-win')"
+    if: "!contains(github.ref, '-win') && !contains(github.ref, '-linux')"
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
