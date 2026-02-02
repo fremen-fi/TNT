@@ -64,15 +64,21 @@ jobs:
       - name: Determine filename
         id: filename
         run: |
-          TAG="${GITHUB_REF#refs/tags/v}"
-          if [[ "$TAG" == *"-"* ]]; then
-            # Pre-release: v1.3.0-beta.1 -> beta-TNT.dmg
-            PREFIX=$(echo "$TAG" | cut -d'-' -f2 | cut -d'.' -f1)
-            echo "dmg_name=${PREFIX}-TNT.dmg" >> $GITHUB_OUTPUT
-          else
-            # Stable release: v1.3.0 -> TNT.dmg (overwrites previous stable)
-            echo "dmg_name=TNT.dmg" >> $GITHUB_OUTPUT
-          fi
+            TAG="${GITHUB_REF#refs/tags/v}"
+            if [[ "$TAG" =~ -(alpha|beta|rc)\. ]]; then
+            PREFIX=$(echo "$TAG" | sed -E 's/.*-(alpha|beta|rc)\..*/\1/')
+            if [[ "${{ matrix.runs-on }}" == *"intel"* ]]; then
+                echo "dmg_name=${PREFIX}-TNT-Intel.dmg" >> $GITHUB_OUTPUT
+            else
+                echo "dmg_name=${PREFIX}-TNT.dmg" >> $GITHUB_OUTPUT
+            fi
+            else
+            if [[ "${{ matrix.runs-on }}" == *"intel"* ]]; then
+                echo "dmg_name=TNT-Intel.dmg" >> $GITHUB_OUTPUT
+            else
+                echo "dmg_name=TNT.dmg" >> $GITHUB_OUTPUT
+            fi
+            fi
 
       - name: Create DMG
         run: |
@@ -90,7 +96,7 @@ jobs:
             --password "${{ secrets.NOTARY_PASSWORD }}"
           xcrun notarytool submit ${{ steps.filename.outputs.dmg_name }} --keychain-profile "notary-profile" --wait
           xcrun stapler staple ${{ steps.filename.outputs.dmg_name }}
-          
+
       - name: Upload macOS DMG Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -160,15 +166,22 @@ jobs:
       - name: Determine filename
         id: filename
         run: |
-          TAG="${GITHUB_REF#refs/tags/v}"
-          if [[ "$TAG" == *"-"* ]]; then
-            # Pre-release: v1.3.0-beta.1 -> beta-TNT-Intel.dmg
-            PREFIX=$(echo "$TAG" | cut -d'-' -f2 | cut -d'.' -f1)
-            echo "dmg_name=${PREFIX}-TNT-Intel.dmg" >> $GITHUB_OUTPUT
-          else
-            # Stable release: v1.3.0 -> TNT-Intel.dmg (overwrites previous stable)
-            echo "dmg_name=TNT-Intel.dmg" >> $GITHUB_OUTPUT
-          fi
+            TAG="${GITHUB_REF#refs/tags/v}"
+            if [[ "$TAG" =~ -(alpha|beta|rc)\. ]]; then
+            PREFIX=$(echo "$TAG" | sed -E 's/.*-(alpha|beta|rc)\..*/\1/')
+            if [[ "${{ matrix.runs-on }}" == *"intel"* ]]; then
+                echo "dmg_name=${PREFIX}-TNT-Intel.dmg" >> $GITHUB_OUTPUT
+            else
+                echo "dmg_name=${PREFIX}-TNT.dmg" >> $GITHUB_OUTPUT
+            fi
+            else
+            if [[ "${{ matrix.runs-on }}" == *"intel"* ]]; then
+                echo "dmg_name=TNT-Intel.dmg" >> $GITHUB_OUTPUT
+            else
+                echo "dmg_name=TNT.dmg" >> $GITHUB_OUTPUT
+            fi
+            fi
+
 
       - name: Create DMG
         run: |
@@ -186,7 +199,7 @@ jobs:
             --password "${{ secrets.NOTARY_PASSWORD }}"
           xcrun notarytool submit ${{ steps.filename.outputs.dmg_name }} --keychain-profile "notary-profile" --wait
           xcrun stapler staple ${{ steps.filename.outputs.dmg_name }}
-          
+
       - name: Upload macOS DMG Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -225,7 +238,7 @@ jobs:
           curl.exe -L -o go\buildBlocks\tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=${{ secrets.CDN_PULL_TOKEN}}"
           curl.exe -L -o go\platform\ffmpegSource\ffmpeg.exe "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpeg.exe?value=${{ secrets.CDN_PULL_TOKEN}}"
         shell: pwsh
-        
+
       - name: Verify FFmpeg exists
         run: |
           if (Test-Path go\platform\ffmpegSource\ffmpeg.exe) {
@@ -235,7 +248,7 @@ jobs:
             exit 1
           }
         shell: pwsh
-      
+
       - name: Build Windows executable
         run: |
           Remove-Item -Path Distribution\TNT.exe -ErrorAction SilentlyContinue
@@ -248,15 +261,13 @@ jobs:
       - name: Determine filename
         id: filename
         run: |
-          $TAG = "${{ github.ref }}".Replace("refs/tags/v", "")
-          if ($TAG -match "-") {
-            # Pre-release: v1.3.0-beta.1 -> beta-TNT.exe
-            $PREFIX = $TAG.Split("-")[1].Split(".")[0]
+            $TAG = "${{ github.ref_name }}".TrimStart("v")
+            if ($TAG -match "-(alpha|beta|rc)\.") {
+            $PREFIX = $Matches[1]
             echo "exe_name=${PREFIX}-TNT.exe" >> $env:GITHUB_OUTPUT
-          } else {
-            # Stable release: v1.3.0 -> TNT.exe
+            } else {
             echo "exe_name=TNT.exe" >> $env:GITHUB_OUTPUT
-          }
+            }
         shell: pwsh
 
       - name: Create InnoSetup installer
@@ -285,7 +296,7 @@ jobs:
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
-        
+
       - name: Upload Windows Installer Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -356,42 +367,40 @@ jobs:
 
       - name: Build deb package
         run: |
-          TAG="${GITHUB_REF#refs/tags/v}"
-          VERSION=$(echo "$TAG" | cut -d'-' -f1)
-          
-          if [[ "$TAG" == *"-"* ]]; then
-            # Pre-release: alpha-tnt.deb
-            PREFIX=$(echo "$TAG" | cut -d'-' -f2 | cut -d'.' -f1)
+            TAG="${GITHUB_REF#refs/tags/v}"
+            VERSION=$(echo "$TAG" | cut -d'-' -f1)
+
+            if [[ "$TAG" =~ -(alpha|beta|rc)\. ]]; then
+            PREFIX=$(echo "$TAG" | sed -E 's/.*-(alpha|beta|rc)\..*/\1/')
             DEB_NAME="${PREFIX}-tnt"
-          else
-            # Stable release: tnt.deb
+            else
             DEB_NAME="tnt"
-          fi
-          
-          DEB_DIR="${DEB_NAME}_amd64"
-          
-          mkdir -p "${DEB_DIR}/DEBIAN"
-          mkdir -p "${DEB_DIR}/usr/bin"
-          mkdir -p "${DEB_DIR}/usr/share/applications"
-          
-          cp tnt-linux-amd64 "${DEB_DIR}/usr/bin/tnt"
-          cp tnt.desktop "${DEB_DIR}/usr/share/applications/"
-          cp postinst "${DEB_DIR}/DEBIAN/"
-          
-          cat > "${DEB_DIR}/DEBIAN/control" << CONTROL_EOF
-          Package: tnt
-          Version: ${VERSION}
-          Section: sound
-          Priority: optional
-          Architecture: amd64
-          Maintainer: Collins Group <appsupport@collinsgroup.fi>
-          Description: TNT Plus - Professional audio processing tool
-           Audio normalization and transcoding tool built for broadcast professionals.
-          CONTROL_EOF
-          
-          dpkg-deb --build "${DEB_DIR}"
-          echo "DEB_FILE=${DEB_NAME}_amd64.deb" >> $GITHUB_ENV
-          
+            fi
+
+            DEB_DIR="${DEB_NAME}_amd64"
+
+            mkdir -p "${DEB_DIR}/DEBIAN"
+            mkdir -p "${DEB_DIR}/usr/bin"
+            mkdir -p "${DEB_DIR}/usr/share/applications"
+
+            cp tnt-linux-amd64 "${DEB_DIR}/usr/bin/tnt"
+            cp tnt.desktop "${DEB_DIR}/usr/share/applications/"
+            cp postinst "${DEB_DIR}/DEBIAN/"
+
+            cat > "${DEB_DIR}/DEBIAN/control" << CONTROL_EOF
+            Package: tnt
+            Version: ${VERSION}
+            Section: sound
+            Priority: optional
+            Architecture: amd64
+            Maintainer: Collins Group <appsupport@collinsgroup.fi>
+            Description: TNT Plus - Professional audio processing tool
+            Audio normalization and transcoding tool built for broadcast professionals.
+            CONTROL_EOF
+
+            dpkg-deb --build "${DEB_DIR}"
+            echo "DEB_FILE=${DEB_NAME}_amd64.deb" >> $GITHUB_ENV
+
       - name: Upload Linux DEB Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -406,21 +415,21 @@ jobs:
             -H "AccessKey: $BUNNY_ACCESS_KEY" \
             --data-binary "@${{ env.DEB_FILE }}" \
             "https://se.storage.bunnycdn.com/sw-stor/${{ env.DEB_FILE }}"
-            
+
   release:
-    needs: 
+    needs:
       - build-linux
       - build-windows
       - build-mac-intel
       - build-mac-arm64
-      
+
     runs-on: ubuntu-slim
     permissions:
       contents: write
     steps:
       - name: Download artifact
         uses: actions/download-artifact@v4
-    
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
@@ -428,6 +437,6 @@ jobs:
             mac-release-assets/*.dmg
             mac-intel-release-assets/*.dmg
             linux-release-assets/*.deb
-            windows-release-assets/*.exe 
+            windows-release-assets/*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
