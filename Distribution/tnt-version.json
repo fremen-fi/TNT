@@ -1,10 +1,10 @@
 {
-  "version": "1.2.2",
-  "os": ["darwin", "orangutan", "penguin"],
+  "version": "1.3.0",
+  "os": ["darwin"],
   "download_url": [{
 	  "darwin": "https://software.collinsgroup.fi/TNT.dmg",
-	  "orangutan": "https://software.collinsgroup.fi/TNT.exe",
-	  "penguin": "https://software.collinsgroup.fi/tnt_amd64.deb"
+	  "orangutan": "",
+	  "penguin": ""
   }],
   "release_notes": "Library linking fixes affecting all Debian users.",
   "release_date": "19 January, 2026",
