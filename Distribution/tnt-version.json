@@ -1,9 +1,9 @@
 {
-  "version": "1.3.0",
+  "version": "0.3.0",
   "os": ["darwin", "penguin"],
   "download_url": [{
 	  "darwin": "https://software.collinsgroup.fi/TNT.dmg",
-	  "darwin-senior": "https://software.collinsgroup.fi/legacy/macos13/TNT-Intel.dmg",
+	  "darwin-senior": "https://software.collinsgroup.fi/TNT-Intel.dmg",
 	  "orangutan": "",
 	  "penguin": "https://software.collinsgroup.fi/tnt_amd64.deb"
   }],
