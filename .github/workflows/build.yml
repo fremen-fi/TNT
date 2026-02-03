@@ -260,7 +260,7 @@ jobs:
         run: |
           cd go
           $env:GOARCH = "amd64"
-          go build -ldflags "-H windowsgui" -o TNT.exe
+          go build -ldflags "-H windowsgui -s -w -X main.version=$VERSION" -o TNT.exe
         shell: pwsh
 
       - name: Create InnoSetup installer
