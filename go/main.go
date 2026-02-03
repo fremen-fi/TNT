@@ -1430,6 +1430,7 @@ func (n *AudioNormalizer) processWatchQueue() {
 }
 
 func main() {
+	os.Setenv("FYNE_DISABLE_HARDWARE_ACCELERATION", "1")
 
 	a := app.NewWithID("com.collinsgroup.tnt")
 	a.Settings().SetTheme(&appleTheme{})
