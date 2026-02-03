@@ -282,7 +282,7 @@ var downloadURL string
 
 // Search download_url array for matching platform
 for _, urlMap := range versionInfo.DownloadURL {
-	if url, ok := urlMap[platformKey]; ok {
+	if url, ok := urlMap[platformKey]; ok && url != "" {
 		downloadURL = url
 		break
 	}
