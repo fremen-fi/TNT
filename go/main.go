@@ -299,12 +299,14 @@ logToFile(logFile, fmt.Sprintf("Platform: %s, Download URL: %s", platformKey, do
 // Determine file extension
 var fileName string
 switch platformKey {
-case "darwin", "darwin-senior":
+case "darwin":
 	fileName = "TNT.dmg"
+case "darwin-senior":
+	fileName = "TNT-Intel.dmg"
 case "orangutan":
 	fileName = "TNT-Setup.exe"
 case "penguin":
-	fileName = "tnt.deb"
+	fileName = "tnt-amd64.deb"
 }
 
 	logToFile(logFile, fmt.Sprintf("Download URL: %s", downloadURL))
