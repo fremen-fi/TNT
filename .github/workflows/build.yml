@@ -101,10 +101,14 @@ jobs:
       - name: Upload to BunnyCDN
         run: |
           cd go
+          ls -la ${{ steps.filename.outputs.dmg_name }}
+          shasum -a 256 ${{ steps.filename.outputs.dmg_name }}
           curl -X PUT \
             -H "AccessKey: ${{ secrets.BUNNY_ACCESS_KEY }}" \
+            -H "Content-Type: application/octet-stream" \
             --data-binary "@${{ steps.filename.outputs.dmg_name }}" \
             "https://se.storage.bunnycdn.com/sw-stor/${{ steps.filename.outputs.dmg_name }}"
+          echo "Upload complete"
 
   build-mac-intel:
     runs-on: macos-15-intel
@@ -198,10 +202,14 @@ jobs:
       - name: Upload to BunnyCDN
         run: |
           cd go
+          ls -la ${{ steps.filename.outputs.dmg_name }}
+          shasum -a 256 ${{ steps.filename.outputs.dmg_name }}
           curl -X PUT \
             -H "AccessKey: ${{ secrets.BUNNY_ACCESS_KEY }}" \
+            -H "Content-Type: application/octet-stream" \
             --data-binary "@${{ steps.filename.outputs.dmg_name }}" \
             "https://se.storage.bunnycdn.com/sw-stor/${{ steps.filename.outputs.dmg_name }}"
+          echo "Upload complete"
 
   build-windows:
     if: "!contains(github.ref, '-mac') && !contains(github.ref, '-linux')"
