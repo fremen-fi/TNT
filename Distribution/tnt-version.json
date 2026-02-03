@@ -9,16 +9,11 @@
   }],
   "release_notes": "Automatically check mono compatibility before processing.",
   "release_date": "2 February, 2026",
-  "supported_platforms": "macOS (M-series), macOS 15- (Intel), Windows (Intel), Ubuntu/Debian (Intel)",
+  "supported_platforms": "macOS (M-series), macOS 15- (Intel)",
   "history": [
 	  {
 	  "version": "1.2.2",
 		"os": ["darwin", "orangutan", "penguin"],
-		"download_url": [{
-			"darwin": "https://software.collinsgroup.fi/TNT.dmg",
-			"orangutan": "https://software.collinsgroup.fi/TNT.exe",
-			"penguin": "https://software.collinsgroup.fi/tnt_amd64.deb"
-		}],
 		"release_notes": "Library linking fixes affecting all Debian users.",
 		"release_date": "19 January, 2026",
 		"supported_platforms": "macOS (M-series), macOS 15- (Intel), Windows (Intel), Ubuntu/Debian (Intel)"
