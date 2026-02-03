@@ -408,7 +408,7 @@ jobs:
           Architecture: amd64
           Maintainer: Collins Group <appsupport@collinsgroup.fi>
           Description: TNT Plus - Professional audio processing tool
-          Audio normalization and transcoding tool built for broadcast professionals.
+           Audio normalization and transcoding tool built for broadcast professionals.
           CONTROL_EOF
 
           dpkg-deb --build "${DEB_DIR}"
