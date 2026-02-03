@@ -261,6 +261,7 @@ jobs:
           Remove-Item -Path Distribution\TNT.exe -ErrorAction SilentlyContinue
           cd go
           $VERSION = "${{ github.ref_name }}"
+          $env:GOARCH = "amd64"
           go build -ldflags "-H windowsgui -X main.version=$VERSION" -o TNT.exe
           Move-Item -Path TNT.exe -Destination ..\Distribution\TNT.exe
         shell: pwsh
