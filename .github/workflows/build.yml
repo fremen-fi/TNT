@@ -423,7 +423,7 @@ jobs:
       - name: Upload to BunnyCDN
         env:
           BUNNY_ACCESS_KEY: ${{ secrets.BUNNY_ACCESS_KEY }}
-          BUNNY_ACCOUNT_API_KEY: ${{ secrets.BUNNY_ACCOUNT_API_KEY }}
+          BUNNY_ACCOUNT_API_KEY: ${{ secrets.BUNNY_API_KEY }}
         run: |
           curl -X PUT \
             -H "AccessKey: $BUNNY_ACCESS_KEY" \
@@ -431,7 +431,7 @@ jobs:
             --data-binary "@${{ env.DEB_FILE }}" \
             "https://se.storage.bunnycdn.com/sw-stor/${{ env.DEB_FILE }}"
           curl -X POST \
-            -H "AccessKey: $BUNNY_API_KEY" \
+            -H "AccessKey: $BUNNY_ACCOUNT_API_KEY" \
             "https://api.bunny.net/purge?url=https://software.collinsgroup.fi/${{ env.DEB_FILE }}&async=false"
 
   release:
