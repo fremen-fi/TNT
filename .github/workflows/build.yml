@@ -110,6 +110,11 @@ jobs:
             "https://se.storage.bunnycdn.com/sw-stor/${{ steps.filename.outputs.dmg_name }}"
           echo "Upload complete"
 
+          curl -X POST \
+            -H "AccessKey: ${{ secrets.BUNNY_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            "https://api.bunny.net/purge?url=https://software.collinsgroup.fi/${{ steps.filename.outputs.dmg_name }}&async=false"
+
   build-mac-intel:
     runs-on: macos-15-intel
     if: "!contains(github.ref, '-win') && !contains(github.ref, '-linux')"
@@ -211,6 +216,11 @@ jobs:
             "https://se.storage.bunnycdn.com/sw-stor/${{ steps.filename.outputs.dmg_name }}"
           echo "Upload complete"
 
+          curl -X POST \
+            -H "AccessKey: ${{ secrets.BUNNY_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            "https://api.bunny.net/purge?url=https://software.collinsgroup.fi/${{ steps.filename.outputs.dmg_name }}&async=false"
+
   build-windows:
     if: "!contains(github.ref, '-mac') && !contains(github.ref, '-linux')"
     runs-on: windows-latest
@@ -307,6 +317,9 @@ jobs:
           $uri = "https://se.storage.bunnycdn.com/sw-stor/${{ steps.filename.outputs.exe_name }}"
           Invoke-RestMethod -Uri $uri -Method Put -InFile "Distribution/${{ steps.filename.outputs.exe_name }}" -Headers @{
             "AccessKey" = "${{ secrets.BUNNY_ACCESS_KEY }}"
+          }
+          Invoke-RestMethod -Uri "https://api.bunny.net/purge?url=https://software.collinsgroup.fi/${{ steps.filename.outputs.exe_name }}&async=false" -Method Post -Headers @{
+            "AccessKey" = "${{ secrets.BUNNY_API_KEY }}"
           }
         shell: pwsh
 
@@ -410,11 +423,16 @@ jobs:
       - name: Upload to BunnyCDN
         env:
           BUNNY_ACCESS_KEY: ${{ secrets.BUNNY_ACCESS_KEY }}
+          BUNNY_ACCOUNT_API_KEY: ${{ secrets.BUNNY_ACCOUNT_API_KEY }}
         run: |
           curl -X PUT \
             -H "AccessKey: $BUNNY_ACCESS_KEY" \
+            -H "Content-Type: application/octet-stream" \
             --data-binary "@${{ env.DEB_FILE }}" \
             "https://se.storage.bunnycdn.com/sw-stor/${{ env.DEB_FILE }}"
+          curl -X POST \
+            -H "AccessKey: $BUNNY_API_KEY" \
+            "https://api.bunny.net/purge?url=https://software.collinsgroup.fi/${{ env.DEB_FILE }}&async=false"
 
   release:
     needs:
