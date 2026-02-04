@@ -1,10 +1,10 @@
 {
-  "version": "1.3.0",
-  "os": ["darwin", "darwin-senior", "penguin"],
+  "version": "1.2.3",
+  "os": ["darwin", "darwin-senior", "penguin", "orangutan"],
   "download_url": [{
 	  "darwin": "https://software.collinsgroup.fi/TNT.dmg",
 	  "darwin-senior": "https://software.collinsgroup.fi/TNT-Intel.dmg",
-	  "orangutan": "",
+	  "orangutan": "https://software.collinsgroup.fi/TNT.exe",
 	  "penguin": "https://software.collinsgroup.fi/tnt-amd64.deb"
   }],
   "release_notes": "Automatically check mono compatibility before processing.",
