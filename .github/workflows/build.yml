@@ -436,6 +436,7 @@ jobs:
       - build-windows
       - build-mac-intel
       - build-mac-arm64
+    if: always() && !failure() && !cancelled()
 
     runs-on: ubuntu-slim
     permissions:
