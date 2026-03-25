@@ -1,15 +1,17 @@
 package main
 
 import (
+	"fmt"
+	"path/filepath"
+	"strconv"
+	"strings"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	"fmt"
-	"path/filepath"
-	"strconv"
 )
 
 func (n *AudioNormalizer) setupUI(a fyne.App) {
@@ -330,6 +332,38 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 	dynNormRow := container.NewHBox(n.dynNorm, n.dynNormLabel)
 
 	processTab := container.NewVBox(dynamicsRow, eqRow, dynNormRow, widget.NewSeparator(), n.bypassProc)
+
+	// Metadata editor tab — two-column form layout
+	n.metadataEntries = make(map[string]*metadataEntry)
+	metadataForm := widget.NewForm()
+
+	for _, field := range metadataFields {
+		entry := newMetadataEntry(func() {
+			go n.writeCurrentMetadata()
+		})
+		entry.SetPlaceHolder(field)
+		n.metadataEntries[field] = entry
+
+		displayName := strings.ReplaceAll(field, "_", " ")
+		if len(displayName) > 0 {
+			displayName = strings.ToUpper(displayName[:1]) + displayName[1:]
+		}
+		metadataForm.Append(displayName, entry)
+	}
+
+	n.metadataStatus = widget.NewLabel("Select a single file to edit metadata")
+
+	n.metadataWriteBtn = widget.NewButton("Write", func() {
+		go n.writeCurrentMetadata()
+	})
+	n.metadataWriteBtn.Disable()
+
+	loadMetadataBtn := widget.NewButton("Read tags", func() {
+		go n.loadMetadataFromSelected()
+	})
+
+	metadataButtons := container.NewHBox(loadMetadataBtn, n.metadataWriteBtn)
+	n.metadataContainer = container.NewVBox(n.metadataStatus, metadataButtons, widget.NewSeparator(), metadataForm)
 
 	checkUpdateButton := widget.NewButton("Check for updates", func() {
 		go checkForUpdates(currentVersion, n.window, n.logFile)
@@ -817,53 +851,48 @@ Send an error report.
 
 	topBar := container.NewHBox(helpBtn, menuBtn)
 
+	metadataScroll := container.NewVScroll(n.metadataContainer)
+	metadataScroll.SetMinSize(fyne.NewSize(0, 200))
+
 	modeTabs := container.NewAppTabs(
 		container.NewTabItem("Fast", container.NewPadded(n.simpleGroup)),
 		container.NewTabItem("Advanced", container.NewPadded(n.advancedContainer)),
 		container.NewTabItem("Processing", container.NewPadded(processTab)),
+		container.NewTabItem("Metadata", container.NewPadded(metadataScroll)),
 	)
 
 	n.modeTabs = modeTabs
 
-	// Layout
-	settingsContainer := container.NewVBox(
-		n.watcherWarnLabel,
-		logoImg,
-		topBar,
-		//n.modeToggle,
-		widget.NewSeparator(),
-		topButtons,
-		outputSection,
-		widget.NewSeparator(),
-		modeTabs,
-		//n.simpleGroup,
-		//n.advancedContainer,
-	)
-
-	content := container.NewBorder(
+	// Left panel: logo, file selection, file list
+	leftPanel := container.NewBorder(
 		container.NewVBox(
-			settingsContainer,
+			n.watcherWarnLabel,
+			logoImg,
+			topBar,
 			widget.NewSeparator(),
+			topButtons,
+			outputSection,
+			widget.NewSeparator(),
+			widget.NewLabel("Files to process:"),
 		),
 		container.NewVBox(
 			n.progressBar,
-			container.NewPadded(container.NewHBox(n.processBtn, clearAllBtn, previewSizeBtn)),
+			container.NewHBox(n.processBtn, clearAllBtn, previewSizeBtn),
 		),
-		nil,
-		nil,
-		container.NewBorder(
-			widget.NewLabel("Files to process:"),
-			nil,
-			nil,
-			nil,
-			n.fileList,
-		),
+		nil, nil,
+		n.fileList,
 	)
 
-	split := container.NewVSplit(content, n.statusLog)
-	split.SetOffset(0.6)
+	// Right panel: settings tabs
+	rightPanel := modeTabs
 
-	n.window.SetContent(split)
+	split := container.NewHSplit(leftPanel, rightPanel)
+	split.SetOffset(0.35)
+
+	mainSplit := container.NewVSplit(split, n.statusLog)
+	mainSplit.SetOffset(0.85)
+
+	n.window.SetContent(mainSplit)
 }
 
 func (n *AudioNormalizer) showConfirmDialog(title, message string) bool {

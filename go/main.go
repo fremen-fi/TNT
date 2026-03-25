@@ -126,6 +126,13 @@ type AudioNormalizer struct {
 	menuWindow fyne.Window
 	menuMutex  sync.Mutex
 
+	// metadata editor
+	metadataEntries   map[string]*metadataEntry
+	metadataContainer *fyne.Container
+	metadataFile      string // currently loaded file path
+	metadataWriteBtn  *widget.Button
+	metadataStatus    *widget.Label
+
 	mutex sync.Mutex
 }
 
@@ -1436,7 +1443,7 @@ func main() {
 	a.Settings().SetTheme(&appleTheme{})
 
 	w := a.NewWindow("TNT - Transcode, Normalize, Tag")
-	w.Resize(fyne.NewSize(650, 600))
+	w.Resize(fyne.NewSize(750, 700))
 
 	norm := &AudioNormalizer{
 		window: w,
