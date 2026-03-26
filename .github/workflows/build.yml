@@ -424,22 +424,31 @@ jobs:
       - name: Build deb package (Debian/Ubuntu)
         run: |
           nfpm package -p deb -f nfpm.yaml
-          DEB_FILE="${{ steps.meta.outputs.prefix }}tnt_${{ steps.meta.outputs.version }}_amd64.deb"
-          mv tnt_${{ steps.meta.outputs.version }}_amd64.deb "${DEB_FILE}"
+          PREFIX="${{ steps.meta.outputs.prefix }}"
+          DEB_FILE="${PREFIX}tnt_${{ steps.meta.outputs.version }}_amd64.deb"
+          if [ -n "$PREFIX" ]; then
+            mv "tnt_${{ steps.meta.outputs.version }}_amd64.deb" "${DEB_FILE}"
+          fi
           echo "DEB_FILE=${DEB_FILE}" >> $GITHUB_ENV
 
       - name: Build rpm package (Fedora/RHEL/openSUSE)
         run: |
           nfpm package -p rpm -f nfpm.yaml
-          RPM_FILE="${{ steps.meta.outputs.prefix }}tnt-${{ steps.meta.outputs.version }}.x86_64.rpm"
-          mv tnt-${{ steps.meta.outputs.version }}.x86_64.rpm "${RPM_FILE}"
+          PREFIX="${{ steps.meta.outputs.prefix }}"
+          RPM_FILE="${PREFIX}tnt-${{ steps.meta.outputs.version }}.x86_64.rpm"
+          if [ -n "$PREFIX" ]; then
+            mv "tnt-${{ steps.meta.outputs.version }}.x86_64.rpm" "${RPM_FILE}"
+          fi
           echo "RPM_FILE=${RPM_FILE}" >> $GITHUB_ENV
 
       - name: Build Arch package
         run: |
           nfpm package -p archlinux -f nfpm.yaml
-          ARCH_FILE="${{ steps.meta.outputs.prefix }}tnt-${{ steps.meta.outputs.version }}-1-x86_64.pkg.tar.zst"
-          mv tnt-${{ steps.meta.outputs.version }}-1-x86_64.pkg.tar.zst "${ARCH_FILE}"
+          PREFIX="${{ steps.meta.outputs.prefix }}"
+          ARCH_FILE="${PREFIX}tnt-${{ steps.meta.outputs.version }}-1-x86_64.pkg.tar.zst"
+          if [ -n "$PREFIX" ]; then
+            mv "tnt-${{ steps.meta.outputs.version }}-1-x86_64.pkg.tar.zst" "${ARCH_FILE}"
+          fi
           echo "ARCH_FILE=${ARCH_FILE}" >> $GITHUB_ENV
 
       - name: Build AppImage
@@ -468,8 +477,11 @@ jobs:
           chmod +x TNT.AppDir/AppRun
 
           ARCH=x86_64 ./appimagetool TNT.AppDir
-          APPIMAGE_FILE="${{ steps.meta.outputs.prefix }}TNT-x86_64.AppImage"
-          mv TNT-x86_64.AppImage "${APPIMAGE_FILE}"
+          PREFIX="${{ steps.meta.outputs.prefix }}"
+          APPIMAGE_FILE="${PREFIX}TNT-x86_64.AppImage"
+          if [ -n "$PREFIX" ]; then
+            mv "TNT-x86_64.AppImage" "${APPIMAGE_FILE}"
+          fi
           echo "APPIMAGE_FILE=${APPIMAGE_FILE}" >> $GITHUB_ENV
 
       - name: Build tarball
