@@ -10,7 +10,7 @@ on:
 
 jobs:
   build-mac-arm64:
-    if: "!contains(github.ref, '-win') && !contains(github.ref, '-linux')"
+    if: "(!contains(github.ref, '-win') || contains(github.ref, '-unix')) && !contains(github.ref, '-linux')"
     runs-on: macos-latest
     steps:
       - name: Checkout Code
@@ -65,7 +65,7 @@ jobs:
         id: filename
         run: |
           TAG="${GITHUB_REF#refs/tags/v}"
-          if [[ "$TAG" =~ -(mac|win|linux) ]]; then
+          if [[ "$TAG" =~ -(mac|win|linux|unix) ]]; then
             echo "dmg_name=TNT.dmg" >> $GITHUB_OUTPUT
           elif [[ "$TAG" =~ -(alpha|beta|rc)\. ]]; then
             PREFIX=$(echo "$TAG" | sed -E 's/.*-(alpha|beta|rc)\..*/\1/')
@@ -117,7 +117,7 @@ jobs:
 
   build-mac-intel:
     runs-on: macos-15-intel
-    if: "!contains(github.ref, '-win') && !contains(github.ref, '-linux')"
+    if: "(!contains(github.ref, '-win') || contains(github.ref, '-unix')) && !contains(github.ref, '-linux')"
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -171,7 +171,7 @@ jobs:
         id: filename
         run: |
           TAG="${GITHUB_REF#refs/tags/v}"
-          if [[ "$TAG" =~ -(mac|win|linux) ]]; then
+          if [[ "$TAG" =~ -(mac|win|linux|unix) ]]; then
             echo "dmg_name=TNT-Intel.dmg" >> $GITHUB_OUTPUT
           elif [[ "$TAG" =~ -(alpha|beta|rc)\. ]]; then
             PREFIX=$(echo "$TAG" | sed -E 's/.*-(alpha|beta|rc)\..*/\1/')
@@ -222,7 +222,7 @@ jobs:
             "https://api.bunny.net/purge?url=https://software.collinsgroup.fi/${{ steps.filename.outputs.dmg_name }}&async=false"
 
   build-windows:
-    if: "!contains(github.ref, '-mac') && !contains(github.ref, '-linux')"
+    if: "!contains(github.ref, '-mac') && !contains(github.ref, '-linux') && !contains(github.ref, '-unix')"
     runs-on: windows-latest
     steps:
       - name: Checkout Code
@@ -320,7 +320,7 @@ jobs:
         shell: pwsh
 
   build-linux:
-    if: "!contains(github.ref, '-win') && !contains(github.ref, '-mac')"
+    if: "(!contains(github.ref, '-win') || contains(github.ref, '-unix')) && !contains(github.ref, '-mac')"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -342,14 +342,34 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgl1-mesa-dev xorg-dev
+          sudo apt-get install -y libgl1-mesa-dev xorg-dev libfuse2
+
+      - name: Install nfpm
+        run: |
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
 
       - name: Build Linux binary
         run: |
           cd go
-          go build -o ../tnt-linux-amd64
+          go build -tags linux -o ../tnt-linux-amd64
 
-      - name: Create .desktop file
+      - name: Determine version and prefix
+        id: meta
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          VERSION=$(echo "$TAG" | cut -d'-' -f1)
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+          if [[ "$TAG" =~ -(mac|win|linux|unix) ]]; then
+            echo "prefix=" >> $GITHUB_OUTPUT
+          elif [[ "$TAG" == *"-"* ]]; then
+            PREFIX=$(echo "$TAG" | cut -d'-' -f2 | cut -d'.' -f1)
+            echo "prefix=${PREFIX}-" >> $GITHUB_OUTPUT
+          else
+            echo "prefix=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create packaging files
         run: |
           cat > tnt.desktop << 'DESKTOP_EOF'
           [Desktop Entry]
@@ -362,73 +382,149 @@ jobs:
           Categories=Audio;AudioVideo;
           DESKTOP_EOF
 
-      - name: Create postinst script
-        run: |
+          mkdir -p staging/usr/bin staging/usr/share/applications staging/usr/share/icons/hicolor/256x256/apps
+          cp tnt-linux-amd64 staging/usr/bin/tnt
+          chmod +x staging/usr/bin/tnt
+          cp tnt.desktop staging/usr/share/applications/
+          cp Icon.png staging/usr/share/icons/hicolor/256x256/apps/tnt.png
+
+          # nfpm config
+          cat > nfpm.yaml << NFPM_EOF
+          name: tnt
+          arch: amd64
+          version: ${{ steps.meta.outputs.version }}
+          maintainer: Collins Group <appsupport@collinsgroup.fi>
+          description: TNT Plus - Professional audio processing tool. Audio normalization and transcoding built for broadcast professionals.
+          homepage: https://fremen.fi/software/tnt
+          license: Proprietary
+          section: sound
+          priority: optional
+          contents:
+            - src: staging/usr/bin/tnt
+              dst: /usr/bin/tnt
+              file_info:
+                mode: 0755
+            - src: staging/usr/share/applications/tnt.desktop
+              dst: /usr/share/applications/tnt.desktop
+            - src: staging/usr/share/icons/hicolor/256x256/apps/tnt.png
+              dst: /usr/share/icons/hicolor/256x256/apps/tnt.png
+          scripts:
+            postinstall: postinst
+          NFPM_EOF
+
           cat > postinst << 'POSTINST_EOF'
           #!/bin/bash
           chmod +x /usr/bin/tnt
-          update-desktop-database || true
+          update-desktop-database 2>/dev/null || true
+          gtk-update-icon-cache /usr/share/icons/hicolor 2>/dev/null || true
           exit 0
           POSTINST_EOF
           chmod +x postinst
 
-      - name: Build deb package
+      - name: Build deb package (Debian/Ubuntu)
         run: |
-          TAG="${GITHUB_REF#refs/tags/v}"
-          VERSION=$(echo "$TAG" | cut -d'-' -f1)
+          nfpm package -p deb -f nfpm.yaml
+          DEB_FILE="${{ steps.meta.outputs.prefix }}tnt_${{ steps.meta.outputs.version }}_amd64.deb"
+          mv tnt_${{ steps.meta.outputs.version }}_amd64.deb "${DEB_FILE}"
+          echo "DEB_FILE=${DEB_FILE}" >> $GITHUB_ENV
 
-          if [[ "$TAG" =~ -(mac|win|linux) ]]; then
-            DEB_NAME="tnt"
-          elif [[ "$TAG" == *"-"* ]]; then
-            PREFIX=$(echo "$TAG" | cut -d'-' -f2 | cut -d'.' -f1)
-            DEB_NAME="${PREFIX}-tnt"
-          else
-            DEB_NAME="tnt"
-          fi
+      - name: Build rpm package (Fedora/RHEL/openSUSE)
+        run: |
+          nfpm package -p rpm -f nfpm.yaml
+          RPM_FILE="${{ steps.meta.outputs.prefix }}tnt-${{ steps.meta.outputs.version }}.x86_64.rpm"
+          mv tnt-${{ steps.meta.outputs.version }}.x86_64.rpm "${RPM_FILE}"
+          echo "RPM_FILE=${RPM_FILE}" >> $GITHUB_ENV
 
-          DEB_DIR="${DEB_NAME}_amd64"
+      - name: Build Arch package
+        run: |
+          nfpm package -p archlinux -f nfpm.yaml
+          ARCH_FILE="${{ steps.meta.outputs.prefix }}tnt-${{ steps.meta.outputs.version }}-1-x86_64.pkg.tar.zst"
+          mv tnt-${{ steps.meta.outputs.version }}-1-x86_64.pkg.tar.zst "${ARCH_FILE}"
+          echo "ARCH_FILE=${ARCH_FILE}" >> $GITHUB_ENV
 
-          mkdir -p "${DEB_DIR}/DEBIAN"
-          mkdir -p "${DEB_DIR}/usr/bin"
-          mkdir -p "${DEB_DIR}/usr/share/applications"
+      - name: Build AppImage
+        run: |
+          # Download appimagetool
+          curl -Lo appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
 
-          cp tnt-linux-amd64 "${DEB_DIR}/usr/bin/tnt"
-          cp tnt.desktop "${DEB_DIR}/usr/share/applications/"
-          cp postinst "${DEB_DIR}/DEBIAN/"
+          # Build AppDir structure
+          mkdir -p TNT.AppDir/usr/bin TNT.AppDir/usr/share/applications TNT.AppDir/usr/share/icons/hicolor/256x256/apps
+          cp tnt-linux-amd64 TNT.AppDir/usr/bin/tnt
+          chmod +x TNT.AppDir/usr/bin/tnt
+          cp tnt.desktop TNT.AppDir/
+          cp Icon.png TNT.AppDir/tnt.png
+          cp Icon.png TNT.AppDir/usr/share/icons/hicolor/256x256/apps/tnt.png
+          cp tnt.desktop TNT.AppDir/usr/share/applications/
 
-          cat > "${DEB_DIR}/DEBIAN/control" << CONTROL_EOF
-          Package: tnt
-          Version: ${VERSION}
-          Section: sound
-          Priority: optional
-          Architecture: amd64
-          Maintainer: Collins Group <appsupport@collinsgroup.fi>
-          Description: TNT Plus - Professional audio processing tool
-           Audio normalization and transcoding tool built for broadcast professionals.
-          CONTROL_EOF
+          # AppRun entry point
+          cat > TNT.AppDir/AppRun << 'APPRUN_EOF'
+          #!/bin/bash
+          SELF=$(readlink -f "$0")
+          HERE=${SELF%/*}
+          export PATH="${HERE}/usr/bin:${PATH}"
+          exec "${HERE}/usr/bin/tnt" "$@"
+          APPRUN_EOF
+          chmod +x TNT.AppDir/AppRun
 
-          dpkg-deb --build "${DEB_DIR}"
-          echo "DEB_FILE=${DEB_NAME}_amd64.deb" >> $GITHUB_ENV
+          ARCH=x86_64 ./appimagetool TNT.AppDir
+          APPIMAGE_FILE="${{ steps.meta.outputs.prefix }}TNT-x86_64.AppImage"
+          mv TNT-x86_64.AppImage "${APPIMAGE_FILE}"
+          echo "APPIMAGE_FILE=${APPIMAGE_FILE}" >> $GITHUB_ENV
 
-      - name: Upload Linux DEB Artifact
+      - name: Build tarball
+        run: |
+          TAR_DIR="tnt-${{ steps.meta.outputs.version }}-linux-amd64"
+          mkdir -p "${TAR_DIR}"
+          cp tnt-linux-amd64 "${TAR_DIR}/tnt"
+          chmod +x "${TAR_DIR}/tnt"
+          cp tnt.desktop "${TAR_DIR}/"
+          cp Icon.png "${TAR_DIR}/tnt.png"
+
+          cat > "${TAR_DIR}/install.sh" << 'INSTALL_EOF'
+          #!/bin/bash
+          set -e
+          echo "Installing TNT..."
+          sudo cp tnt /usr/bin/tnt
+          sudo chmod +x /usr/bin/tnt
+          sudo cp tnt.desktop /usr/share/applications/ 2>/dev/null || true
+          sudo mkdir -p /usr/share/icons/hicolor/256x256/apps
+          sudo cp tnt.png /usr/share/icons/hicolor/256x256/apps/tnt.png 2>/dev/null || true
+          echo "Done. Run 'tnt' to launch."
+          INSTALL_EOF
+          chmod +x "${TAR_DIR}/install.sh"
+
+          TAR_FILE="${{ steps.meta.outputs.prefix }}tnt-${{ steps.meta.outputs.version }}-linux-amd64.tar.gz"
+          tar czf "${TAR_FILE}" "${TAR_DIR}"
+          echo "TAR_FILE=${TAR_FILE}" >> $GITHUB_ENV
+
+      - name: Upload Linux Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: linux-release-assets
-          path: ${{ env.DEB_FILE }}
+          path: |
+            ${{ env.DEB_FILE }}
+            ${{ env.RPM_FILE }}
+            ${{ env.ARCH_FILE }}
+            ${{ env.APPIMAGE_FILE }}
+            ${{ env.TAR_FILE }}
 
       - name: Upload to BunnyCDN
         env:
           BUNNY_ACCESS_KEY: ${{ secrets.BUNNY_ACCESS_KEY }}
           BUNNY_ACCOUNT_API_KEY: ${{ secrets.BUNNY_API_KEY }}
         run: |
-          curl -X PUT \
-            -H "AccessKey: $BUNNY_ACCESS_KEY" \
-            -H "Content-Type: application/octet-stream" \
-            --data-binary "@${{ env.DEB_FILE }}" \
-            "https://se.storage.bunnycdn.com/sw-stor/${{ env.DEB_FILE }}"
-          curl -X POST \
-            -H "AccessKey: $BUNNY_ACCOUNT_API_KEY" \
-            "https://api.bunny.net/purge?url=https://software.collinsgroup.fi/${{ env.DEB_FILE }}&async=false"
+          for FILE in "${{ env.DEB_FILE }}" "${{ env.RPM_FILE }}" "${{ env.ARCH_FILE }}" "${{ env.APPIMAGE_FILE }}" "${{ env.TAR_FILE }}"; do
+            echo "Uploading ${FILE}..."
+            curl -X PUT \
+              -H "AccessKey: $BUNNY_ACCESS_KEY" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary "@${FILE}" \
+              "https://se.storage.bunnycdn.com/sw-stor/${FILE}"
+            curl -X POST \
+              -H "AccessKey: $BUNNY_ACCOUNT_API_KEY" \
+              "https://api.bunny.net/purge?url=https://software.collinsgroup.fi/${FILE}&async=false"
+          done
 
   release:
     needs:
@@ -452,6 +548,10 @@ jobs:
             mac-release-assets/*.dmg
             mac-intel-release-assets/*.dmg
             linux-release-assets/*.deb
+            linux-release-assets/*.rpm
+            linux-release-assets/*.pkg.tar.zst
+            linux-release-assets/*.AppImage
+            linux-release-assets/*.tar.gz
             windows-release-assets/*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
