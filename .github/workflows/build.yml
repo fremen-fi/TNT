@@ -171,7 +171,7 @@ jobs:
 
   build-windows:
     if: "!contains(github.ref, '-mac') && !contains(github.ref, '-linux') && !contains(github.ref, '-unix')"
-    runs-on: [self-hosted, x86, windows, large]
+    runs-on: [self-hosted, X64, Windows, Large]
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -233,7 +233,7 @@ jobs:
 
   build-linux:
     if: "(!contains(github.ref, '-win') || contains(github.ref, '-unix')) && !contains(github.ref, '-mac')"
-    runs-on: [self-hosted, x86, linux, large]
+    runs-on: [self-hosted, X64, Linux, Large]
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
