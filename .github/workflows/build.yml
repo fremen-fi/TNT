@@ -197,10 +197,31 @@ jobs:
       #    }
       #  shell: pwsh
 
+      - name: Set up MinGW (CGO)
+        run: |
+          $candidates = @(
+            "C:\mingw64\bin",
+            "C:\msys64\mingw64\bin",
+            "C:\tools\mingw64\bin",
+            "C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin"
+          )
+          $found = $candidates | Where-Object { Test-Path "$_\gcc.exe" } | Select-Object -First 1
+          if ($found) {
+            "$found" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+            Write-Host "Found MinGW at: $found"
+          } else {
+            Write-Host "MinGW not found, installing via Chocolatey..."
+            choco install mingw -y --no-progress
+          }
+        shell: powershell
+
       - name: Build Windows executable
         run: |
-          cd go
+          $TAG = $env:GITHUB_REF -replace "refs/tags/v", ""
+          $VERSION = $TAG.Split("-")[0]
+          $env:CGO_ENABLED = "1"
           $env:GOARCH = "amd64"
+          cd go
           go build -ldflags "-s -w -X main.version=$VERSION" -o TNT.exe
         shell: powershell
 
