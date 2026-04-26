@@ -208,17 +208,31 @@ jobs:
           )
           $found = $candidates | Where-Object { Test-Path "$_\gcc.exe" } | Select-Object -First 1
           if (-not $found) {
+            $searchRoots = @(
+              "C:\ProgramData\chocolatey\lib\mingw",
+              "C:\ProgramData\chocolatey\lib\mingw-get",
+              "C:\tools",
+              "C:\mingw64",
+              "C:\msys64"
+            )
+            foreach ($root in $searchRoots) {
+              if (Test-Path $root) {
+                $gccExe = Get-ChildItem -Path $root -Filter "gcc.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($gccExe) { $found = $gccExe.DirectoryName; break }
+              }
+            }
+          }
+          if (-not $found) {
             Write-Host "gcc not found, installing MinGW via Chocolatey..."
             & "C:\ProgramData\chocolatey\bin\choco.exe" install mingw -y --no-progress
-            $found = Get-ChildItem -Path "C:\" -Filter "gcc.exe" -Recurse -ErrorAction SilentlyContinue |
-              Select-Object -First 1 |
-              ForEach-Object { $_.DirectoryName }
+            $gccExe = Get-ChildItem -Path "C:\ProgramData\chocolatey\lib\mingw" -Filter "gcc.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($gccExe) { $found = $gccExe.DirectoryName }
           }
           if ($found) {
             Write-Host "Adding to PATH: $found"
             "$found" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           } else {
-            Write-Error "gcc.exe not found after MinGW installation"
+            Write-Error "gcc.exe not found"
             exit 1
           }
         shell: powershell
