@@ -40,13 +40,13 @@ jobs:
 
       - name: Import Certificate
         run: |
-          echo "${{ secrets.MACOS_CERTIFICATE }}" | base64 --decode > certificate.p12
+          echo "${{ secrets.MACOS_CERTIFICATE }}" | base64 --decode > signing-certificate.p12
           security create-keychain -p actions temp.keychain
           security default-keychain -s temp.keychain
           security unlock-keychain -p actions temp.keychain
-          security import certificate.p12 -k temp.keychain -P "${{ secrets.MACOS_CERTIFICATE_PASSWORD }}" -T /usr/bin/codesign
+          security import signing-certificate.p12 -k temp.keychain -P "${{ secrets.MACOS_CERTIFICATE_PASSWORD }}" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions temp.keychain
-          rm certificate.p12
+          rm signing-certificate.p12
 
       - name: Sign App
         run: |
