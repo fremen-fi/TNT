@@ -21,15 +21,6 @@ jobs:
         with:
           go-version: '1.23'
 
-      - name: Download build assets
-        run: |
-          mkdir -p go/buildBlocks go/platform/ffmpegSource
-          curl -o go/buildBlocks/Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=${{ secrets.CDN_PULL_TOKEN}}"
-          curl -o go/buildBlocks/tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=${{ secrets.CDN_PULL_TOKEN}}"
-          curl -o go/buildBlocks/tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=${{ secrets.CDN_PULL_TOKEN}}"
-          curl -o go/platform/ffmpegSource/ffmpegMacM "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegMacM?value=${{ secrets.CDN_PULL_TOKEN}}"
-          chmod +x go/platform/ffmpegSource/ffmpegMacM
-
       - name: Install Fyne
         run: go install fyne.io/fyne/v2/cmd/fyne@latest
 
@@ -98,23 +89,6 @@ jobs:
           name: mac-release-assets
           path: go/${{ steps.filename.outputs.dmg_name }}
 
-      - name: Upload to BunnyCDN
-        run: |
-          cd go
-          ls -la ${{ steps.filename.outputs.dmg_name }}
-          shasum -a 256 ${{ steps.filename.outputs.dmg_name }}
-          curl -X PUT \
-            -H "AccessKey: ${{ secrets.BUNNY_ACCESS_KEY }}" \
-            -H "Content-Type: application/octet-stream" \
-            --data-binary "@${{ steps.filename.outputs.dmg_name }}" \
-            "https://se.storage.bunnycdn.com/sw-stor/${{ steps.filename.outputs.dmg_name }}"
-          echo "Upload complete"
-
-          curl -X POST \
-            -H "AccessKey: ${{ secrets.BUNNY_API_KEY }}" \
-            -H "Content-Type: application/json" \
-            "https://api.bunny.net/purge?url=https://software.collinsgroup.fi/${{ steps.filename.outputs.dmg_name }}&async=false"
-
   build-mac-intel:
     runs-on: macos-15-intel
     if: "(!contains(github.ref, '-win') || contains(github.ref, '-unix')) && !contains(github.ref, '-linux')"
@@ -126,15 +100,6 @@ jobs:
         uses: actions/setup-go@v4
         with:
           go-version: '1.23'
-
-      - name: Download build assets
-        run: |
-          mkdir -p go/buildBlocks go/platform/ffmpegSource
-          curl -o go/buildBlocks/Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=${{ secrets.CDN_PULL_TOKEN}}"
-          curl -o go/buildBlocks/tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=${{ secrets.CDN_PULL_TOKEN}}"
-          curl -o go/buildBlocks/tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=${{ secrets.CDN_PULL_TOKEN}}"
-          curl -o go/platform/ffmpegSource/ffmpegMacX86 "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegMacX86?value=${{ secrets.CDN_PULL_TOKEN}}"
-          chmod +x go/platform/ffmpegSource/ffmpegMacX86
 
       - name: Install Fyne
         run: go install fyne.io/fyne/v2/cmd/fyne@latest
@@ -204,26 +169,9 @@ jobs:
           name: mac-intel-release-assets
           path: go/${{ steps.filename.outputs.dmg_name }}
 
-      - name: Upload to BunnyCDN
-        run: |
-          cd go
-          ls -la ${{ steps.filename.outputs.dmg_name }}
-          shasum -a 256 ${{ steps.filename.outputs.dmg_name }}
-          curl -X PUT \
-            -H "AccessKey: ${{ secrets.BUNNY_ACCESS_KEY }}" \
-            -H "Content-Type: application/octet-stream" \
-            --data-binary "@${{ steps.filename.outputs.dmg_name }}" \
-            "https://se.storage.bunnycdn.com/sw-stor/${{ steps.filename.outputs.dmg_name }}"
-          echo "Upload complete"
-
-          curl -X POST \
-            -H "AccessKey: ${{ secrets.BUNNY_API_KEY }}" \
-            -H "Content-Type: application/json" \
-            "https://api.bunny.net/purge?url=https://software.collinsgroup.fi/${{ steps.filename.outputs.dmg_name }}&async=false"
-
   build-windows:
     if: "!contains(github.ref, '-mac') && !contains(github.ref, '-linux') && !contains(github.ref, '-unix')"
-    runs-on: windows-latest
+    runs-on: [self-hosted, x86, windows, large]
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -235,16 +183,6 @@ jobs:
 
       - name: Install Fyne CLI
         run: go install fyne.io/fyne/v2/cmd/fyne@latest
-
-      - name: Download build assets
-        run: |
-          New-Item -ItemType Directory -Force -Path go\buildBlocks
-          New-Item -ItemType Directory -Force -Path go\platform\ffmpegSource
-          curl.exe -L -o go\buildBlocks\Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=${{ secrets.CDN_PULL_TOKEN}}"
-          curl.exe -L -o go\buildBlocks\tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=${{ secrets.CDN_PULL_TOKEN}}"
-          curl.exe -L -o go\buildBlocks\tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=${{ secrets.CDN_PULL_TOKEN}}"
-          curl.exe -L -o go\platform\ffmpegSource\ffmpeg.exe "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpeg.exe?value=${{ secrets.CDN_PULL_TOKEN}}"
-        shell: pwsh
 
       - name: Verify FFmpeg exists
         run: |
@@ -308,20 +246,9 @@ jobs:
           name: windows-release-assets
           path: Distribution/${{ steps.filename.outputs.exe_name }}
 
-      - name: Upload to BunnyCDN
-        run: |
-          $uri = "https://se.storage.bunnycdn.com/sw-stor/${{ steps.filename.outputs.exe_name }}"
-          Invoke-RestMethod -Uri $uri -Method Put -InFile "Distribution/${{ steps.filename.outputs.exe_name }}" -Headers @{
-            "AccessKey" = "${{ secrets.BUNNY_ACCESS_KEY }}"
-          }
-          Invoke-RestMethod -Uri "https://api.bunny.net/purge?url=https://software.collinsgroup.fi/${{ steps.filename.outputs.exe_name }}&async=false" -Method Post -Headers @{
-            "AccessKey" = "${{ secrets.BUNNY_API_KEY }}"
-          }
-        shell: pwsh
-
   build-linux:
     if: "(!contains(github.ref, '-win') || contains(github.ref, '-unix')) && !contains(github.ref, '-mac')"
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, x86, linux, large]
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -330,14 +257,6 @@ jobs:
         uses: actions/setup-go@v4
         with:
           go-version: '1.23'
-
-      - name: Download build assets
-        run: |
-          mkdir -p go/buildBlocks go/platform/ffmpegSource
-          curl -o go/buildBlocks/Wotfard-Regular.ttf "https://software.collinsgroup.fi/buildBlocks/Wotfard-Regular.ttf?value=${{ secrets.CDN_PULL_TOKEN}}"
-          curl -o go/buildBlocks/tntAppLogoForDark.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForDark.png?value=${{ secrets.CDN_PULL_TOKEN}}"
-          curl -o go/buildBlocks/tntAppLogoForLight.png "https://software.collinsgroup.fi/buildBlocks/tntAppLogoForLight.png?value=${{ secrets.CDN_PULL_TOKEN}}"
-          curl -o go/platform/ffmpegSource/ffmpegLinuxAmd64 "https://software.collinsgroup.fi/buildBlocks/ffmpeg/ffmpegLinuxAmd64?value=${{ secrets.CDN_PULL_TOKEN}}"
 
       - name: Install dependencies
         run: |
@@ -504,23 +423,6 @@ jobs:
             ${{ env.ARCH_FILE }}
             ${{ env.APPIMAGE_FILE }}
             ${{ env.TAR_FILE }}
-
-      - name: Upload to BunnyCDN
-        env:
-          BUNNY_ACCESS_KEY: ${{ secrets.BUNNY_ACCESS_KEY }}
-          BUNNY_ACCOUNT_API_KEY: ${{ secrets.BUNNY_API_KEY }}
-        run: |
-          for FILE in "${{ env.DEB_FILE }}" "${{ env.RPM_FILE }}" "${{ env.ARCH_FILE }}" "${{ env.APPIMAGE_FILE }}" "${{ env.TAR_FILE }}"; do
-            echo "Uploading ${FILE}..."
-            curl -X PUT \
-              -H "AccessKey: $BUNNY_ACCESS_KEY" \
-              -H "Content-Type: application/octet-stream" \
-              --data-binary "@${FILE}" \
-              "https://se.storage.bunnycdn.com/sw-stor/${FILE}"
-            curl -X POST \
-              -H "AccessKey: $BUNNY_ACCOUNT_API_KEY" \
-              "https://api.bunny.net/purge?url=https://software.collinsgroup.fi/${FILE}&async=false"
-          done
 
   release:
     needs:
