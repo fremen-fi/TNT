@@ -47,6 +47,7 @@ jobs:
           security unlock-keychain -p actions temp.keychain
           security import signing-certificate.p12 -k temp.keychain -P "${{ secrets.MACOS_CERTIFICATE_PASSWORD }}" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions temp.keychain
+          security list-keychains -d user -s temp.keychain $(security list-keychains -d user | tr -d '"')
           rm signing-certificate.p12
 
       - name: Sign App
@@ -132,6 +133,7 @@ jobs:
           security unlock-keychain -p actions temp.keychain
           security import certificate.p12 -k temp.keychain -P "${{ secrets.MACOS_CERTIFICATE_PASSWORD }}" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions temp.keychain
+          security list-keychains -d user -s temp.keychain $(security list-keychains -d user | tr -d '"')
           rm certificate.p12
 
       - name: Sign App
