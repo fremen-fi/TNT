@@ -1437,6 +1437,13 @@ func (n *AudioNormalizer) processWatchQueue() {
 }
 
 func main() {
+	// Check for CLI mode first
+	if cliCfg, isCLI := parseCLIFlags(); isCLI {
+		cliMode = true
+		runCLI(cliCfg)
+		return
+	}
+
 	os.Setenv("FYNE_DISABLE_HARDWARE_ACCELERATION", "1")
 
 	a := app.NewWithID("com.collinsgroup.tnt")

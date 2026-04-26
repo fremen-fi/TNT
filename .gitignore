@@ -2,7 +2,5 @@
 .DS_Store
 fyne-cross/
 App/
-ffmpegSource/
-buildBlocks/
 *.app
 Distribution/
