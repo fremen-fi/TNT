@@ -1999,7 +1999,7 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 	case "EBU R128 (-23 LUFS)":
 		target = "-23"
 		targetTp = "-1"
-	case "USA ATSC A/85 (-24 LUFS)":
+	case "USA ATSC A/85 (-24 LKFS)":
 		target = "-24"
 		targetTp = "-2"
 	case "Custom":
