@@ -41,6 +41,7 @@ jobs:
       - name: Import Certificate
         run: |
           echo "${{ secrets.MACOS_CERTIFICATE }}" | base64 --decode > signing-certificate.p12
+          security delete-keychain temp.keychain 2>/dev/null || true
           security create-keychain -p actions temp.keychain
           security default-keychain -s temp.keychain
           security unlock-keychain -p actions temp.keychain
@@ -55,6 +56,10 @@ jobs:
           xattr -cr TNT.app 2>/dev/null || true
           codesign --force --deep --options runtime --sign "Developer ID Application: Collins Group oy (478AR6Y9JJ)" TNT.app
           codesign --verify --deep --strict --verbose=2 TNT.app
+
+      - name: Cleanup Keychain
+        if: always()
+        run: security delete-keychain temp.keychain 2>/dev/null || true
 
       - name: Determine filename
         id: filename
@@ -121,6 +126,7 @@ jobs:
       - name: Import Certificate
         run: |
           echo "${{ secrets.MACOS_CERTIFICATE }}" | base64 --decode > certificate.p12
+          security delete-keychain temp.keychain 2>/dev/null || true
           security create-keychain -p actions temp.keychain
           security default-keychain -s temp.keychain
           security unlock-keychain -p actions temp.keychain
@@ -135,6 +141,10 @@ jobs:
           xattr -cr TNT.app 2>/dev/null || true
           codesign --force --deep --options runtime --sign "Developer ID Application: Collins Group oy (478AR6Y9JJ)" TNT.app
           codesign --verify --deep --strict --verbose=2 TNT.app
+
+      - name: Cleanup Keychain
+        if: always()
+        run: security delete-keychain temp.keychain 2>/dev/null || true
 
       - name: Determine filename
         id: filename
