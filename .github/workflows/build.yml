@@ -202,14 +202,14 @@ jobs:
           cd go
           $env:GOARCH = "amd64"
           go build -ldflags "-s -w -X main.version=$VERSION" -o TNT.exe
-        shell: pwsh
+        shell: powershell
 
       - name: Create InnoSetup installer
         run: |
           New-Item -ItemType Directory -Force -Path packaging
           Copy-Item -Path go\TNT.exe -Destination packaging\tnt.exe
           iscc packaging/inno_setup.iss
-        shell: pwsh
+        shell: powershell
 
       - name: Determine filename
         id: filename
@@ -221,12 +221,12 @@ jobs:
           } else {
             echo "exe_name=TNT.exe" >> $env:GITHUB_OUTPUT
           }
-        shell: pwsh
+        shell: powershell
 
       - name: Rename for distribution
         run: |
           Move-Item -Path Distribution\TNT.exe -Destination "Distribution\${{ steps.filename.outputs.exe_name }}"
-        shell: pwsh
+        shell: powershell
 
       - name: Upload Windows Installer Artifact
         uses: actions/upload-artifact@v4
