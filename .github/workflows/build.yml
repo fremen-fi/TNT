@@ -222,7 +222,13 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path packaging
           Copy-Item -Path go\TNT.exe -Destination packaging\tnt.exe
-          iscc packaging/inno_setup.iss
+          $iscc = @(
+            "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+            "C:\Program Files\Inno Setup 6\ISCC.exe",
+            "C:\Program Files (x86)\Inno Setup 5\ISCC.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) { Write-Error "ISCC.exe not found - install Inno Setup on this runner"; exit 1 }
+          & $iscc packaging/inno_setup.iss
         shell: powershell
 
       - name: Determine filename
