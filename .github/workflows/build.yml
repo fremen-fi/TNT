@@ -186,15 +186,16 @@ jobs:
       #- name: Install Fyne CLI
       #  run: go install fyne.io/fyne/v2/cmd/fyne@latest
 
-      - name: Verify FFmpeg exists
-        run: |
-          if (Test-Path go\platform\ffmpegSource\ffmpeg.exe) {
-            Write-Host "FFmpeg found, size: $((Get-Item go\platform\ffmpegSource\ffmpeg.exe).Length) bytes"
-          } else {
-            Write-Host "ERROR: FFmpeg not found!"
-            exit 1
-          }
-        shell: pwsh
+      # No need to check for downloaded FFmpeg since it's not downloaded
+      #- name: Verify FFmpeg exists
+      #  run: |
+      #    if (Test-Path go\platform\ffmpegSource\ffmpeg.exe) {
+      #      Write-Host "FFmpeg found, size: $((Get-Item go\platform\ffmpegSource\ffmpeg.exe).Length) bytes"
+      #    } else {
+      #      Write-Host "ERROR: FFmpeg not found!"
+      #      exit 1
+      #    }
+      #  shell: pwsh
 
       - name: Build Windows executable
         run: |
