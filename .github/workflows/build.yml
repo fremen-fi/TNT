@@ -58,10 +58,6 @@ jobs:
           codesign --force --deep --options runtime --sign "Developer ID Application: Collins Group oy (478AR6Y9JJ)" TNT.app
           codesign --verify --deep --strict --verbose=2 TNT.app
 
-      - name: Cleanup Keychain
-        if: always()
-        run: security delete-keychain temp.keychain 2>/dev/null || true
-
       - name: Determine filename
         id: filename
         run: |
@@ -98,6 +94,10 @@ jobs:
         with:
           name: mac-release-assets
           path: go/${{ steps.filename.outputs.dmg_name }}
+
+      - name: Cleanup Keychain
+        if: always()
+        run: security delete-keychain temp.keychain 2>/dev/null || true
 
   build-mac-intel:
     runs-on: macos-15-intel
@@ -144,10 +144,6 @@ jobs:
           codesign --force --deep --options runtime --sign "Developer ID Application: Collins Group oy (478AR6Y9JJ)" TNT.app
           codesign --verify --deep --strict --verbose=2 TNT.app
 
-      - name: Cleanup Keychain
-        if: always()
-        run: security delete-keychain temp.keychain 2>/dev/null || true
-
       - name: Determine filename
         id: filename
         run: |
@@ -184,6 +180,10 @@ jobs:
         with:
           name: mac-intel-release-assets
           path: go/${{ steps.filename.outputs.dmg_name }}
+
+      - name: Cleanup Keychain
+        if: always()
+        run: security delete-keychain temp.keychain 2>/dev/null || true
 
   build-windows:
     if: "!contains(github.ref, '-mac') && !contains(github.ref, '-linux') && !contains(github.ref, '-unix')"
