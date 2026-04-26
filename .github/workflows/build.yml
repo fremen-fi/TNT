@@ -82,11 +82,11 @@ jobs:
       - name: Notarize DMG
         run: |
           cd go
-          xcrun notarytool store-credentials "notary-profile" \
+          xcrun notarytool submit ${{ steps.filename.outputs.dmg_name }} \
             --apple-id "${{ secrets.NOTARY_APPLE_ID }}" \
             --team-id "${{ secrets.NOTARY_TEAM_ID }}" \
-            --password "${{ secrets.NOTARY_PASSWORD }}"
-          xcrun notarytool submit ${{ steps.filename.outputs.dmg_name }} --keychain-profile "notary-profile" --wait
+            --password "${{ secrets.NOTARY_PASSWORD }}" \
+            --wait
           xcrun stapler staple ${{ steps.filename.outputs.dmg_name }}
 
       - name: Upload macOS DMG Artifact
@@ -168,11 +168,11 @@ jobs:
       - name: Notarize DMG
         run: |
           cd go
-          xcrun notarytool store-credentials "notary-profile" \
+          xcrun notarytool submit ${{ steps.filename.outputs.dmg_name }} \
             --apple-id "${{ secrets.NOTARY_APPLE_ID }}" \
             --team-id "${{ secrets.NOTARY_TEAM_ID }}" \
-            --password "${{ secrets.NOTARY_PASSWORD }}"
-          xcrun notarytool submit ${{ steps.filename.outputs.dmg_name }} --keychain-profile "notary-profile" --wait
+            --password "${{ secrets.NOTARY_PASSWORD }}" \
+            --wait
           xcrun stapler staple ${{ steps.filename.outputs.dmg_name }}
 
       - name: Upload macOS DMG Artifact
