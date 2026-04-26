@@ -215,7 +215,7 @@ jobs:
             [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
             iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
             Write-Host "Installing MinGW via Chocolatey..."
-            choco install mingw -y --no-progress
+            & "C:\ProgramData\chocolatey\bin\choco.exe" install mingw -y --no-progress
             $chocoPath = "C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin"
             "$chocoPath" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           }
