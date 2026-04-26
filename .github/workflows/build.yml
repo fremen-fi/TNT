@@ -176,13 +176,15 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: '1.23'
+        # Go setup is not relevant for the local runners.
 
-      - name: Install Fyne CLI
-        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+      #- name: Set up Go
+      #  uses: actions/setup-go@v4
+      #  with:
+      #    go-version: '1.23'
+
+      #- name: Install Fyne CLI
+      #  run: go install fyne.io/fyne/v2/cmd/fyne@latest
 
       - name: Verify FFmpeg exists
         run: |
@@ -238,10 +240,12 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: '1.23'
+        # Go setup is not relevant for the local runners.
+
+      #- name: Set up Go
+      #  uses: actions/setup-go@v4
+      #  with:
+      #    go-version: '1.23'
 
       - name: Install dependencies
         run: |
