@@ -38,6 +38,11 @@ jobs:
           cd go
           fyne package -os darwin -name TNT -icon ../Icon.png -executable tnt --appID com.collinsgroup.tnt
 
+      - name: Add FFmpeg to bundle
+        run: |
+          cp go/platform/ffmpegSource/ffmpegMacM go/TNT.app/Contents/MacOS/ffmpeg
+          chmod +x go/TNT.app/Contents/MacOS/ffmpeg
+
       - name: Import Certificate
         run: |
           echo "${{ secrets.MACOS_CERTIFICATE }}" | base64 --decode > signing-certificate.p12
@@ -123,6 +128,11 @@ jobs:
         run: |
           cd go
           fyne package -os darwin -name TNT -icon ../Icon.png -executable tnt --appID com.collinsgroup.tnt
+
+      - name: Add FFmpeg to bundle
+        run: |
+          cp go/platform/ffmpegSource/ffmpegMacX86 go/TNT.app/Contents/MacOS/ffmpeg
+          chmod +x go/TNT.app/Contents/MacOS/ffmpeg
 
       - name: Import Certificate
         run: |
@@ -238,6 +248,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path packaging
           Copy-Item -Path go\TNT.exe -Destination packaging\tnt.exe
+          Copy-Item -Path go\platform\ffmpegSource\ffmpeg.exe -Destination packaging\ffmpeg.exe
           $iscc = @(
             "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
             "C:\Program Files\Inno Setup 6\ISCC.exe",
@@ -333,6 +344,8 @@ jobs:
           mkdir -p staging/usr/bin staging/usr/share/applications staging/usr/share/icons/hicolor/256x256/apps
           cp tnt-linux-amd64 staging/usr/bin/tnt
           chmod +x staging/usr/bin/tnt
+          cp go/platform/ffmpegSource/ffmpegLinuxAmd64 staging/usr/bin/ffmpeg
+          chmod +x staging/usr/bin/ffmpeg
           cp tnt.desktop staging/usr/share/applications/
           cp Icon.png staging/usr/share/icons/hicolor/256x256/apps/tnt.png
 
@@ -356,6 +369,10 @@ jobs:
               dst: /usr/share/applications/tnt.desktop
             - src: staging/usr/share/icons/hicolor/256x256/apps/tnt.png
               dst: /usr/share/icons/hicolor/256x256/apps/tnt.png
+            - src: staging/usr/bin/ffmpeg
+              dst: /usr/bin/ffmpeg
+              file_info:
+                mode: 0755
           scripts:
             postinstall: postinst
           NFPM_EOF
@@ -397,6 +414,8 @@ jobs:
           mkdir -p TNT.AppDir/usr/bin TNT.AppDir/usr/share/applications TNT.AppDir/usr/share/icons/hicolor/256x256/apps
           cp tnt-linux-amd64 TNT.AppDir/usr/bin/tnt
           chmod +x TNT.AppDir/usr/bin/tnt
+          cp go/platform/ffmpegSource/ffmpegLinuxAmd64 TNT.AppDir/usr/bin/ffmpeg
+          chmod +x TNT.AppDir/usr/bin/ffmpeg
           cp tnt.desktop TNT.AppDir/
           cp Icon.png TNT.AppDir/tnt.png
           cp Icon.png TNT.AppDir/usr/share/icons/hicolor/256x256/apps/tnt.png
@@ -422,6 +441,8 @@ jobs:
           mkdir -p "${TAR_DIR}"
           cp tnt-linux-amd64 "${TAR_DIR}/tnt"
           chmod +x "${TAR_DIR}/tnt"
+          cp go/platform/ffmpegSource/ffmpegLinuxAmd64 "${TAR_DIR}/ffmpeg"
+          chmod +x "${TAR_DIR}/ffmpeg"
           cp tnt.desktop "${TAR_DIR}/"
           cp Icon.png "${TAR_DIR}/tnt.png"
 

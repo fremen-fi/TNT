@@ -26,24 +26,24 @@ import (
 
 // CLIConfig holds all CLI-parsed configuration
 type CLIConfig struct {
-	InputDir    string
-	OutputDir   string
-	Format      string
-	SampleRate  string
-	BitDepth    string
-	Bitrate     string
-	EqPreset    int // 0=off, 1=flat, 2=speech, 3=broadcast
-	DynPreset   int // 0=off, 1=light, 2=moderate, 3=broadcast
-	LufsEnabled bool
-	LufsTargetI string
+	InputDir     string
+	OutputDir    string
+	Format       string
+	SampleRate   string
+	BitDepth     string
+	Bitrate      string
+	EqPreset     int // 0=off, 1=flat, 2=speech, 3=broadcast
+	DynPreset    int // 0=off, 1=light, 2=moderate, 3=broadcast
+	LufsEnabled  bool
+	LufsTargetI  string
 	LufsTargetTP string
-	RGOnly      bool // ReplayGain tag only, no normalization
-	DynNorm     bool
-	Speech      bool
-	NoTranscode bool
-	DataComp    int
-	PhaseCheck  bool
-	Workers     int
+	RGOnly       bool // ReplayGain tag only, no normalization
+	DynNorm      bool
+	Speech       bool
+	NoTranscode  bool
+	DataComp     int
+	PhaseCheck   bool
+	Workers      int
 }
 
 // CLIProcessor handles CLI-mode processing without any GUI dependencies

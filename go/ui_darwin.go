@@ -9,6 +9,6 @@ func getPlatformFormats() []string {
 func getPlatformCodecMap() map[string]string {
 	return map[string]string{
 		"AAC (Fraunhofer)": "libfdk_aac",
-		"AAC (Apple)": "aac_at",
+		"AAC (Apple)":      "aac_at",
 	}
 }
