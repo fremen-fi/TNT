@@ -34,8 +34,10 @@ func findFFmpeg() string {
 	if exe, err := os.Executable(); err == nil {
 		if exe, err = filepath.EvalSymlinks(exe); err == nil {
 			candidate := filepath.Join(filepath.Dir(exe), name)
-			if _, err := os.Stat(candidate); err == nil && hasRequiredCodecs(candidate) {
-				return candidate
+			if _, err := os.Stat(candidate); err == nil {
+				if runtime.GOOS != "linux" || hasRequiredCodecs(candidate) {
+					return candidate
+				}
 			}
 		}
 	}
