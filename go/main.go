@@ -1650,7 +1650,7 @@ func (n *AudioNormalizer) checkNonTranscode() bool {
 func (n *AudioNormalizer) checkOriginAAC() bool {
 	originIsAAC := false
 	for _, file := range n.files {
-		if strings.TrimPrefix(filepath.Ext(file), ".") == "m4a" {
+		if strings.TrimPrefix(filepath.Ext(file), ".") == "m4a" || strings.TrimPrefix(filepath.Ext(file), ".") == "aac" {
 			originIsAAC = true
 			break
 		}
@@ -2364,7 +2364,7 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 		}
 	}
 
-	resultsInM4A := (actualCodec == "libfdk_aac" || actualCodec == "aac") || (cfg.originIsAAC && cfg.noTranscode)
+	resultsInM4A := (actualCodec == "libfdk_aac" || actualCodec == "aac_at") || (cfg.originIsAAC && cfg.noTranscode)
 	useMovFlags :=  resultsInM4A && cfg.writeTags && measured != nil
 
 	if useMovFlags {
