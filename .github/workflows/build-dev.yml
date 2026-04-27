@@ -100,29 +100,3 @@ jobs:
         if: always()
         run: security delete-keychain temp.keychain 2>/dev/null || true
 
-  release:
-        needs:
-          - build-mac-arm64
-        if: always() && !failure() && !cancelled()
-
-        runs-on: ubuntu-slim
-        permissions:
-          contents: write
-        steps:
-          - name: Download artifact
-            uses: actions/download-artifact@v4
-
-          - name: Create Release
-            uses: softprops/action-gh-release@v1
-            with:
-              files: |
-                mac-release-assets/*.dmg
-                mac-intel-release-assets/*.dmg
-                linux-release-assets/*.deb
-                linux-release-assets/*.rpm
-                linux-release-assets/*.pkg.tar.zst
-                linux-release-assets/*.AppImage
-                linux-release-assets/*.tar.gz
-                windows-release-assets/*.exe
-            env:
-              GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
