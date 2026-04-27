@@ -35,7 +35,7 @@ import (
 )
 
 const (
-	currentVersion = "1.3.0"
+	currentVersion  = "1.3.0"
 	versionCheckURL = "https://software.collinsgroup.fi/tnt-version.json"
 	//macARMDownloadURL = "https://software.collinsgroup.fi/TNT.dmg"
 	//macIntelDownloadURL = "https://software.collinsgroup.fi/TNT-Intel.dmg"
@@ -51,16 +51,16 @@ type VersionInfo struct {
 }
 
 type AudioNormalizer struct {
-	window       fyne.Window
-	fileList     *widget.List
-	files        []string
-	outputDir    string
-	processBtn   *widget.Button
-	progressBar  *widget.ProgressBar
-	statusLog    *widget.Entry
-	outputLabel  *widget.Label
+	window      fyne.Window
+	fileList    *widget.List
+	files       []string
+	outputDir   string
+	processBtn  *widget.Button
+	progressBar *widget.ProgressBar
+	statusLog   *widget.Entry
+	outputLabel *widget.Label
 
-	modeTabs *container.AppTabs
+	modeTabs    *container.AppTabs
 	modeWarning *widget.Label
 
 	// Mode toggle
@@ -69,50 +69,50 @@ type AudioNormalizer struct {
 
 	// Simple mode
 	simpleGroupButtons *widget.RadioGroup
-	simpleGroup *fyne.Container
+	simpleGroup        *fyne.Container
 
 	// Advanced mode
-	formatSelect   *widget.Select
-	sampleRate     *widget.Select
-	bitDepth       *widget.Select
-	bitrateEntry   *widget.Entry
-	normalizeTarget *widget.Entry
+	formatSelect      *widget.Select
+	sampleRate        *widget.Select
+	bitDepth          *widget.Select
+	bitrateEntry      *widget.Entry
+	normalizeTarget   *widget.Entry
 	normalizeTargetTp *widget.Entry
 	advancedContainer *fyne.Container
 
 	// Common
-	loudnormCheck *widget.Check
-	loudnormCustomCheck *widget.Check
-	loudnormLabel *widget.Label
-	writeTagsLabel *widget.Label
-	normalizeTargetLabel *widget.Label
+	loudnormCheck          *widget.Check
+	loudnormCustomCheck    *widget.Check
+	loudnormLabel          *widget.Label
+	writeTagsLabel         *widget.Label
+	normalizeTargetLabel   *widget.Label
 	normalizeTargetLabelTp *widget.Label
-	normalizationStandard string
-	IsSpeechCheck *widget.Check
-	writeTags *widget.Check
-	noTranscode *widget.Check
-	dataCompLevel *widget.Slider
+	normalizationStandard  string
+	IsSpeechCheck          *widget.Check
+	writeTags              *widget.Check
+	noTranscode            *widget.Check
+	dataCompLevel          *widget.Slider
 
 	// dynamics
 	dynamicsLabel *widget.Label
-	dynamicsDrop *widget.Select
-	EqLabel *widget.Label
-	EqDrop *widget.Select
+	dynamicsDrop  *widget.Select
+	EqLabel       *widget.Label
+	EqDrop        *widget.Select
 	//dynNormLabel *widget.Label
-	dynNorm *widget.Check
+	dynNorm      *widget.Check
 	dynNormLabel *widget.Label
-	bypassProc *widget.Check
+	bypassProc   *widget.Check
 
 	multibandFilter string
 
 	logFile *os.File
 
 	// watchmode
-	watchMode *widget.Check
-	watching bool
-	watcherStop chan bool
-	jobQueue chan string
-	inputDir string
+	watchMode        *widget.Check
+	watching         bool
+	watcherStop      chan bool
+	jobQueue         chan string
+	inputDir         string
 	watcherWarnLabel *widget.Label
 
 	watcherMutex sync.Mutex
@@ -137,32 +137,32 @@ type AudioNormalizer struct {
 }
 
 type ProcessConfig struct {
-	Format      string
-	SampleRate  string
-	BitDepth    string
-	Bitrate     string
-	UseLoudnorm bool
+	Format         string
+	SampleRate     string
+	BitDepth       string
+	Bitrate        string
+	UseLoudnorm    bool
 	CustomLoudnorm bool
-	IsSpeech bool
-	writeTags bool
-	noTranscode bool
-	originIsAAC bool
-	dataCompLevel int8
+	IsSpeech       bool
+	writeTags      bool
+	noTranscode    bool
+	originIsAAC    bool
+	dataCompLevel  int8
 	DynamicsPreset string
-	bypassProc bool
-	EqTarget string
-	DynNorm bool
-	PhaseCheck bool
+	bypassProc     bool
+	EqTarget       string
+	DynNorm        bool
+	PhaseCheck     bool
 }
 
 type DynamicsAnalysis struct {
-	PeakLevel     float64
-	RMSPeak       float64
-	RMSTrough     float64
-	CrestFactor   float64
-	DynamicRange  float64
-	RMSLevel      float64
-	NoiseFloor float64
+	PeakLevel    float64
+	RMSPeak      float64
+	RMSTrough    float64
+	CrestFactor  float64
+	DynamicRange float64
+	RMSLevel     float64
+	NoiseFloor   float64
 }
 
 type FrequencyBandAnalysis struct {
@@ -254,13 +254,13 @@ func compareVersions(v1, v2 string) int {
 		parts2 = append(parts2, "0")
 	}
 
-//	for i := 0; i < limit; i++ {}
-//
-// by a range loop with an integer operand:
-//
-//	for i := range limit {}
+	//	for i := 0; i < limit; i++ {}
+	//
+	// by a range loop with an integer operand:
+	//
+	//	for i := range limit {}
 
-// below modernized
+	// below modernized
 
 	// Compare each part numerically
 	for i := range 3 {
@@ -278,43 +278,43 @@ func compareVersions(v1, v2 string) int {
 }
 
 func downloadAndInstallUpdate(versionInfo VersionInfo, window fyne.Window) {
-logFile, _ := os.OpenFile(filepath.Join(os.TempDir(), "tnt_update.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-defer logFile.Close()
+	logFile, _ := os.OpenFile(filepath.Join(os.TempDir(), "tnt_update.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	defer logFile.Close()
 
-logToFile(logFile, "Starting update download...")
+	logToFile(logFile, "Starting update download...")
 
-// Get platform-specific download URL
-platformKey := getPlatformKey()
-var downloadURL string
+	// Get platform-specific download URL
+	platformKey := getPlatformKey()
+	var downloadURL string
 
-// Search download_url array for matching platform
-for _, urlMap := range versionInfo.DownloadURL {
-	if url, ok := urlMap[platformKey]; ok && url != "" {
-		downloadURL = url
-		break
+	// Search download_url array for matching platform
+	for _, urlMap := range versionInfo.DownloadURL {
+		if url, ok := urlMap[platformKey]; ok && url != "" {
+			downloadURL = url
+			break
+		}
 	}
-}
 
-if downloadURL == "" {
-	logToFile(logFile, fmt.Sprintf("No download URL found for platform: %s", platformKey))
-	dialog.ShowError(fmt.Errorf("Update not available for your platform"), window)
-	return
-}
+	if downloadURL == "" {
+		logToFile(logFile, fmt.Sprintf("No download URL found for platform: %s", platformKey))
+		dialog.ShowError(fmt.Errorf("Update not available for your platform"), window)
+		return
+	}
 
-logToFile(logFile, fmt.Sprintf("Platform: %s, Download URL: %s", platformKey, downloadURL))
+	logToFile(logFile, fmt.Sprintf("Platform: %s, Download URL: %s", platformKey, downloadURL))
 
-// Determine file extension
-var fileName string
-switch platformKey {
-case "darwin":
-	fileName = "TNT.dmg"
-case "darwin-senior":
-	fileName = "TNT-Intel.dmg"
-case "orangutan":
-	fileName = "TNT-Setup.exe"
-case "penguin":
-	fileName = "tnt-amd64.deb"
-}
+	// Determine file extension
+	var fileName string
+	switch platformKey {
+	case "darwin":
+		fileName = "TNT.dmg"
+	case "darwin-senior":
+		fileName = "TNT-Intel.dmg"
+	case "orangutan":
+		fileName = "TNT-Setup.exe"
+	case "penguin":
+		fileName = "tnt-amd64.deb"
+	}
 
 	logToFile(logFile, fmt.Sprintf("Download URL: %s", downloadURL))
 
@@ -517,7 +517,6 @@ func (n *AudioNormalizer) analyzeDynamics(inputPath string) *DynamicsAnalysis {
 		"-",
 	)
 
-
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		n.logToFile(n.logFile, fmt.Sprintf("astats failed: %v", err))
@@ -553,7 +552,6 @@ func (n *AudioNormalizer) analyzeFrequencyBands(inputPath string) map[string]*Fr
 			"-f", "null",
 			"-",
 		)
-
 
 		output, err := cmd.CombinedOutput()
 		if err != nil {
@@ -623,7 +621,7 @@ func (n *AudioNormalizer) parseFrequencyBandOutput(output string, bandName strin
 }
 
 func (n *AudioNormalizer) buildMultibandCompression(bandAnalysis map[string]*FrequencyBandAnalysis, dsAnalysis *audio.DynamicsScoreAnalysis, preset string) string {
-		if len(bandAnalysis) == 0 || preset == "Off" {
+	if len(bandAnalysis) == 0 || preset == "Off" {
 		return ""
 	}
 
@@ -690,13 +688,13 @@ func (n *AudioNormalizer) buildMultibandCompression(bandAnalysis map[string]*Fre
 
 	filterChain += fmt.Sprintf(
 		"acrossover=split=80 250 1000 4000:order=4th:precision=double[SUB][LOW][LMID][HMID][HI];"+
-		"[SUB]%s[sub_out];"+
-		"[LOW]%s[low_out];"+
-		"[LMID]%s[lmid_out];"+
-		"[HMID]%s[hmid_out];"+
-		"[HI]%s[hi_out];"+
-		"[sub_out][low_out][lmid_out][hmid_out][hi_out]amix=inputs=5:normalize=0,"+
-		"alimiter=limit=0.9886:level=false",
+			"[SUB]%s[sub_out];"+
+			"[LOW]%s[low_out];"+
+			"[LMID]%s[lmid_out];"+
+			"[HMID]%s[hmid_out];"+
+			"[HI]%s[hi_out];"+
+			"[sub_out][low_out][lmid_out][hmid_out][hi_out]amix=inputs=5:normalize=0,"+
+			"alimiter=limit=0.9886:level=false",
 		subFilter, bassFilter, lowMidFilter, midFilter, highFilter)
 
 	n.logToFile(n.logFile, fmt.Sprintf("Multiband filter: %s", filterChain))
@@ -717,21 +715,19 @@ func (n *AudioNormalizer) buildBandAcompressor(band *FrequencyBandAnalysis, atta
 			limiterLin = 1.0
 		}
 
-
-
 		return fmt.Sprintf("acompressor=threshold=%.6f:ratio=%.1f:attack=%.1f:release=%.1f:makeup=1.0,alimiter=limit=%.6f:attack=5:release=50,volume=%.3f",
 			thresholdLin, ratio, attackMs, releaseMs, limiterLin, makeup)
 	}
 
 	// Calculate adaptive threshold from band peak
 	var adaptiveThresholdDb float64
-	if mods.RatioMultiplier < 0.3 {  // DS < 9 (Very compressed)
+	if mods.RatioMultiplier < 0.3 { // DS < 9 (Very compressed)
 		// For compressed material: set threshold 2dB below peak
 		adaptiveThresholdDb = band.PeakLevel - 1.0
 	} else {
 		// Normal material: use RMS + offset approach
 		thresholdOffset := 6.0
-		if mods.RatioMultiplier > 3.0 {  // DS > 21
+		if mods.RatioMultiplier > 3.0 { // DS > 21
 			thresholdOffset = 3.0
 		}
 		adaptiveThresholdDb = band.RMSLevel + thresholdOffset
@@ -741,7 +737,7 @@ func (n *AudioNormalizer) buildBandAcompressor(band *FrequencyBandAnalysis, atta
 
 	// Calculate makeup gain based on expected gain reduction
 	var makeupGainDb float64
-	if mods.RatioMultiplier < 0.3 {  // Very compressed material
+	if mods.RatioMultiplier < 0.3 { // Very compressed material
 		// For DS<9, minimal/no makeup - material is already loud
 		makeupGainDb = 0.0
 	} else {
@@ -839,7 +835,7 @@ func (n *AudioNormalizer) buildBandAcompressor(band *FrequencyBandAnalysis, atta
 	}
 
 	if makeupLin > 64.0 {
-		makeupLin =64.0
+		makeupLin = 64.0
 	}
 
 	if limiterAttack > 80.0 {
@@ -860,12 +856,12 @@ func (n *AudioNormalizer) buildBandAcompressor(band *FrequencyBandAnalysis, atta
 		band.BandName, adaptiveThresholdDb, ratio, limiterCeilingDb, makeupGainDb))
 
 	logBandComp := fmt.Sprintf("MBC: acompressor=threshold=%.6f:ratio=%.1f:attack=%.1f:release=%.1f:makeup=1.0:knee=%.1f,alimiter=limit=%.6f:attack=%.0f:release=%.0f:level=false,volume=%.3f",
-	thresholdLin, ratio, attackMs, releaseMs, knee, limiterLin, limiterAttack, limiterRelease, makeupLin)
+		thresholdLin, ratio, attackMs, releaseMs, knee, limiterLin, limiterAttack, limiterRelease, makeupLin)
 
 	n.logToFile(n.logFile, logBandComp)
 
 	return fmt.Sprintf("acompressor=threshold=%.6f:ratio=%.1f:attack=%.1f:release=%.1f:makeup=1.0:knee=%1.f,alimiter=limit=%.6f:attack=%.0f:release=%.0f:level=false,volume=%.3f",
-	thresholdLin, ratio, attackMs, releaseMs, knee, limiterLin, limiterAttack, limiterRelease, makeupLin)
+		thresholdLin, ratio, attackMs, releaseMs, knee, limiterLin, limiterAttack, limiterRelease, makeupLin)
 
 	//return fmt.Sprintf("acompressor=threshold=%.6f:ratio=%.1f:attack=%.1f:release=%.1f:makeup=1.0:knee=6.8,volume=%.3f",
 	//thresholdLin, ratio, attackMs, releaseMs, makeupLin)
@@ -899,7 +895,6 @@ func (n *AudioNormalizer) measureLoudnessFromFilter(inputPath string, filterChai
 		"-f", "null",
 		"-",
 	)
-
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -1070,7 +1065,6 @@ func (n *AudioNormalizer) calculateAdaptiveCompression(analysis *DynamicsAnalysi
 		makeupGain = 64.0
 	}
 
-
 	// Build filter chain
 	var filterChain string
 
@@ -1105,7 +1099,7 @@ func calculateMakeupGain(analysis *DynamicsAnalysis, threshold, ratio float64) f
 
 	// If threshold is above RMS peak, minimal compression happening
 	if threshold >= rmsPeak {
-		return 1.0  // No makeup needed, return 1.0 (unity gain)
+		return 1.0 // No makeup needed, return 1.0 (unity gain)
 	}
 
 	// If threshold is below RMS level, most signal is being compressed
@@ -1136,8 +1130,7 @@ func calculateMakeupGain(analysis *DynamicsAnalysis, threshold, ratio float64) f
 }
 
 func (n *AudioNormalizer) getDuration(inputPath string) (float64, error) {
-	cmd := ffmpeg.Command( "-i", inputPath, "-f", "null", "-")
-
+	cmd := ffmpeg.Command("-i", inputPath, "-f", "null", "-")
 
 	output, _ := cmd.CombinedOutput()
 	outputStr := string(output)
@@ -1243,24 +1236,24 @@ func (n *AudioNormalizer) previewSize() {
 }
 
 type Preferences struct {
-	AdvancedMode bool `json:"advanced_mode"`
-	LastOutputDir string `json:"last_output_dir"`
-	SimpleMode string `json:"simple_mode_selection"`
-	Format string `json:"format"`
-	SampleRate string `json:"sample_rate"`
-	BitDepth string `json:"bit_depth"`
-	Bitrate string `json:"bitrate"`
-	LoudnormEnabled bool `json:"loudnorm_enabled"`
-	CustomLoudnorm bool `json:"custom_loudnorm"`
-	NormalizeTarget string `json:"normalize_target"`
-	NormalizeTargetTp string `json:"normalize_target_tp"`
+	AdvancedMode          bool   `json:"advanced_mode"`
+	LastOutputDir         string `json:"last_output_dir"`
+	SimpleMode            string `json:"simple_mode_selection"`
+	Format                string `json:"format"`
+	SampleRate            string `json:"sample_rate"`
+	BitDepth              string `json:"bit_depth"`
+	Bitrate               string `json:"bitrate"`
+	LoudnormEnabled       bool   `json:"loudnorm_enabled"`
+	CustomLoudnorm        bool   `json:"custom_loudnorm"`
+	NormalizeTarget       string `json:"normalize_target"`
+	NormalizeTargetTp     string `json:"normalize_target_tp"`
 	NormalizationStandard string `json:"normalization_standard"`
-	DataCompLevel int8 `json:"data_comp_level"`
-	EqPreset string `json:"eq_preset"`
-	DynPreset string `json:"dyn_preset"`
-	DynNorm bool `json:"dyn_norm_enabled"`
-	SelectedTab string `json:"selected_tab"`
-	PhaseCheck bool `json:"phase_check_auto"`
+	DataCompLevel         int8   `json:"data_comp_level"`
+	EqPreset              string `json:"eq_preset"`
+	DynPreset             string `json:"dyn_preset"`
+	DynNorm               bool   `json:"dyn_norm_enabled"`
+	SelectedTab           string `json:"selected_tab"`
+	PhaseCheck            bool   `json:"phase_check_auto"`
 }
 
 func (n *AudioNormalizer) loadPreferences() {
@@ -1305,24 +1298,24 @@ func (n *AudioNormalizer) loadPreferences() {
 
 func (n *AudioNormalizer) savePreferences() {
 	prefs := Preferences{
-		AdvancedMode: n.advancedMode,
-		LastOutputDir: n.outputDir,
-		SimpleMode: n.simpleGroupButtons.Selected,
-		Format: n.formatSelect.Selected,
-		SampleRate: n.sampleRate.Selected,
-		BitDepth: n.bitDepth.Selected,
-		Bitrate: n.bitrateEntry.Text,
-		LoudnormEnabled: n.loudnormCheck.Checked,
-		CustomLoudnorm: n.loudnormCustomCheck.Checked,
-		NormalizeTarget: n.normalizeTarget.Text,
-		NormalizeTargetTp: n.normalizeTargetTp.Text,
+		AdvancedMode:          n.advancedMode,
+		LastOutputDir:         n.outputDir,
+		SimpleMode:            n.simpleGroupButtons.Selected,
+		Format:                n.formatSelect.Selected,
+		SampleRate:            n.sampleRate.Selected,
+		BitDepth:              n.bitDepth.Selected,
+		Bitrate:               n.bitrateEntry.Text,
+		LoudnormEnabled:       n.loudnormCheck.Checked,
+		CustomLoudnorm:        n.loudnormCustomCheck.Checked,
+		NormalizeTarget:       n.normalizeTarget.Text,
+		NormalizeTargetTp:     n.normalizeTargetTp.Text,
 		NormalizationStandard: n.normalizationStandard,
-		DataCompLevel: int8(n.dataCompLevel.Value),
-		EqPreset: n.EqDrop.Selected,
-		DynPreset: n.dynamicsDrop.Selected,
-		DynNorm: n.dynNorm.Checked,
-		SelectedTab: n.modeTabs.Selected().Text,
-		PhaseCheck: n.checkPhaseBtn.Checked,
+		DataCompLevel:         int8(n.dataCompLevel.Value),
+		EqPreset:              n.EqDrop.Selected,
+		DynPreset:             n.dynamicsDrop.Selected,
+		DynNorm:               n.dynNorm.Checked,
+		SelectedTab:           n.modeTabs.Selected().Text,
+		PhaseCheck:            n.checkPhaseBtn.Checked,
 	}
 
 	configDir, _ := os.UserConfigDir()
@@ -1344,17 +1337,17 @@ func (n *AudioNormalizer) resetPreferences() {
 
 func (n *AudioNormalizer) updateNormalizationLabel(standard string) {
 	switch standard {
-		case "EBU R128 (-23 LUFS)":
-			n.loudnormLabel.SetText("Normalize (EBU R128: -23 LUFS)")
-			n.writeTagsLabel.SetText("Write RG tags (EBU R128: -23 LUFS)")
-		case "USA ATSC A/85 (-24 LUFS)":
-			n.loudnormLabel.SetText("Normalize (ATSC A/85: -24 LUFS)")
-			n.writeTagsLabel.SetText("Write RG tags (ATSC A/85: -24 LUFS)")
-		case "Custom":
-			target := n.normalizeTarget.Text
-			targetTp := n.normalizeTargetTp.Text
-			n.loudnormLabel.SetText(fmt.Sprintf("Normalize (Custom %s LUFS, %s dBTP)", target, targetTp))
-			n.writeTagsLabel.SetText(fmt.Sprintf("Write RG tags (Custom %s LUFS, %s dBTP)", target, targetTp))
+	case "EBU R128 (-23 LUFS)":
+		n.loudnormLabel.SetText("Normalize (EBU R128: -23 LUFS)")
+		n.writeTagsLabel.SetText("Write RG tags (EBU R128: -23 LUFS)")
+	case "USA ATSC A/85 (-24 LUFS)":
+		n.loudnormLabel.SetText("Normalize (ATSC A/85: -24 LUFS)")
+		n.writeTagsLabel.SetText("Write RG tags (ATSC A/85: -24 LUFS)")
+	case "Custom":
+		target := n.normalizeTarget.Text
+		targetTp := n.normalizeTargetTp.Text
+		n.loudnormLabel.SetText(fmt.Sprintf("Normalize (Custom %s LUFS, %s dBTP)", target, targetTp))
+		n.writeTagsLabel.SetText(fmt.Sprintf("Write RG tags (Custom %s LUFS, %s dBTP)", target, targetTp))
 	}
 }
 
@@ -1394,7 +1387,7 @@ func (n *AudioNormalizer) watchDirectory() {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		n.logStatus("Failed to create watcher: " + err.Error())
-		n.logToFile(n.logFile, "watcher creation fail, " + err.Error())
+		n.logToFile(n.logFile, "watcher creation fail, "+err.Error())
 		return
 	}
 	defer watcher.Close()
@@ -1402,25 +1395,25 @@ func (n *AudioNormalizer) watchDirectory() {
 	err = watcher.Add(n.inputDir)
 	if err != nil {
 		n.logStatus("Failed to watch directory: " + err.Error())
-		n.logToFile(n.logFile, "dir creation fail, " + err.Error())
+		n.logToFile(n.logFile, "dir creation fail, "+err.Error())
 		return
 	}
 
 	for {
 		select {
-			case event := <-watcher.Events:
-				if event.Op&fsnotify.Create == fsnotify.Create && isAudioFile(event.Name) {
-					select {
-						case n.jobQueue <- event.Name:
-						case <-n.watcherStop:
-							return
-					}
+		case event := <-watcher.Events:
+			if event.Op&fsnotify.Create == fsnotify.Create && isAudioFile(event.Name) {
+				select {
+				case n.jobQueue <- event.Name:
+				case <-n.watcherStop:
+					return
 				}
-			case <-n.watcherStop:
-				return
-			case err := <-watcher.Errors:
-				n.logStatus("Watcher error: " + err.Error())
-				n.logToFile(n.logFile, "watcher error, " + err.Error())
+			}
+		case <-n.watcherStop:
+			return
+		case err := <-watcher.Errors:
+			n.logStatus("Watcher error: " + err.Error())
+			n.logToFile(n.logFile, "watcher error, "+err.Error())
 		}
 	}
 }
@@ -1428,10 +1421,10 @@ func (n *AudioNormalizer) watchDirectory() {
 func (n *AudioNormalizer) processWatchQueue() {
 	for {
 		select {
-			case file := <-n.jobQueue:
-				n.processFile(file, n.getProcessConfig())
-			case <-n.watcherStop:
-				return
+		case file := <-n.jobQueue:
+			n.processFile(file, n.getProcessConfig())
+		case <-n.watcherStop:
+			return
 		}
 	}
 }
@@ -1573,7 +1566,8 @@ func (n *AudioNormalizer) selectFolder() {
 				// Check for duplicates inline
 				exists := false
 
-				existing := slices.Contains(n.files, file); if existing {
+				existing := slices.Contains(n.files, file)
+				if existing {
 					exists = true
 				}
 
@@ -1667,7 +1661,8 @@ func (n *AudioNormalizer) addFile(path string) {
 	n.mutex.Lock()
 	defer n.mutex.Unlock()
 
-	existing := slices.Contains(n.files, path); if existing {
+	existing := slices.Contains(n.files, path)
+	if existing {
 		return
 	}
 
@@ -1705,17 +1700,17 @@ func (n *AudioNormalizer) getProcessConfig() ProcessConfig {
 	}
 
 	config := ProcessConfig{
-		UseLoudnorm: n.loudnormCheck.Checked,
-		IsSpeech: n.IsSpeechCheck.Checked,
-		originIsAAC: n.checkOriginAAC(),
-		writeTags: n.writeTags.Checked,
-		noTranscode: n.noTranscode.Checked,
-		dataCompLevel: int8(math.Round(n.dataCompLevel.Value)),
-		bypassProc: n.bypassProc.Checked,
+		UseLoudnorm:    n.loudnormCheck.Checked,
+		IsSpeech:       n.IsSpeechCheck.Checked,
+		originIsAAC:    n.checkOriginAAC(),
+		writeTags:      n.writeTags.Checked,
+		noTranscode:    n.noTranscode.Checked,
+		dataCompLevel:  int8(math.Round(n.dataCompLevel.Value)),
+		bypassProc:     n.bypassProc.Checked,
 		DynamicsPreset: n.dynamicsDrop.Selected,
-		EqTarget: n.EqDrop.Selected,
-		DynNorm: n.dynNorm.Checked,
-		PhaseCheck: n.checkPhaseBtn.Checked,
+		EqTarget:       n.EqDrop.Selected,
+		DynNorm:        n.dynNorm.Checked,
+		PhaseCheck:     n.checkPhaseBtn.Checked,
 	}
 
 	if n.advancedMode {
@@ -1762,7 +1757,6 @@ func (n *AudioNormalizer) process() {
 
 	// EXAMPLE REPLACEMENT PATTERN
 	// 2. x = a; if a < b { x = b }                =>      x = max(a, b)
-
 
 	n.logStatus(fmt.Sprintf("Processing %d files with %d workers...", len(n.files), workers))
 
@@ -1841,7 +1835,7 @@ func (n *AudioNormalizer) process() {
 
 func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool {
 	n.logToFile(n.logFile, fmt.Sprintf("DEBUG config values: EqTarget='%s', DynamicsPreset='%s', bypassProc=%v",
-	cfg.EqTarget, cfg.DynamicsPreset, cfg.bypassProc))
+		cfg.EqTarget, cfg.DynamicsPreset, cfg.bypassProc))
 	actualCodec := cfg.Format
 	var workingPath string = inputPath
 	var tempFiles []string
@@ -1936,41 +1930,41 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 		args = append(args, "-c:a", actualCodec)
 	}
 
-		needsFullNumber := (actualCodec == "libfdk_aac" || actualCodec == "aac" || actualCodec == "libopus" || actualCodec == "libmp3lame")
-		noBitrateUsed := actualCodec == "PCM" || actualCodec == "flac"
+	needsFullNumber := (actualCodec == "libfdk_aac" || actualCodec == "aac" || actualCodec == "libopus" || actualCodec == "libmp3lame")
+	noBitrateUsed := actualCodec == "PCM" || actualCodec == "flac"
 
-		bitrateStr := cfg.Bitrate
+	bitrateStr := cfg.Bitrate
 
+	if needsFullNumber {
+		if strings.Contains(cfg.Bitrate, "k") {
+			bitrateStr = strings.ReplaceAll(cfg.Bitrate, "k", "000")
+		} else if strings.Contains(cfg.Bitrate, "000") {
+			bitrateStr = cfg.Bitrate
+		} else {
+			bitrateStr = cfg.Bitrate + "000"
+		}
+	}
+
+	bitrate, err := strconv.Atoi(bitrateStr)
+	minBitrate := 12
+	if needsFullNumber {
+		minBitrate = 12
+	}
+	if err != nil || bitrate <= minBitrate {
 		if needsFullNumber {
-			if strings.Contains(cfg.Bitrate, "k") {
-				bitrateStr = strings.ReplaceAll(cfg.Bitrate, "k", "000")
-			} else if strings.Contains(cfg.Bitrate, "000") {
-				bitrateStr = cfg.Bitrate
-			} else {
-				bitrateStr = cfg.Bitrate + "000"
-			}
+			bitrate = 128000
+		} else {
+			bitrate = 128
 		}
+	}
 
-		bitrate, err := strconv.Atoi(bitrateStr)
-		minBitrate := 12
+	if !noBitrateUsed {
 		if needsFullNumber {
-			minBitrate = 12
+			args = append(args, "-b:a", fmt.Sprintf("%d", bitrate))
+		} else {
+			args = append(args, "-b:a", fmt.Sprintf("%dk", bitrate))
 		}
-		if err != nil || bitrate <= minBitrate {
-			if needsFullNumber {
-				bitrate = 128000
-			} else {
-				bitrate = 128
-			}
-		}
-
-		if !noBitrateUsed {
-			if needsFullNumber {
-				args = append(args, "-b:a", fmt.Sprintf("%d", bitrate))
-			} else {
-				args = append(args, "-b:a", fmt.Sprintf("%dk", bitrate))
-			}
-		}
+	}
 
 	// Add speech optimization for Opus
 	if cfg.IsSpeech && actualCodec == "libopus" && !n.noTranscode.Checked {
@@ -2030,10 +2024,10 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 	var dynaudnormFilter string
 
 	n.logToFile(n.logFile, fmt.Sprintf("DEBUG: About to check EQ section - cfg.EqTarget='%s', cfg.EqTarget != ''=%v, cfg.EqTarget != 'Off'=%v, !cfg.bypassProc=%v",
-	cfg.EqTarget,
-	cfg.EqTarget != "",
-	cfg.EqTarget != "Off",
-	!cfg.bypassProc))
+		cfg.EqTarget,
+		cfg.EqTarget != "",
+		cfg.EqTarget != "Off",
+		!cfg.bypassProc))
 
 	// Stage 1: EQ analysis and application
 	if cfg.EqTarget != "" && cfg.EqTarget != "Off" && !cfg.bypassProc {
@@ -2088,10 +2082,10 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 	n.logToFile(n.logFile, "")
 
 	n.logToFile(n.logFile, fmt.Sprintf("DEBUG: About to check Dynamics section - cfg.DynamicsPreset='%s', cfg.DynamicsPreset != ''=%v, cfg.DynamicsPreset != 'Off'=%v, !cfg.bypassProc=%v",
-	cfg.DynamicsPreset,
-	cfg.DynamicsPreset != "",
-	cfg.DynamicsPreset != "Off",
-	!cfg.bypassProc))
+		cfg.DynamicsPreset,
+		cfg.DynamicsPreset != "",
+		cfg.DynamicsPreset != "Off",
+		!cfg.bypassProc))
 
 	var dsAnalysis *audio.DynamicsScoreAnalysis
 	if !cfg.bypassProc && (cfg.DynamicsPreset != "" && cfg.DynamicsPreset != "Off") {
@@ -2127,7 +2121,6 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 					"-acodec", "pcm_f64le",
 					"-y", dynTempPath,
 				)
-
 
 				if err := cmd.Run(); err != nil {
 					n.logStatus(fmt.Sprintf("✗ Failed to apply dynaudnorm: %s", filepath.Base(inputPath)))
@@ -2165,7 +2158,7 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 		var attenuatedPath string = workingPath
 		if cfg.DynamicsPreset == "Broadcast" {
 			// Quick peak check
-			cmd := ffmpeg.Command( "-i", workingPath, "-af", "astats", "-f", "null", "-")
+			cmd := ffmpeg.Command("-i", workingPath, "-af", "astats", "-f", "null", "-")
 
 			output, _ := cmd.CombinedOutput()
 
@@ -2190,7 +2183,6 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 						"-acodec", "pcm_f64le",
 						"-y", attenuatedPath,
 					)
-
 
 					if err := cmd.Run(); err != nil {
 						n.logStatus(fmt.Sprintf("✗ Failed to create attenuated temp: %s", filepath.Base(inputPath)))
@@ -2254,7 +2246,6 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 				"-y", compTempPath,
 			)
 
-
 			if err := cmd.Run(); err != nil {
 				n.logStatus(fmt.Sprintf("✗ Failed to apply compression: %s", filepath.Base(inputPath)))
 				n.logToFile(n.logFile, fmt.Sprintf("Compression application failed: %v", err))
@@ -2269,7 +2260,6 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 	n.logToFile(n.logFile, "")
 	n.logToFile(n.logFile, fmt.Sprintf("args: %s", args))
 	n.logToFile(n.logFile, "")
-
 
 	// Stage 4: Measure loudness for normalization (after all processing)
 	if cfg.UseLoudnorm {
@@ -2351,12 +2341,12 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 	if cfg.writeTags {
 		if measured["input_tp"] == "" {
 			n.logStatus("ERROR: input_tp is empty")
-			rgTpInLin = 1.0  // Default value
+			rgTpInLin = 1.0 // Default value
 		} else {
 			rgTpFlt, err := strconv.ParseFloat(measured["input_tp"], 64)
 			if err != nil {
 				n.logStatus("ERROR parsing peak: " + err.Error())
-				rgTpInLin = 1.0  // Default on parse error
+				rgTpInLin = 1.0 // Default on parse error
 			} else {
 				rgTpInLin = math.Pow(10, rgTpFlt/20)
 				n.logStatus(fmt.Sprintf("Peak in linear: %.6f", rgTpInLin))
@@ -2365,7 +2355,7 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 	}
 
 	resultsInM4A := (actualCodec == "libfdk_aac" || actualCodec == "aac_at") || (cfg.originIsAAC && cfg.noTranscode)
-	useMovFlags :=  resultsInM4A && cfg.writeTags && measured != nil
+	useMovFlags := resultsInM4A && cfg.writeTags && measured != nil
 
 	if useMovFlags {
 		args = append(args, "-movflags", "use_metadata_tags")
@@ -2379,7 +2369,7 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 		args = append(args,
 			"-metadata", fmt.Sprintf("REPLAYGAIN_TRACK_GAIN=%.2f dB", gain),
 			"-metadata", fmt.Sprintf("REPLAYGAIN_TRACK_PEAK=%.6f", rgTpInLin),
-			"-metadata", "REPLAYGAIN_REFERENCE_LOUDNESS=" + target + " LUFS",
+			"-metadata", "REPLAYGAIN_REFERENCE_LOUDNESS="+target+" LUFS",
 		)
 	}
 
@@ -2390,14 +2380,12 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 	n.logToFile(n.logFile, "")
 	n.logToFile(n.logFile, "")
 
-
 	args = append(args, "-y", outputPath)
 
 	fullCmdLog := ffmpegPath + " " + strings.Join(args, " ")
 	n.logToFile(n.logFile, fullCmdLog)
 
-	cmd := ffmpeg.Command( args...)
-
+	cmd := ffmpeg.Command(args...)
 
 	output, err := cmd.CombinedOutput()
 	n.logToFile(n.logFile, fmt.Sprintf("FFmpeg output: %s", string(output)))
@@ -2437,7 +2425,7 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 		n.logToFile(n.logFile, fmt.Sprintf("LUFS I target: %s", target))
 		n.logToFile(n.logFile, fmt.Sprintf("TP target: %s", targetTp))
 	} else if cfg.writeTags {
-		n.logToFile(n.logFile, fmt.Sprintf( "Writing tags and transcoding to %s", cfg.Format))
+		n.logToFile(n.logFile, fmt.Sprintf("Writing tags and transcoding to %s", cfg.Format))
 		n.logToFile(n.logFile, fmt.Sprintf("LUFS I target: %s", target))
 		n.logToFile(n.logFile, fmt.Sprintf("TP target: %s", targetTp))
 	}
@@ -2495,7 +2483,6 @@ func (n *AudioNormalizer) measureLoudnessEbuR128(inputPath string) map[string]st
 		"-",
 	)
 
-
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil
@@ -2535,7 +2522,6 @@ func (n *AudioNormalizer) measureLoudness(inputPath string) map[string]string {
 		"-",
 	)
 
-
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil
@@ -2558,7 +2544,7 @@ func (n *AudioNormalizer) parseLoudnormJSON(output string) map[string]string {
 	var data map[string]any
 	if err := json.Unmarshal([]byte(jsonMatch), &data); err != nil {
 		return nil
-}
+	}
 
 	result := make(map[string]string)
 	for key, value := range data {
@@ -2584,7 +2570,8 @@ func isAudioFile(path string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
 	audioExts := []string{".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg", ".opus", ".wma", ".aiff", ".aif", ".ape"}
 
-	acceptedExt := slices.Contains(audioExts, ext); if acceptedExt {
+	acceptedExt := slices.Contains(audioExts, ext)
+	if acceptedExt {
 		return true
 	}
 
