@@ -31,7 +31,6 @@ import (
 	"github.com/fremen-fi/tnt/go/internal/audio"
 	"github.com/fremen-fi/tnt/go/internal/config"
 	"github.com/fremen-fi/tnt/go/internal/ffmpeg"
-	"github.com/fremen-fi/tnt/go/platform"
 )
 
 const (
@@ -390,26 +389,10 @@ func downloadAndInstallUpdate(versionInfo VersionInfo, window fyne.Window) {
 	}()
 }
 
-func extractFFmpeg() string {
-	// Extract to temp location
-	tmpDir := os.TempDir()
-
-	var name string
-	if runtime.GOOS == "windows" {
-		name = "ffmpeg.exe"
-	} else {
-		name = "ffmpeg"
-	}
-
-	ffmpegPath := filepath.Join(tmpDir, name)
-	os.WriteFile(ffmpegPath, platform.FFmpegBinary, 0755)
-	return ffmpegPath
-}
-
 var ffmpegPath string
 
 func init() {
-	ffmpegPath = extractFFmpeg()
+	ffmpegPath = ffmpeg.Path
 }
 
 func (n *AudioNormalizer) initLogFile() *os.File {
