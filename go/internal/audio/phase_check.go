@@ -1,12 +1,12 @@
 package audio
 
 import (
-	"github.com/fremen-fi/tnt/go/internal/ffmpeg"
 	"fmt"
+	"github.com/fremen-fi/tnt/go/internal/ffmpeg"
+	"math"
 	"os"
 	"regexp"
 	"strconv"
-	"math"
 )
 
 func PhaseCheck(inputPath string, logFile *os.File) (inverted bool, offset float64, err error) {
@@ -21,13 +21,13 @@ func PhaseCheck(inputPath string, logFile *os.File) (inverted bool, offset float
 	}
 
 	offset = calculatePhaseOffset(ch1Min, ch1Max, ch2Min, ch2Max)
-	inverted = offset < 0.01  // or whatever threshold you want
+	inverted = offset < 0.01 // or whatever threshold you want
 
 	return inverted, offset, nil
 }
 
 func buildPhaseCheck(inputPath string, logFile *os.File) (string, error) {
-	cmd := ffmpeg.Command("-i", inputPath, "-af", "astats", "-f", "null", "-")
+	cmd := ffmpeg.Command("-i", inputPath, "-t", "30", "-af", "astats", "-f", "null", "-")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if logFile != nil {

@@ -2,42 +2,42 @@ package main
 
 import (
 	"fmt"
-	"strings"
+	"math"
+	"path/filepath"
 	"regexp"
 	"strconv"
-	"path/filepath"
-	"math"
-	
+	"strings"
+
 	"github.com/fremen-fi/tnt/go/internal/audio"
 	"github.com/fremen-fi/tnt/go/internal/ffmpeg"
 )
 
 func (n *AudioNormalizer) calculateDynamicsScore(inputPath string) *audio.DynamicsScoreAnalysis {
 	n.logStatus(fmt.Sprintf("→ Calculating Dynamics Score: %s", filepath.Base(inputPath)))
-	
+
 	cmd := ffmpeg.Command(
 		"-i", inputPath,
 		"-af", "astats",
 		"-f", "null",
 		"-",
 	)
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		n.logToFile(n.logFile, fmt.Sprintf("DS calculation failed: %v", err))
 		return nil
 	}
-	
+
 	return n.parseDynamicsScore(string(output))
 }
 
 func (n *AudioNormalizer) parseDynamicsScore(output string) *audio.DynamicsScoreAnalysis {
 	result := &audio.DynamicsScoreAnalysis{}
-	
+
 	// Parse Channel 1 section
 	lines := strings.Split(output, "\n")
 	inChannel1 := false
-	
+
 	for _, line := range lines {
 		if strings.Contains(line, "Channel: 1") {
 			inChannel1 = true
@@ -46,7 +46,7 @@ func (n *AudioNormalizer) parseDynamicsScore(output string) *audio.DynamicsScore
 		if strings.Contains(line, "Channel: 2") {
 			break
 		}
-		
+
 		if inChannel1 {
 			if strings.Contains(line, "RMS peak dB:") {
 				re := regexp.MustCompile(`RMS peak dB:\s+([-\d.]+)`)
@@ -68,60 +68,60 @@ func (n *AudioNormalizer) parseDynamicsScore(output string) *audio.DynamicsScore
 			}
 		}
 	}
-	
+
 	// Calculate DS = Crest × (RMS_peak - RMS_level)
 	result.DynamicsScore = math.Sqrt(result.CrestFactor) * (result.RMSPeak - result.RMSLevel)
-	
-	n.logToFile(n.logFile, fmt.Sprintf("DS Analysis - RMS Peak: %.2f dB, RMS Level: %.2f dB, Crest: %.2f", 
+
+	n.logToFile(n.logFile, fmt.Sprintf("DS Analysis - RMS Peak: %.2f dB, RMS Level: %.2f dB, Crest: %.2f",
 		result.RMSPeak, result.RMSLevel, result.CrestFactor))
 	n.logToFile(n.logFile, fmt.Sprintf("Dynamics Score: %.2f", result.DynamicsScore))
-	
+
 	return result
 }
 
 type CompressionModifiers struct {
 	AttackMultiplier  float64
 	ReleaseMultiplier float64
-	RatioMultiplier   float64  // The target ratio (1.4, 2.1, 4.0, or over 4.0 up to 8.0 etc)
+	RatioMultiplier   float64 // The target ratio (1.4, 2.1, 4.0, or over 4.0 up to 8.0 etc)
 }
 
 func getCompressionModifiers(ds float64) CompressionModifiers {
 	mods := CompressionModifiers{
 		AttackMultiplier:  1.0,
 		ReleaseMultiplier: 1.0,
-		RatioMultiplier:   1.0,  // 0 = no change from preset
+		RatioMultiplier:   1.0, // 0 = no change from preset
 	}
-	
+
 	if ds < 9.0 {
 		// Very compressed - slow down, barely compress
 		mods.AttackMultiplier = 4.0
 		mods.ReleaseMultiplier = 4.0
 		mods.RatioMultiplier = 0.15
-		
+
 	} else if ds < 15.0 {
 		// Moderately compressed - slow down, gentle
 		mods.AttackMultiplier = 2.0
 		mods.ReleaseMultiplier = 2.0
 		mods.RatioMultiplier = 2.1
-		
+
 	} else if ds <= 21.0 {
 		// Normal - use preset as-is
 		// No changes
-		
+
 	} else {
 		// Highly dynamic - speed up, more aggressive
 		// Linear scaling from DS=21 to DS=100
 		// At DS=21: divide by 2, ratio 4:1
 		// At DS=100: divide by 4, ratio 8:1
-		
-		excess := math.Min(ds - 21.0, 79.0)  // Cap at 79 (21+79=100)
-		scaleFactor := 2.0 + (2.0 * excess / 79.0)  // 2.0 to 4.0
-		
+
+		excess := math.Min(ds-21.0, 79.0)          // Cap at 79 (21+79=100)
+		scaleFactor := 2.0 + (2.0 * excess / 79.0) // 2.0 to 4.0
+
 		mods.AttackMultiplier = 1.0 / scaleFactor
 		mods.ReleaseMultiplier = 1.0 / scaleFactor
-		mods.RatioMultiplier = 4.0 + (4.0 * excess / 79.0)  // 4.0 to 8.0
+		mods.RatioMultiplier = 4.0 + (4.0 * excess / 79.0) // 4.0 to 8.0
 	}
-	
+
 	return mods
 }
 
