@@ -96,7 +96,7 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 	n.writeTagsLabel = widget.NewLabel("Write RG tags (EBU R128: -23 LUFS)")
 
 	n.writeTags = widget.NewCheck("", func(checked bool) {
-		if checked  && n.checkPCM(){
+		if checked && n.checkPCM() {
 			n.loudnormCheck.Disable()
 			n.noTranscode.Disable()
 			n.noTranscode.SetChecked(false)
@@ -190,10 +190,10 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 		dataCompLevelLabelCurrent.SetText(fmt.Sprintf("Set: %d", int(f)))
 	}
 
-	n.IsSpeechCheck = widget.NewCheck("Optimize Opus for speech", func(checked bool){
+	n.IsSpeechCheck = widget.NewCheck("Optimize Opus for speech", func(checked bool) {
 		if checked {
-				n.formatSelect.SetSelected("Opus")
-				n.formatSelect.Disable()
+			n.formatSelect.SetSelected("Opus")
+			n.formatSelect.Disable()
 		} else {
 			n.formatSelect.Enable()
 			n.formatSelect.SetSelected("AAC")
@@ -273,7 +273,7 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 		container.NewBorder(nil, nil, bitrateLabel, nil, n.bitrateEntry),
 		container.NewBorder(nil, nil, n.normalizeTargetLabel, nil, n.normalizeTarget),
 		container.NewBorder(nil, nil, n.normalizeTargetLabelTp, nil, n.normalizeTargetTp),
-		container.NewBorder(nil,nil, dataCompLevelLabel, dataCompLevelLabelCurrent, n.dataCompLevel),
+		container.NewBorder(nil, nil, dataCompLevelLabel, dataCompLevelLabelCurrent, n.dataCompLevel),
 
 		n.loudnormCustomCheck,
 		writeTagsRow,
@@ -371,8 +371,8 @@ func (n *AudioNormalizer) setupUI(a fyne.App) {
 
 	helpBtn := widget.NewButton("Help", func() {
 
-			menuGettingStarted := widget.NewLabel(
-`TNT is designed for broadcast professionals to streamline audio workflows. The application provides three core capabilities:
+		menuGettingStarted := widget.NewLabel(
+			`TNT is designed for broadcast professionals to streamline audio workflows. The application provides three core capabilities:
 
 • Transcode - Convert between audio formats
 • Normalize - Ensure consistent loudness levels
@@ -393,9 +393,9 @@ WORKFLOW
 4. Click Process
 
 For more information visit https://www.fremen.fi/software/tnt and scroll to the bottom of the page.`)
-			menuGettingStarted.Wrapping = fyne.TextWrapWord
+		menuGettingStarted.Wrapping = fyne.TextWrapWord
 
-			menuSimpleTab := widget.NewLabel(`
+		menuSimpleTab := widget.NewLabel(`
 SIMPLE MODE
 
 Simple mode provides three preset configurations optimized for common broadcast scenarios:
@@ -417,10 +417,10 @@ Processing in Simple mode requires just four clicks:
 4. Click Process
 
 The application processes files individually in the background. Completed files appear in your output folder as they finish, allowing you to continue working while processing continues.`)
-			menuSimpleTab.Wrapping = fyne.TextWrapWord
+		menuSimpleTab.Wrapping = fyne.TextWrapWord
 
-			menuAdvancedTab := widget.NewLabel(
-`ADVANCED MODE
+		menuAdvancedTab := widget.NewLabel(
+			`ADVANCED MODE
 
 Advanced mode provides granular control over all encoding parameters.
 
@@ -464,10 +464,10 @@ Speech: Optimizes encoding for voice content
 • Applies VoIP-optimized compression settings
 • Uses speech-specific normalization when combined with Normalize
 • Do not use with music content`)
-			menuAdvancedTab.Wrapping = fyne.TextWrapWord
+		menuAdvancedTab.Wrapping = fyne.TextWrapWord
 
-			menuFormatsTab := widget.NewLabel(
-`AUDIO FORMATS
+		menuFormatsTab := widget.NewLabel(
+			`AUDIO FORMATS
 
 AAC (Advanced Audio Coding)
 AAC is a data compression method that at high bitrates can sound similar to a non-compressed file. In simple mode, the bitrate is set to 256 kbit/s, which gives very good results. The maximum bitrate for this encoder is 512 kbit/s. At 320 kbit/s the encoder tends to lose almost all of its encoding artifacts. Thirty seconds of audio encoded with 256 kbit/s results in approximately 1 MB filesize.
@@ -487,10 +487,10 @@ FLAC is a lossless compression format that reduces file size without any quality
 
 PCM (WAV)
 PCM, or WAV in this tool is a pulse-code modulated, raw uncompressed audio stream. It's the highest quality, but it comes with a size-cost. This encoder doesn't have a bitrate setting, but has two other settings that result in a bitrate. First, sample rate (either 44.1, 48, 88.2, 96, 192 kHz) means "how often the original data is converted into audio in a second". With 48 kHz the audio is sampled forty-eight thousand times in a second. Second, the bit depth controls "how precisely we want to have each sample". The options are either 16, 24, 32 or 64, of which the last two are floating-point and used in specific scenarios. The file size for a thirty-second audio with 48 kHz, 24-bit audio is 8.64 MB.`)
-			menuFormatsTab.Wrapping = fyne.TextWrapWord
+		menuFormatsTab.Wrapping = fyne.TextWrapWord
 
-			menuProcessingTab := widget.NewLabel(
-`
+		menuProcessingTab := widget.NewLabel(
+			`
 Setting 'Do not transcode' in the Advanced tab bypasses all processing.
 
 Dynamics processing
@@ -564,7 +564,7 @@ The adaptive nature of TNT's processing means two identical preset selections ma
 		menuProcessingTab.Wrapping = fyne.TextWrapWord
 
 		menuWatchHelpTab := widget.NewLabel(
-`
+			`
 Watch mode automates repetitive processing tasks by monitoring a folder and automatically processing new files as they appear. For example, a newsdesk can configure TNT to watch their raw audio folder - whenever a reporter records new audio, TNT detects it within seconds and outputs the processed file to the specified destination. TNT must remain running (the window can be minimized or hidden).
 
 Watch mode uses your current UI settings. To change processing parameters, simply adjust the settings in the interface - all subsequent files will use the new configuration. Save your preferences to automatically restore your settings on startup.
@@ -573,15 +573,15 @@ Watch mode only processes new files added after activation - it ignores existing
 `)
 		menuWatchHelpTab.Wrapping = fyne.TextWrapWord
 
-			tabs := container.NewAppTabs(
-				container.NewTabItem("Getting started", container.NewScroll(menuGettingStarted)),
-				container.NewTabItem("Simple", container.NewScroll(menuSimpleTab)),
-				container.NewTabItem("Advanced", container.NewScroll(menuAdvancedTab)),
-				container.NewTabItem("Processing", container.NewScroll(menuProcessingTab)),
-				container.NewTabItem("Watcher", container.NewScroll(menuWatchHelpTab)),
-				container.NewTabItem("Audio formats", container.NewScroll(menuFormatsTab)),			)
+		tabs := container.NewAppTabs(
+			container.NewTabItem("Getting started", container.NewScroll(menuGettingStarted)),
+			container.NewTabItem("Simple", container.NewScroll(menuSimpleTab)),
+			container.NewTabItem("Advanced", container.NewScroll(menuAdvancedTab)),
+			container.NewTabItem("Processing", container.NewScroll(menuProcessingTab)),
+			container.NewTabItem("Watcher", container.NewScroll(menuWatchHelpTab)),
+			container.NewTabItem("Audio formats", container.NewScroll(menuFormatsTab)))
 
-			tabs.SetTabLocation(container.TabLocationTop)
+		tabs.SetTabLocation(container.TabLocationTop)
 
 		helpWindow := fyne.CurrentApp().NewWindow("Help")
 		helpWindow.SetContent(tabs)
@@ -711,14 +711,14 @@ Preferences aren't saved automatically.
 
 		userFactoryResetBtn := widget.NewButton("Reset to defaults", func() {
 			dialog.ShowConfirm("Reset preferences",
-		"This will delete all saved preferences. TNT will use default settings on next launch. Continue?",
-		func(b bool) {
-			if b {
-				n.resetPreferences()
-			}
-		},
-		n.window,
-		)
+				"This will delete all saved preferences. TNT will use default settings on next launch. Continue?",
+				func(b bool) {
+					if b {
+						n.resetPreferences()
+					}
+				},
+				n.window,
+			)
 		})
 
 		saveContent := container.NewVBox(
@@ -780,24 +780,24 @@ Check this if you wish to automatically check for the mono compatibility of the 
 		)
 
 		/*
-		settingsFunctions := container.NewVBox(
-			settingsFunctionsTabText,
-			widget.NewSeparator(),
-			// Phase check
-			functionsCheckPhaseText,
-			n.checkPhaseBtn,
-			// Watch mode settings
-			settingsWatchModeText,
-			n.watchMode,
-			widget.NewSeparator(),
-		)
+			settingsFunctions := container.NewVBox(
+				settingsFunctionsTabText,
+				widget.NewSeparator(),
+				// Phase check
+				functionsCheckPhaseText,
+				n.checkPhaseBtn,
+				// Watch mode settings
+				settingsWatchModeText,
+				n.watchMode,
+				widget.NewSeparator(),
+			)
 		*/
 
 		settingsSendErrorReportText := widget.NewLabel(`
 Send an error report.
 			`)
 
-			settingsSendErrorReportText.Wrapping = fyne.TextWrapWord
+		settingsSendErrorReportText.Wrapping = fyne.TextWrapWord
 
 		sendLogReportBtn := widget.NewButton("Send report", func() {
 			n.sendLogReport()
@@ -807,7 +807,6 @@ Send an error report.
 			settingsSendErrorReportText,
 			widget.NewSeparator(),
 			sendLogReportBtn,
-
 		)
 
 		tabs := container.NewAppTabs(
