@@ -2485,6 +2485,7 @@ func (n *AudioNormalizer) measureLoudnessEbuR128(inputPath string) map[string]st
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		n.logToFile(n.logFile, fmt.Sprintf("measureLoudnessEbuR128 failed: %v\nOutput: %s", err, output))
 		return nil
 	}
 
@@ -2524,6 +2525,7 @@ func (n *AudioNormalizer) measureLoudness(inputPath string) map[string]string {
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		n.logToFile(n.logFile, fmt.Sprintf("measureLoudness failed: %v\nOutput: %s", err, output))
 		return nil
 	}
 
