@@ -16,11 +16,10 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # No need to set up go in the local runners.
-      #- name: Set up Go
-      #  uses: actions/setup-go@v4
-      #  with:
-      #    go-version: '1.26'
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
 
       - name: Set up PATH
         run: echo "/opt/homebrew/bin:/usr/local/go/bin:$HOME/go/bin" >> $GITHUB_PATH
@@ -60,7 +59,26 @@ jobs:
           cd go
           find TNT.app -print0 | xargs -0 xattr -c 2>/dev/null || true
           xattr -cr TNT.app 2>/dev/null || true
-          codesign --force --deep --options runtime --sign "Developer ID Application: Collins Group oy (478AR6Y9JJ)" TNT.app
+
+          cat > ffmpeg.entitlements.plist << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>com.apple.security.cs.disable-library-validation</key>
+              <true/>
+          </dict>
+          </plist>
+          EOF
+
+          codesign --force --options runtime --entitlements ffmpeg.entitlements.plist \
+            --sign "Developer ID Application: Collins Group oy (478AR6Y9JJ)" \
+            TNT.app/Contents/MacOS/ffmpeg
+
+          codesign --force --options runtime \
+            --sign "Developer ID Application: Collins Group oy (478AR6Y9JJ)" \
+            TNT.app
+
           codesign --verify --deep --strict --verbose=2 TNT.app
 
       - name: Determine filename
@@ -151,7 +169,26 @@ jobs:
           cd go
           find TNT.app -print0 | xargs -0 xattr -c 2>/dev/null || true
           xattr -cr TNT.app 2>/dev/null || true
-          codesign --force --deep --options runtime --sign "Developer ID Application: Collins Group oy (478AR6Y9JJ)" TNT.app
+
+          cat > ffmpeg.entitlements.plist << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>com.apple.security.cs.disable-library-validation</key>
+              <true/>
+          </dict>
+          </plist>
+          EOF
+
+          codesign --force --options runtime --entitlements ffmpeg.entitlements.plist \
+            --sign "Developer ID Application: Collins Group oy (478AR6Y9JJ)" \
+            TNT.app/Contents/MacOS/ffmpeg
+
+          codesign --force --options runtime \
+            --sign "Developer ID Application: Collins Group oy (478AR6Y9JJ)" \
+            TNT.app
+
           codesign --verify --deep --strict --verbose=2 TNT.app
 
       - name: Determine filename
@@ -202,15 +239,13 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-        # Go setup is not relevant for the local runners.
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
 
-      #- name: Set up Go
-      #  uses: actions/setup-go@v4
-      #  with:
-      #    go-version: '1.23'
-
-      #- name: Install Fyne CLI
-      #  run: go install fyne.io/fyne/v2/cmd/fyne@latest
+      - name: Install Fyne CLI
+        run: go install fyne.io/fyne/v2/cmd/fyne@latest
 
       # No need to check for downloaded FFmpeg since it's not downloaded
       #- name: Verify FFmpeg exists
@@ -290,10 +325,10 @@ jobs:
 
         # Go setup is not relevant for the local runners.
 
-      #- name: Set up Go
-      #  uses: actions/setup-go@v4
-      #  with:
-      #    go-version: '1.23'
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
 
       - name: Set up PATH
         run: echo "/usr/local/go/bin:$HOME/go/bin" >> $GITHUB_PATH
