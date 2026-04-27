@@ -1,0 +1,128 @@
+name: Release Build
+
+on:
+  push:
+      branches:
+          - 'main'
+
+jobs:
+  build-mac-arm64:
+    if: "(!contains(github.ref, '-win') || contains(github.ref, '-unix') || contains(github.ref, '-macm')) && !contains(github.ref, '-linux')"
+    runs-on: [self-hosted, ARM64, macOS, Large]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Set up PATH
+        run: echo "/opt/homebrew/bin:/usr/local/go/bin:$HOME/go/bin" >> $GITHUB_PATH
+
+      - name: Install Fyne
+        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+
+      - name: Build
+        run: |
+          cd go
+          GOARCH=arm64 go build -buildmode=pie -ldflags="-s -w" -o tnt
+
+      - name: Package
+        run: |
+          cd go
+          fyne package -os darwin -name TNT -icon ../Icon.png -executable tnt --appID com.collinsgroup.tnt
+
+      - name: Add FFmpeg to bundle
+        run: |
+          cp go/platform/ffmpegSource/ffmpegMacM go/TNT.app/Contents/MacOS/ffmpeg
+          chmod +x go/TNT.app/Contents/MacOS/ffmpeg
+
+      - name: Import Certificate
+        run: |
+          echo "${{ secrets.MACOS_CERTIFICATE }}" | base64 --decode > signing-certificate.p12
+          security delete-keychain temp.keychain 2>/dev/null || true
+          security create-keychain -p actions temp.keychain
+          security default-keychain -s temp.keychain
+          security unlock-keychain -p actions temp.keychain
+          security import signing-certificate.p12 -k temp.keychain -P "${{ secrets.MACOS_CERTIFICATE_PASSWORD }}" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions temp.keychain
+          security list-keychains -d user -s temp.keychain $(security list-keychains -d user | tr -d '"')
+          rm signing-certificate.p12
+
+      - name: Sign App
+        run: |
+          cd go
+          find TNT.app -print0 | xargs -0 xattr -c 2>/dev/null || true
+          xattr -cr TNT.app 2>/dev/null || true
+          codesign --force --deep --options runtime --sign "Developer ID Application: Collins Group oy (478AR6Y9JJ)" TNT.app
+          codesign --verify --deep --strict --verbose=2 TNT.app
+
+      - name: Determine filename
+        id: filename
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          if [[ "$TAG" =~ -(mac|win|linux|unix) ]]; then
+            echo "dmg_name=TNT.dmg" >> $GITHUB_OUTPUT
+          elif [[ "$TAG" =~ -(alpha|beta|rc)\. ]]; then
+            PREFIX=$(echo "$TAG" | sed -E 's/.*-(alpha|beta|rc)\..*/\1/')
+            echo "dmg_name=${PREFIX}-TNT.dmg" >> $GITHUB_OUTPUT
+          else
+            echo "dmg_name=TNT.dmg" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create DMG
+        run: |
+          cd go
+          npm install -g create-dmg
+          create-dmg TNT.app --overwrite --dmg-title="TNT" || true
+          for f in TNT*.dmg; do mv "$f" ${{ steps.filename.outputs.dmg_name }}; break; done
+          [ -f ${{ steps.filename.outputs.dmg_name }} ] || hdiutil create -volname "TNT" -srcfolder TNT.app -ov -format UDZO ${{ steps.filename.outputs.dmg_name }}
+
+      - name: Notarize DMG
+        run: |
+          cd go
+          xcrun notarytool submit ${{ steps.filename.outputs.dmg_name }} \
+            --apple-id "${{ secrets.NOTARY_APPLE_ID }}" \
+            --team-id "${{ secrets.NOTARY_TEAM_ID }}" \
+            --password "${{ secrets.NOTARY_PASSWORD }}" \
+            --wait
+          xcrun stapler staple ${{ steps.filename.outputs.dmg_name }}
+
+      - name: Upload macOS DMG Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-release-assets
+          path: go/${{ steps.filename.outputs.dmg_name }}
+
+      - name: Cleanup Keychain
+        if: always()
+        run: security delete-keychain temp.keychain 2>/dev/null || true
+
+  release:
+        needs:
+          - build-mac-arm64
+        if: always() && !failure() && !cancelled()
+
+        runs-on: ubuntu-slim
+        permissions:
+          contents: write
+        steps:
+          - name: Download artifact
+            uses: actions/download-artifact@v4
+
+          - name: Create Release
+            uses: softprops/action-gh-release@v1
+            with:
+              files: |
+                mac-release-assets/*.dmg
+                mac-intel-release-assets/*.dmg
+                linux-release-assets/*.deb
+                linux-release-assets/*.rpm
+                linux-release-assets/*.pkg.tar.zst
+                linux-release-assets/*.AppImage
+                linux-release-assets/*.tar.gz
+                windows-release-assets/*.exe
+            env:
+              GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
