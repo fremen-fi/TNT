@@ -1,6 +1,7 @@
 package ffmpeg
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +15,7 @@ var Path string
 
 func init() {
 	Path = findFFmpeg()
+	fmt.Fprintf(os.Stderr, "[ffmpeg] resolved path: %s\n", Path)
 }
 
 func findFFmpeg() string {
