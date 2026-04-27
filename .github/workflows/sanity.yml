@@ -6,8 +6,6 @@ on:
 jobs:
   sanity:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     defaults:
       run:
         working-directory: go
@@ -15,8 +13,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -33,15 +29,13 @@ jobs:
           go mod tidy
           git diff --exit-code go.mod go.sum
 
-      - name: Format code
+      - name: Check formatting
         run: |
-          gofmt -w .
-          if ! git diff --exit-code; then
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add -A
-            git commit -m "style: apply gofmt formatting"
-            git push https://x-access-token:${{ secrets.FORMAT_TOKEN }}@github.com/${{ github.repository }}.git HEAD:${{ github.head_ref }}
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "Run 'gofmt -w ./go' to fix:"
+            echo "$unformatted"
+            exit 1
           fi
 
       - name: Type check
