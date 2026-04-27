@@ -45,7 +45,7 @@ jobs:
 
   build-mac-arm64:
     needs: sanity
-    if: "(!contains(github.ref, '-win') || contains(github.ref, '-unix') || contains(github.ref, '-macm')) && !contains(github.ref, '-linux')"
+    if: "(!contains(github.ref, '-win') || contains(github.ref, '-unix') || contains(github.ref, '-macm') || contains(github.ref, '-macs)) && !contains(github.ref, '-linux')"
     runs-on: macos-latest
     steps:
       - name: Checkout Code

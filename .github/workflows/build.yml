@@ -10,7 +10,7 @@ on:
 
 jobs:
   build-mac-arm64:
-    if: "(!contains(github.ref, '-win') || contains(github.ref, '-unix') || contains(github.ref, '-macm')) && !contains(github.ref, '-linux')"
+    if: "(!contains(github.ref, '-win') || contains(github.ref, '-unix') || contains(github.ref, '-macm') || contains(github.ref, '-macs)) && !contains(github.ref, '-linux')"
     runs-on: macos-latest
     steps:
       - name: Checkout Code
@@ -120,7 +120,7 @@ jobs:
 
   build-mac-intel:
     runs-on: macos-15-intel
-    if: "(!contains(github.ref, '-win') || contains(github.ref, '-unix')) && !contains(github.ref, '-linux') && !contains(github.ref, '-macm')"
+    if: "(!contains(github.ref, '-win') || contains(github.ref, '-unix') || contains(github.ref, '-macs)) && !contains(github.ref, '-linux') && !contains(github.ref, '-macm')"
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
