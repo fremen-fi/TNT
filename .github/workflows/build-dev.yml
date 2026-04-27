@@ -8,7 +8,7 @@ on:
 jobs:
   build-mac-arm64:
     if: "(!contains(github.ref, '-win') || contains(github.ref, '-unix') || contains(github.ref, '-macm')) && !contains(github.ref, '-linux')"
-    runs-on: [self-hosted, X64, macOS, LT]
+    runs-on: macos-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4

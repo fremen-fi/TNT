@@ -11,7 +11,7 @@ on:
 jobs:
   build-mac-arm64:
     if: "(!contains(github.ref, '-win') || contains(github.ref, '-unix') || contains(github.ref, '-macm')) && !contains(github.ref, '-linux')"
-    runs-on: [self-hosted, X64, macOS, LT]
+    runs-on: macos-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -60,7 +60,7 @@ jobs:
           find TNT.app -print0 | xargs -0 xattr -c 2>/dev/null || true
           xattr -cr TNT.app 2>/dev/null || true
 
-          cat > ffmpeg.entitlements.plist << 'EOF'
+          cat > entitlements.plist << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -71,11 +71,7 @@ jobs:
           </plist>
           EOF
 
-          codesign --force --options runtime --entitlements ffmpeg.entitlements.plist \
-            --sign "Developer ID Application: Collins Group oy (478AR6Y9JJ)" \
-            TNT.app/Contents/MacOS/ffmpeg
-
-          codesign --force --options runtime \
+          codesign --force --deep --options runtime --entitlements entitlements.plist \
             --sign "Developer ID Application: Collins Group oy (478AR6Y9JJ)" \
             TNT.app
 
@@ -170,7 +166,7 @@ jobs:
           find TNT.app -print0 | xargs -0 xattr -c 2>/dev/null || true
           xattr -cr TNT.app 2>/dev/null || true
 
-          cat > ffmpeg.entitlements.plist << 'EOF'
+          cat > entitlements.plist << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -181,11 +177,7 @@ jobs:
           </plist>
           EOF
 
-          codesign --force --options runtime --entitlements ffmpeg.entitlements.plist \
-            --sign "Developer ID Application: Collins Group oy (478AR6Y9JJ)" \
-            TNT.app/Contents/MacOS/ffmpeg
-
-          codesign --force --options runtime \
+          codesign --force --deep --options runtime --entitlements entitlements.plist \
             --sign "Developer ID Application: Collins Group oy (478AR6Y9JJ)" \
             TNT.app
 
