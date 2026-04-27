@@ -12,23 +12,34 @@ import (
 var Path string
 
 func init() {
-	Path = extractFFmpeg()
+	Path = findFFmpeg()
 }
 
-// extractFFmpeg writes the embedded FFmpeg binary to a temp location and returns the path
-func extractFFmpeg() string {
-	tmpDir := os.TempDir()
-
-	var name string
+func findFFmpeg() string {
+	name := "ffmpeg"
 	if runtime.GOOS == "windows" {
 		name = "ffmpeg.exe"
-	} else {
-		name = "ffmpeg"
 	}
 
-	ffmpegPath := filepath.Join(tmpDir, name)
-	os.WriteFile(ffmpegPath, platform.FFmpegBinary, 0755)
-	return ffmpegPath
+	// 1. Explicit override for development
+	if p := os.Getenv("FFMPEG_PATH"); p != "" {
+		return p
+	}
+
+	// 2. Sidecar next to the executable (app bundle / installed binary)
+	if exe, err := os.Executable(); err == nil {
+		if exe, err = filepath.EvalSymlinks(exe); err == nil {
+			candidate := filepath.Join(filepath.Dir(exe), name)
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate
+			}
+		}
+	}
+
+	// 3. Fall back: extract embedded binary to temp (dev / go run)
+	tmpPath := filepath.Join(os.TempDir(), name)
+	os.WriteFile(tmpPath, platform.FFmpegBinary, 0755)
+	return tmpPath
 }
 
 // Command creates an exec.Cmd for FFmpeg with the given arguments
