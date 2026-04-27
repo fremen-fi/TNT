@@ -304,7 +304,7 @@ func downloadAndInstallUpdate(versionInfo VersionInfo, window fyne.Window) {
 	// Determine file extension
 	var fileName string
 	switch platformKey {
-	case "darwin":
+	   case "darwin":
 		fileName = "TNT.dmg"
 	case "darwin-senior":
 		fileName = "TNT-Intel.dmg"
