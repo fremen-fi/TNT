@@ -12,6 +12,7 @@ SolidCompression=no
 
 [Files]
 Source: "tnt.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "ffmpeg.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\TNT"; Filename: "{app}\tnt.exe"
