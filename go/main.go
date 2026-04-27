@@ -310,7 +310,7 @@ func downloadAndInstallUpdate(versionInfo VersionInfo, window fyne.Window) {
 		fileName = "TNT-Intel.dmg"
 	case "orangutan":
 		fileName = "TNT-Setup.exe"
-	       case "penguin":
+	case "penguin":
 		fileName = "tnt-amd64.deb"
 	}
 
