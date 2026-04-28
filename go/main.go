@@ -4,9 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"image/color"
 	"io"
-	"io/fs"
 	"math"
 	"net/http"
 	"os"
@@ -20,12 +18,6 @@ import (
 	"sync"
 	"time"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/app"
-	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/theme"
-	"fyne.io/fyne/v2/widget"
 	"github.com/fsnotify/fsnotify"
 
 	"github.com/fremen-fi/tnt/go/internal/audio"
@@ -49,91 +41,7 @@ type VersionInfo struct {
 	ReleaseNotes string              `json:"release_notes"`
 }
 
-type AudioNormalizer struct {
-	window      fyne.Window
-	fileList    *widget.List
-	files       []string
-	outputDir   string
-	processBtn  *widget.Button
-	progressBar *widget.ProgressBar
-	statusLog   *widget.Entry
-	outputLabel *widget.Label
-
-	modeTabs    *container.AppTabs
-	modeWarning *widget.Label
-
-	// Mode toggle
-	advancedMode bool
-	modeToggle   *widget.Check
-
-	// Simple mode
-	simpleGroupButtons *widget.RadioGroup
-	simpleGroup        *fyne.Container
-
-	// Advanced mode
-	formatSelect      *widget.Select
-	sampleRate        *widget.Select
-	bitDepth          *widget.Select
-	bitrateEntry      *widget.Entry
-	normalizeTarget   *widget.Entry
-	normalizeTargetTp *widget.Entry
-	advancedContainer *fyne.Container
-
-	// Common
-	loudnormCheck          *widget.Check
-	loudnormCustomCheck    *widget.Check
-	loudnormLabel          *widget.Label
-	writeTagsLabel         *widget.Label
-	normalizeTargetLabel   *widget.Label
-	normalizeTargetLabelTp *widget.Label
-	normalizationStandard  string
-	IsSpeechCheck          *widget.Check
-	writeTags              *widget.Check
-	noTranscode            *widget.Check
-	dataCompLevel          *widget.Slider
-
-	// dynamics
-	dynamicsLabel *widget.Label
-	dynamicsDrop  *widget.Select
-	EqLabel       *widget.Label
-	EqDrop        *widget.Select
-	//dynNormLabel *widget.Label
-	dynNorm      *widget.Check
-	dynNormLabel *widget.Label
-	bypassProc   *widget.Check
-
-	multibandFilter string
-
-	logFile *os.File
-
-	// watchmode
-	watchMode        *widget.Check
-	watching         bool
-	watcherStop      chan bool
-	jobQueue         chan string
-	inputDir         string
-	watcherWarnLabel *widget.Label
-
-	watcherMutex sync.Mutex
-
-	// phase check items
-	checkPhaseBtn *widget.Check
-
-	// batch processing
-	batchMode bool
-
-	menuWindow fyne.Window
-	menuMutex  sync.Mutex
-
-	// metadata editor
-	metadataEntries   map[string]*metadataEntry
-	metadataContainer *fyne.Container
-	metadataFile      string // currently loaded file path
-	metadataWriteBtn  *widget.Button
-	metadataStatus    *widget.Label
-
-	mutex sync.Mutex
-}
+// AudioNormalizer struct moved to app.go (Wails migration — Phase 1).
 
 type ProcessConfig struct {
 	Format         string
@@ -188,7 +96,10 @@ func getPlatformKey() string {
 	}
 }
 
-func checkForUpdates(currentVersion string, window fyne.Window, logFile *os.File) {
+// checkForUpdates fetches the latest version info; the caller decides what to
+// do with the result (Phase 1 stub — Wails frontend will hook this up via an
+// event in Phase 2).
+func checkForUpdates(currentVersion string, logFile *os.File, notify func(VersionInfo)) {
 	logToFile(logFile, "Starting update check...")
 	time.Sleep(500 * time.Millisecond)
 
@@ -212,24 +123,12 @@ func checkForUpdates(currentVersion string, window fyne.Window, logFile *os.File
 	logToFile(logFile, fmt.Sprintf("Comparison result: %d", comparison))
 
 	if comparison > 0 {
-		logToFile(logFile, "Update available, showing dialog...")
-		fyne.Do(func() {
-			dialog.ShowConfirm(
-				"Update Available",
-				fmt.Sprintf("Version %s is available!\n\n%s", versionInfo.Version, versionInfo.ReleaseNotes),
-				func(download bool) {
-					if download {
-						downloadAndInstallUpdate(versionInfo, window)
-					}
-				},
-				window,
-			)
-		})
+		logToFile(logFile, "Update available")
+		if notify != nil {
+			notify(versionInfo)
+		}
 	} else {
 		logToFile(logFile, "Already up to date")
-		fyne.Do(func() {
-			dialog.ShowInformation("Up to date", "You're running the latest version :)", window)
-		})
 	}
 }
 
@@ -276,17 +175,17 @@ func compareVersions(v1, v2 string) int {
 	return 0
 }
 
-func downloadAndInstallUpdate(versionInfo VersionInfo, window fyne.Window) {
+// downloadAndInstallUpdate downloads the platform binary and launches the
+// installer when ready. Errors are returned via onError so the Wails frontend
+// can surface them; onReady is fired once the file is on disk.
+func downloadAndInstallUpdate(versionInfo VersionInfo, onReady func(string), onError func(error)) {
 	logFile, _ := os.OpenFile(filepath.Join(os.TempDir(), "tnt_update.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	defer logFile.Close()
 
 	logToFile(logFile, "Starting update download...")
 
-	// Get platform-specific download URL
 	platformKey := getPlatformKey()
 	var downloadURL string
-
-	// Search download_url array for matching platform
 	for _, urlMap := range versionInfo.DownloadURL {
 		if url, ok := urlMap[platformKey]; ok && url != "" {
 			downloadURL = url
@@ -296,13 +195,14 @@ func downloadAndInstallUpdate(versionInfo VersionInfo, window fyne.Window) {
 
 	if downloadURL == "" {
 		logToFile(logFile, fmt.Sprintf("No download URL found for platform: %s", platformKey))
-		dialog.ShowError(fmt.Errorf("Update not available for your platform"), window)
+		if onError != nil {
+			onError(fmt.Errorf("Update not available for your platform"))
+		}
 		return
 	}
 
 	logToFile(logFile, fmt.Sprintf("Platform: %s, Download URL: %s", platformKey, downloadURL))
 
-	// Determine file extension
 	var fileName string
 	switch platformKey {
 	case "darwin":
@@ -315,26 +215,15 @@ func downloadAndInstallUpdate(versionInfo VersionInfo, window fyne.Window) {
 		fileName = "tnt-amd64.deb"
 	}
 
-	logToFile(logFile, fmt.Sprintf("Download URL: %s", downloadURL))
-
-	// Download file
-	var progressDialog dialog.Dialog
-	fyne.Do(func() {
-		progressDialog = dialog.NewCustom("Downloading Update", "Cancel",
-			widget.NewProgressBarInfinite(), window)
-		progressDialog.Show()
-	})
-
 	tempPath := filepath.Join(os.TempDir(), fileName)
 
 	go func() {
 		resp, err := http.Get(downloadURL)
 		if err != nil {
 			logToFile(logFile, fmt.Sprintf("Download failed: %v", err))
-			fyne.Do(func() {
-				progressDialog.Hide()
-			})
-			dialog.ShowError(err, window)
+			if onError != nil {
+				onError(err)
+			}
 			return
 		}
 		defer resp.Body.Close()
@@ -342,51 +231,42 @@ func downloadAndInstallUpdate(versionInfo VersionInfo, window fyne.Window) {
 		out, err := os.Create(tempPath)
 		if err != nil {
 			logToFile(logFile, fmt.Sprintf("File create failed: %v", err))
-			progressDialog.Hide()
-			dialog.ShowError(err, window)
+			if onError != nil {
+				onError(err)
+			}
 			return
 		}
 		defer out.Close()
 
-		_, err = io.Copy(out, resp.Body)
-		if err != nil {
+		if _, err := io.Copy(out, resp.Body); err != nil {
 			logToFile(logFile, fmt.Sprintf("File write failed: %v", err))
-			fyne.Do(func() {
-				progressDialog.Hide()
-			})
-			dialog.ShowError(err, window)
+			if onError != nil {
+				onError(err)
+			}
 			return
 		}
 
-		fyne.Do(func() {
-			progressDialog.Hide()
-		})
 		logToFile(logFile, fmt.Sprintf("Downloaded to: %s", tempPath))
-
-		// Show install prompt
-		fyne.Do(func() {
-			dialog.ShowConfirm(
-				"Update Ready",
-				fmt.Sprintf("Version %s has been downloaded.\n\nInstall now?", versionInfo.Version),
-				func(install bool) {
-					if install {
-						var cmd *exec.Cmd
-						switch runtime.GOOS {
-						case "darwin":
-							cmd = exec.Command("open", tempPath)
-						case "windows":
-							cmd = exec.Command("cmd", "/c", "start", "", tempPath)
-						case "linux":
-							cmd = exec.Command("xdg-open", tempPath)
-						}
-						cmd.Start()
-						logToFile(logFile, "Installer opened")
-					}
-				},
-				window,
-			)
-		})
+		if onReady != nil {
+			onReady(tempPath)
+		}
 	}()
+}
+
+// launchInstaller opens the downloaded installer with the OS handler.
+func launchInstaller(tempPath string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", tempPath)
+	case "windows":
+		cmd = exec.Command("cmd", "/c", "start", "", tempPath)
+	case "linux":
+		cmd = exec.Command("xdg-open", tempPath)
+	default:
+		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
+	}
+	return cmd.Start()
 }
 
 var ffmpegPath string
@@ -431,7 +311,7 @@ func (n *AudioNormalizer) sendLogReport() {
 	logPath := filepath.Join(configDir, "TNT", "tnt.log")
 
 	if _, err := os.Stat(logPath); os.IsNotExist(err) {
-		dialog.ShowInformation("No Log File", "No log file found. Try processing some files first.", n.window)
+		n.logStatus("No log file found. Try processing some files first.")
 		return
 	}
 
@@ -477,18 +357,15 @@ func (n *AudioNormalizer) sendLogReport() {
 	if cmd != nil {
 		if runtime.GOOS == "windows" {
 			if err := cmd.Start(); err != nil {
-				dialog.ShowError(fmt.Errorf("Failed to launch email client: %w", err), n.window)
+				n.logStatus(fmt.Sprintf("Failed to launch email client: %v", err))
 			}
 		} else if err := cmd.Run(); err != nil {
-			// Use Run() for other OSes (darwin, linux)
-			dialog.ShowError(fmt.Errorf("Failed to open email client. Log file location:\n%s", logPath), n.window)
+			n.logStatus(fmt.Sprintf("Failed to open email client. Log file location:\n%s", logPath))
 		}
 	}
 
 	if runtime.GOOS == "windows" && copyLocation != "" {
-		dialog.ShowInformation("Attach Log File",
-			fmt.Sprintf("Log file copied to your Desktop:\n%s\n\nPlease attach it to the email. If no native email client was found, none was opened. In this case, send the email manually.", filepath.Base(copyLocation)),
-			n.window)
+		n.logStatus(fmt.Sprintf("Log file copied to your Desktop:\n%s\n\nPlease attach it to the email. If no native email client was found, none was opened. In this case, send the email manually.", filepath.Base(copyLocation)))
 	}
 }
 
@@ -854,20 +731,20 @@ func (n *AudioNormalizer) measureLoudnessFromFilter(inputPath string, filterChai
 	n.logStatus(fmt.Sprintf("→ Measuring compressed audio: %s", filepath.Base(inputPath)))
 
 	target := "-23"
-	if n.loudnormCustomCheck.Checked && n.normalizeTarget.Text != "" {
-		if strings.Contains(n.normalizeTarget.Text, "-") {
-			target = n.normalizeTarget.Text
+	if n.customLoudnorm && n.normalizeTarget != "" {
+		if strings.Contains(n.normalizeTarget, "-") {
+			target = n.normalizeTarget
 		} else {
-			target = "-" + n.normalizeTarget.Text
+			target = "-" + n.normalizeTarget
 		}
 	}
 
 	targetTp := "-1"
-	if n.loudnormCustomCheck.Checked && n.normalizeTargetTp.Text != "" {
-		if strings.Contains(n.normalizeTargetTp.Text, "-") {
-			targetTp = n.normalizeTargetTp.Text
+	if n.customLoudnorm && n.normalizeTargetTp != "" {
+		if strings.Contains(n.normalizeTargetTp, "-") {
+			targetTp = n.normalizeTargetTp
 		} else {
-			targetTp = "-" + n.normalizeTargetTp.Text
+			targetTp = "-" + n.normalizeTargetTp
 		}
 	}
 
@@ -1180,7 +1057,7 @@ func (n *AudioNormalizer) calculateOutputSize(config ProcessConfig) (int64, erro
 
 func (n *AudioNormalizer) previewSize() {
 	if len(n.files) == 0 {
-		dialog.ShowInformation("No Files", "Please select files first", n.window)
+		n.logStatus("Please select files first")
 		return
 	}
 
@@ -1191,13 +1068,10 @@ func (n *AudioNormalizer) previewSize() {
 	go func() {
 		totalBytes, err := n.calculateOutputSize(config)
 		if err != nil {
-			fyne.Do(func() {
-				dialog.ShowError(fmt.Errorf("Failed to calculate size: %v", err), n.window)
-			})
+			n.logStatus(fmt.Sprintf("Failed to calculate size: %v", err))
 			return
 		}
 
-		// Convert to human-readable format
 		var sizeStr string
 		if totalBytes < 1024 {
 			sizeStr = fmt.Sprintf("%d B", totalBytes)
@@ -1209,12 +1083,7 @@ func (n *AudioNormalizer) previewSize() {
 			sizeStr = fmt.Sprintf("%.2f GB", float64(totalBytes)/(1024*1024*1024))
 		}
 
-		fyne.Do(func() {
-			n.logStatus(fmt.Sprintf("Estimated output size: %s", sizeStr))
-			dialog.ShowInformation("Estimated Output Size",
-				fmt.Sprintf("Total estimated size: %s\n\nBased on %d files with current settings", sizeStr, len(n.files)),
-				n.window)
-		})
+		n.logStatus(fmt.Sprintf("Estimated output size: %s (%d files)", sizeStr, len(n.files)))
 	}()
 }
 
@@ -1251,54 +1120,44 @@ func (n *AudioNormalizer) loadPreferences() {
 	var prefs Preferences
 	json.Unmarshal(data, &prefs)
 
-	n.modeToggle.SetChecked(prefs.AdvancedMode)
+	n.advancedMode = prefs.AdvancedMode
 	n.outputDir = prefs.LastOutputDir
-	if n.outputDir != "" {
-		n.outputLabel.SetText(filepath.Base(n.outputDir))
-	}
-	n.simpleGroupButtons.SetSelected(prefs.SimpleMode)
-	n.formatSelect.SetSelected(prefs.Format)
-	n.sampleRate.SetSelected(prefs.SampleRate)
-	n.bitDepth.SetSelected(prefs.BitDepth)
-	n.bitrateEntry.SetText(prefs.Bitrate)
-	n.loudnormCheck.SetChecked(prefs.LoudnormEnabled)
-	n.loudnormCustomCheck.SetChecked(prefs.CustomLoudnorm)
-	n.normalizeTarget.SetText(prefs.NormalizeTarget)
-	n.normalizeTargetTp.SetText(prefs.NormalizeTargetTp)
+	n.simplePreset = prefs.SimpleMode
+	n.format = prefs.Format
+	n.sampleRate = prefs.SampleRate
+	n.bitDepth = prefs.BitDepth
+	n.bitrate = prefs.Bitrate
+	n.useLoudnorm = prefs.LoudnormEnabled
+	n.customLoudnorm = prefs.CustomLoudnorm
+	n.normalizeTarget = prefs.NormalizeTarget
+	n.normalizeTargetTp = prefs.NormalizeTargetTp
 	n.normalizationStandard = prefs.NormalizationStandard
-	n.updateNormalizationLabel(prefs.NormalizationStandard)
-	n.dataCompLevel.SetValue(float64(prefs.DataCompLevel))
-	n.EqDrop.SetSelected(prefs.EqPreset)
-	n.dynamicsDrop.SetSelected(prefs.DynPreset)
-	n.dynNorm.SetChecked(prefs.DynNorm)
-	n.checkPhaseBtn.SetChecked(prefs.PhaseCheck)
-	if prefs.SelectedTab == "Fast" {
-		n.modeTabs.Select(n.modeTabs.Items[0])
-	} else {
-		n.modeTabs.Select(n.modeTabs.Items[1])
-	}
+	n.dataCompLevel = prefs.DataCompLevel
+	n.eqPreset = prefs.EqPreset
+	n.dynamicsPreset = prefs.DynPreset
+	n.dynNorm = prefs.DynNorm
+	n.phaseCheck = prefs.PhaseCheck
 }
 
 func (n *AudioNormalizer) savePreferences() {
 	prefs := Preferences{
 		AdvancedMode:          n.advancedMode,
 		LastOutputDir:         n.outputDir,
-		SimpleMode:            n.simpleGroupButtons.Selected,
-		Format:                n.formatSelect.Selected,
-		SampleRate:            n.sampleRate.Selected,
-		BitDepth:              n.bitDepth.Selected,
-		Bitrate:               n.bitrateEntry.Text,
-		LoudnormEnabled:       n.loudnormCheck.Checked,
-		CustomLoudnorm:        n.loudnormCustomCheck.Checked,
-		NormalizeTarget:       n.normalizeTarget.Text,
-		NormalizeTargetTp:     n.normalizeTargetTp.Text,
+		SimpleMode:            n.simplePreset,
+		Format:                n.format,
+		SampleRate:            n.sampleRate,
+		BitDepth:              n.bitDepth,
+		Bitrate:               n.bitrate,
+		LoudnormEnabled:       n.useLoudnorm,
+		CustomLoudnorm:        n.customLoudnorm,
+		NormalizeTarget:       n.normalizeTarget,
+		NormalizeTargetTp:     n.normalizeTargetTp,
 		NormalizationStandard: n.normalizationStandard,
-		DataCompLevel:         int8(n.dataCompLevel.Value),
-		EqPreset:              n.EqDrop.Selected,
-		DynPreset:             n.dynamicsDrop.Selected,
-		DynNorm:               n.dynNorm.Checked,
-		SelectedTab:           n.modeTabs.Selected().Text,
-		PhaseCheck:            n.checkPhaseBtn.Checked,
+		DataCompLevel:         n.dataCompLevel,
+		EqPreset:              n.eqPreset,
+		DynPreset:             n.dynamicsPreset,
+		DynNorm:               n.dynNorm,
+		PhaseCheck:            n.phaseCheck,
 	}
 
 	configDir, _ := os.UserConfigDir()
@@ -1315,23 +1174,13 @@ func (n *AudioNormalizer) resetPreferences() {
 
 	os.Remove(prefsPath)
 
-	dialog.ShowInformation("Preferences Reset", "Preferences have been reset. Restart TNT to apply defaults.", n.window)
+	n.logStatus("Preferences have been reset. Restart TNT to apply defaults.")
 }
 
+// updateNormalizationLabel was a Fyne label updater. The frontend computes
+// these labels itself now; we just keep the standard on the struct.
 func (n *AudioNormalizer) updateNormalizationLabel(standard string) {
-	switch standard {
-	case "EBU R128 (-23 LUFS)":
-		n.loudnormLabel.SetText("Normalize (EBU R128: -23 LUFS)")
-		n.writeTagsLabel.SetText("Write RG tags (EBU R128: -23 LUFS)")
-	case "USA ATSC A/85 (-24 LUFS)":
-		n.loudnormLabel.SetText("Normalize (ATSC A/85: -24 LUFS)")
-		n.writeTagsLabel.SetText("Write RG tags (ATSC A/85: -24 LUFS)")
-	case "Custom":
-		target := n.normalizeTarget.Text
-		targetTp := n.normalizeTargetTp.Text
-		n.loudnormLabel.SetText(fmt.Sprintf("Normalize (Custom %s LUFS, %s dBTP)", target, targetTp))
-		n.writeTagsLabel.SetText(fmt.Sprintf("Write RG tags (Custom %s LUFS, %s dBTP)", target, targetTp))
-	}
+	n.normalizationStandard = standard
 }
 
 func (n *AudioNormalizer) startWatching() {
@@ -1412,49 +1261,29 @@ func (n *AudioNormalizer) processWatchQueue() {
 	}
 }
 
+// main is a Phase-1 stub. Phase 2 rewrites this against wails.Run().
 func main() {
-	// Check for CLI mode first
 	if cliCfg, isCLI := parseCLIFlags(); isCLI {
 		cliMode = true
 		runCLI(cliCfg)
 		return
 	}
 
-	os.Setenv("FYNE_DISABLE_HARDWARE_ACCELERATION", "1")
-
-	a := app.NewWithID("com.collinsgroup.tnt")
-	a.Settings().SetTheme(&appleTheme{})
-
-	w := a.NewWindow("TNT - Transcode, Normalize, Tag")
-	w.Resize(fyne.NewSize(750, 700))
-
 	norm := &AudioNormalizer{
-		window: w,
-		files:  make([]string, 0),
+		files:                 make([]string, 0),
+		normalizationStandard: "EBU R128 (-23 LUFS)",
 	}
-
-	norm.setupUI(a)
-	norm.loadPreferences()
-
 	norm.logFile = norm.initLogFile()
-	fmt.Printf("Log file handle: %v\n", norm.logFile)
 	if norm.logFile != nil {
 		defer norm.logFile.Close()
-		fmt.Printf("Log file path: %s\n", norm.logFile.Name())
-	} else {
-		fmt.Println("Failed to create log file")
 	}
+	norm.loadPreferences()
 
-	go checkForUpdates(currentVersion, w, norm.logFile)
+	go checkForUpdates(currentVersion, norm.logFile, func(v VersionInfo) {
+		fmt.Printf("Update available: %s\n", v.Version)
+	})
 
-	w.ShowAndRun()
-}
-
-func getLogoForTheme(a fyne.App) fyne.Resource {
-	if a.Settings().ThemeVariant() == theme.VariantDark {
-		return resourceTntAppLogoForDarkPng
-	}
-	return resourceTntAppLogoForLightPng
+	fmt.Println("TNT GUI is being migrated to Wails — see Phase 2.")
 }
 
 func (n *AudioNormalizer) removeFile(index int) {
@@ -1462,182 +1291,53 @@ func (n *AudioNormalizer) removeFile(index int) {
 	defer n.mutex.Unlock()
 
 	n.files = append(n.files[:index], n.files[index+1:]...)
-
-	fyne.Do(func() {
-		n.fileList.Refresh()
-		n.updateProcessButton()
-		n.checkPCM()
-	})
 }
 
-func (n *AudioNormalizer) updateAdvancedControls() {
-	isPCM := n.formatSelect.Selected == "PCM"
-	isOpus := n.formatSelect.Selected == "Opus"
-
-	if isOpus {
-		n.IsSpeechCheck.Show()
-		n.IsSpeechCheck.Enable()
-	} else {
-		n.IsSpeechCheck.Hide()
-		n.IsSpeechCheck.SetChecked(false)
-		n.IsSpeechCheck.Disable()
-	}
-
-	if isPCM {
-		n.sampleRate.Enable()
-		n.bitDepth.Enable()
-		n.bitrateEntry.Hide()
-		n.writeTags.Disable()
-		n.writeTags.SetChecked(false)
-		n.noTranscode.SetChecked(false)
-		n.noTranscode.Disable()
-		n.loudnormCheck.Enable()
-	} else if n.loudnormCheck != nil && n.loudnormCheck.Checked {
-		n.sampleRate.Disable()
-		n.bitDepth.Disable()
-		n.bitrateEntry.Show()
-	} else {
-		n.writeTags.Enable()
-	}
-}
+// updateAdvancedControls was Fyne-only show/hide/enable logic. The frontend
+// applies these rules itself via onFormatChange().
+func (n *AudioNormalizer) updateAdvancedControls() {}
 
 func (n *AudioNormalizer) selectFiles() {
-	dialog.ShowFileOpen(func(reader fyne.URIReadCloser, err error) {
-		if err != nil || reader == nil {
-			return
-		}
-		defer reader.Close()
-
-		path := reader.URI().Path()
-		if isAudioFile(path) {
-			n.addFile(path)
-		}
-	}, n.window)
+	// Phase 1 stub: in Phase 2 SelectFiles in bindings.go opens the native
+	// dialog and populates n.files.
 	n.batchMode = false
 }
 
 func (n *AudioNormalizer) selectFolder() {
-	dialog.ShowFolderOpen(func(uri fyne.ListableURI, err error) {
-		if err != nil || uri == nil {
-			return
-		}
-
-		n.inputDir = uri.Path()
-
-		n.batchMode = true
-
-		n.logStatus("Scanning folder...")
-		n.logToFile(n.logFile, "Scanning folder")
-
-		go func() {
-			audioFiles := []string{}
-			filepath.WalkDir(uri.Path(), func(path string, d fs.DirEntry, err error) error {
-				if err != nil {
-					return nil
-				}
-				if d.IsDir() {
-					return nil
-				}
-				if isAudioFile(path) {
-					audioFiles = append(audioFiles, path)
-				}
-				return nil
-			})
-
-			n.mutex.Lock()
-			for _, file := range audioFiles {
-				// Check for duplicates inline
-				exists := false
-
-				existing := slices.Contains(n.files, file)
-				if existing {
-					exists = true
-				}
-
-				if !exists {
-					n.files = append(n.files, file)
-				}
-			}
-			n.mutex.Unlock()
-
-			fyne.Do(func() {
-				n.fileList.Refresh()
-				n.updateProcessButton()
-				n.logStatus(fmt.Sprintf("Added %d audio files from folder", len(audioFiles)))
-			})
-		}()
-	}, n.window)
+	// Phase 1 stub: in Phase 2 SelectFolder in bindings.go walks the chosen
+	// directory and emits file:added events.
 }
 
 func (n *AudioNormalizer) selectOutputFolder() {
-	dialog.ShowFolderOpen(func(uri fyne.ListableURI, err error) {
-		if err != nil || uri == nil {
-			return
-		}
-
-		n.mutex.Lock()
-		n.outputDir = uri.Path()
-		n.outputLabel.SetText(filepath.Base(n.outputDir))
-		n.mutex.Unlock()
-
-		n.updateProcessButton()
-	}, n.window)
+	// Phase 1 stub: in Phase 2 SetOutputFolder in bindings.go sets n.outputDir.
 }
 
 func (n *AudioNormalizer) checkPCM() bool {
-	originIsPCM := false
 	for _, file := range n.files {
 		if strings.TrimPrefix(filepath.Ext(file), ".") == "wav" {
-			originIsPCM = true
-			break
+			return true
 		}
 	}
-	fyne.Do(func() {
-		if originIsPCM {
-			n.noTranscode.Disable()
-			if n.formatSelect.Selected == "PCM" {
-				n.writeTags.Disable()
-				n.writeTags.SetChecked(false)
-				n.noTranscode.Disable()
-				n.noTranscode.SetChecked(false)
-			} else {
-				n.writeTags.Enable()
-			}
-		}
-	})
-	return originIsPCM
+	return false
 }
 
 func (n *AudioNormalizer) checkNonTranscode() bool {
-	nonTranscoding := false
 	for _, file := range n.files {
 		if strings.TrimPrefix(filepath.Ext(file), ".") == "ogg" {
-			nonTranscoding = true
-			break
+			return true
 		}
 	}
-	fyne.Do(func() {
-		if nonTranscoding {
-			n.noTranscode.Disable()
-		}
-	})
-	return nonTranscoding
+	return false
 }
 
 func (n *AudioNormalizer) checkOriginAAC() bool {
-	originIsAAC := false
 	for _, file := range n.files {
-		if strings.TrimPrefix(filepath.Ext(file), ".") == "m4a" || strings.TrimPrefix(filepath.Ext(file), ".") == "aac" {
-			originIsAAC = true
-			break
+		ext := strings.TrimPrefix(filepath.Ext(file), ".")
+		if ext == "m4a" || ext == "aac" {
+			return true
 		}
 	}
-	fyne.Do(func() {
-		if originIsAAC {
-
-		}
-	})
-	return originIsAAC
+	return false
 }
 
 func (n *AudioNormalizer) addFile(path string) {
@@ -1659,51 +1359,36 @@ func (n *AudioNormalizer) addFile(path string) {
 	*/
 
 	n.files = append(n.files, path)
-	fyne.Do(func() {
-		n.fileList.Refresh()
-		n.updateProcessButton()
-		n.checkPCM()
-	})
-
 }
 
 func (n *AudioNormalizer) updateProcessButton() {
-	if len(n.files) > 0 && n.outputDir != "" {
-		n.processBtn.Enable()
-	} else {
-		n.processBtn.Disable()
-	}
+	// Phase 1 stub: in Phase 2 the frontend toggles the Process button
+	// reactively based on file count and output dir.
 }
 
 func (n *AudioNormalizer) getProcessConfig() ProcessConfig {
-	if n.modeTabs.Selected() == n.modeTabs.Items[0] {
-		n.advancedMode = false
-	} else {
-		n.advancedMode = true
-	}
-
 	config := ProcessConfig{
-		UseLoudnorm:    n.loudnormCheck.Checked,
-		IsSpeech:       n.IsSpeechCheck.Checked,
+		UseLoudnorm:    n.useLoudnorm,
+		IsSpeech:       n.isSpeech,
 		originIsAAC:    n.checkOriginAAC(),
-		writeTags:      n.writeTags.Checked,
-		noTranscode:    n.noTranscode.Checked,
-		dataCompLevel:  int8(math.Round(n.dataCompLevel.Value)),
-		bypassProc:     n.bypassProc.Checked,
-		DynamicsPreset: n.dynamicsDrop.Selected,
-		EqTarget:       n.EqDrop.Selected,
-		DynNorm:        n.dynNorm.Checked,
-		PhaseCheck:     n.checkPhaseBtn.Checked,
+		writeTags:      n.writeTags,
+		noTranscode:    n.noTranscode,
+		dataCompLevel:  n.dataCompLevel,
+		bypassProc:     n.bypassProc,
+		DynamicsPreset: n.dynamicsPreset,
+		EqTarget:       n.eqPreset,
+		DynNorm:        n.dynNorm,
+		PhaseCheck:     n.phaseCheck,
+		CustomLoudnorm: n.customLoudnorm,
 	}
 
 	if n.advancedMode {
-		config.Format = n.formatSelect.Selected
-		config.SampleRate = n.sampleRate.Selected
-		config.BitDepth = n.bitDepth.Selected
-		config.Bitrate = n.bitrateEntry.Text
-		config.writeTags = n.writeTags.Checked
+		config.Format = n.format
+		config.SampleRate = n.sampleRate
+		config.BitDepth = n.bitDepth
+		config.Bitrate = n.bitrate
 	} else {
-		switch n.simpleGroupButtons.Selected {
+		switch n.simplePreset {
 		case "Small file (AAC 256kbps)":
 			config.Format = "AAC"
 			config.Bitrate = "256"
@@ -1721,10 +1406,7 @@ func (n *AudioNormalizer) getProcessConfig() ProcessConfig {
 }
 
 func (n *AudioNormalizer) process() {
-	n.processBtn.Disable()
-	n.progressBar.Show()
-	n.progressBar.SetValue(0)
-	n.statusLog.SetText("")
+	n.emitProgress(0)
 
 	config := n.getProcessConfig()
 
@@ -1804,15 +1486,11 @@ func (n *AudioNormalizer) process() {
 				successful++
 			}
 			progress := float64(processed) / float64(len(n.files))
-			fyne.Do(func() {
-				n.progressBar.SetValue(progress)
-			})
+			n.emitProgress(progress)
 		}
 
 		n.logStatus(fmt.Sprintf("\nComplete: %d/%d files processed successfully", successful, len(n.files)))
-		fyne.Do(func() {
-			n.processBtn.Enable()
-		})
+		n.emitDone()
 	}()
 }
 
@@ -1824,7 +1502,7 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 	var tempFiles []string
 	defer func() { cleanupTempFiles(tempFiles) }()
 
-	if platformCodec := getPlatformCodecMap()[cfg.Format]; platformCodec != "" {
+	if platformCodec := platformCodecMap[cfg.Format]; platformCodec != "" {
 		actualCodec = platformCodec
 	} else if codec := config.GetCodec(cfg.Format); codec != "" {
 		actualCodec = codec
@@ -1891,9 +1569,9 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 	args := []string{"-i", workingPath, "-vn"}
 
 	// Add format-specific arguments
-	if n.noTranscode.Checked {
+	if n.noTranscode {
 		args = append(args, "-c", "copy")
-	} else if actualCodec == "PCM" && !n.noTranscode.Checked {
+	} else if actualCodec == "PCM" && !n.noTranscode {
 		args = append(args, "-ar", cfg.SampleRate)
 
 		var codec string
@@ -1908,7 +1586,7 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 			codec = "pcm_f64le"
 		}
 		args = append(args, "-acodec", codec)
-	} else if !n.noTranscode.Checked {
+	} else if !n.noTranscode {
 		args = append(args, "-ar", "48000")
 		args = append(args, "-c:a", actualCodec)
 	}
@@ -1950,9 +1628,9 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 	}
 
 	// Add speech optimization for Opus
-	if cfg.IsSpeech && actualCodec == "libopus" && !n.noTranscode.Checked {
+	if cfg.IsSpeech && actualCodec == "libopus" && !n.noTranscode {
 		args = append(args, "-application", "voip")
-	} else if !cfg.IsSpeech && actualCodec == "libopus" && !n.noTranscode.Checked {
+	} else if !cfg.IsSpeech && actualCodec == "libopus" && !n.noTranscode {
 		args = append(args, "-application", "audio")
 	}
 
@@ -1981,18 +1659,18 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 		targetTp = "-2"
 	case "Custom":
 		// Only use input fields when Custom is selected
-		if n.normalizeTarget.Text != "" {
-			if strings.Contains(n.normalizeTarget.Text, "-") {
-				target = n.normalizeTarget.Text
+		if n.normalizeTarget != "" {
+			if strings.Contains(n.normalizeTarget, "-") {
+				target = n.normalizeTarget
 			} else {
-				target = "-" + n.normalizeTarget.Text
+				target = "-" + n.normalizeTarget
 			}
 		}
-		if n.normalizeTargetTp.Text != "" {
-			if strings.Contains(n.normalizeTargetTp.Text, "-") {
-				targetTp = n.normalizeTargetTp.Text
+		if n.normalizeTargetTp != "" {
+			if strings.Contains(n.normalizeTargetTp, "-") {
+				targetTp = n.normalizeTargetTp
 			} else {
-				targetTp = "-" + n.normalizeTargetTp.Text
+				targetTp = "-" + n.normalizeTargetTp
 			}
 		}
 	default:
@@ -2480,21 +2158,21 @@ func (n *AudioNormalizer) measureLoudness(inputPath string) map[string]string {
 
 	target := "-23"
 
-	if (n.loudnormCustomCheck.Checked || n.writeTags.Checked) && n.normalizeTarget.Text != "" {
-		if strings.Contains(n.normalizeTarget.Text, "-") {
-			target = n.normalizeTarget.Text
+	if (n.customLoudnorm || n.writeTags) && n.normalizeTarget != "" {
+		if strings.Contains(n.normalizeTarget, "-") {
+			target = n.normalizeTarget
 		} else {
-			target = "-" + n.normalizeTarget.Text
+			target = "-" + n.normalizeTarget
 		}
 	}
 
 	targetTp := "-1"
 
-	if (n.loudnormCustomCheck.Checked || n.writeTags.Checked) && n.normalizeTargetTp.Text != "" {
-		if strings.Contains(n.normalizeTargetTp.Text, "-") {
-			targetTp = n.normalizeTargetTp.Text
+	if (n.customLoudnorm || n.writeTags) && n.normalizeTargetTp != "" {
+		if strings.Contains(n.normalizeTargetTp, "-") {
+			targetTp = n.normalizeTargetTp
 		} else {
-			targetTp = "-" + n.normalizeTargetTp.Text
+			targetTp = "-" + n.normalizeTargetTp
 		}
 	}
 
@@ -2541,15 +2219,7 @@ func (n *AudioNormalizer) parseLoudnormJSON(output string) map[string]string {
 	return result
 }
 
-func (n *AudioNormalizer) logStatus(message string) {
-	fyne.Do(func() {
-		current := n.statusLog.Text
-		if current != "" {
-			current += "\n"
-		}
-		n.statusLog.SetText(current + message)
-	})
-}
+// logStatus moved to events.go (Phase 1 stub).
 
 func isAudioFile(path string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
@@ -2563,96 +2233,7 @@ func isAudioFile(path string) bool {
 	return false
 }
 
-// Apple-inspired theme
-type appleTheme struct{}
-
-func (a *appleTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) color.Color {
-	if variant == theme.VariantDark {
-		switch name {
-		case theme.ColorNameBackground:
-			return color.RGBA{R: 0x2f, G: 0x2f, B: 0x2f, A: 0xff}
-		case theme.ColorNameButton:
-			return color.RGBA{R: 0x14, G: 0x1e, B: 0x30, A: 0xff} // Navy
-		case theme.ColorNameDisabledButton:
-			return color.RGBA{R: 0x4a, G: 0x4a, B: 0x4a, A: 0xff}
-		case theme.ColorNameForeground:
-			return color.RGBA{R: 0xeb, G: 0xeb, B: 0xeb, A: 0xff}
-		case theme.ColorNameHover:
-			return color.RGBA{R: 0x3f, G: 0x3f, B: 0x3f, A: 0xff}
-		case theme.ColorNameInputBackground:
-			return color.RGBA{R: 0x1a, G: 0x1a, B: 0x1a, A: 0xff}
-		case theme.ColorNameInputBorder:
-			return color.RGBA{R: 0x4a, G: 0x4a, B: 0x4a, A: 0xff}
-		case theme.ColorNamePlaceHolder:
-			return color.RGBA{R: 0x99, G: 0x99, B: 0x99, A: 0xff}
-		case theme.ColorNamePressed:
-			return color.RGBA{R: 0x0f, G: 0x16, B: 0x24, A: 0xff} // Darker navy
-		case theme.ColorNameSelection:
-			return color.RGBA{R: 0x14, G: 0x1e, B: 0x30, A: 0x66}
-		case theme.ColorNameMenuBackground:
-			return color.RGBA{R: 0x2f, G: 0x2f, B: 0x2f, A: 0xff}
-		case theme.ColorNameOverlayBackground:
-			return color.RGBA{R: 0x2f, G: 0x2f, B: 0x2f, A: 0xff}
-		case theme.ColorNameDisabled:
-			return color.RGBA{R: 0x77, G: 0x77, B: 0x77, A: 0xff}
-		default:
-			return theme.DefaultTheme().Color(name, variant)
-		}
-	}
-
-	// Light variant
-	switch name {
-	case theme.ColorNameBackground:
-		return color.RGBA{R: 0xeb, G: 0xeb, B: 0xeb, A: 0xff}
-	case theme.ColorNameButton:
-		return color.RGBA{R: 0xde, G: 0x79, B: 0x7c, A: 0xff}
-	case theme.ColorNameDisabledButton:
-		return color.RGBA{R: 0xbb, G: 0xbb, B: 0xbb, A: 0xff}
-	case theme.ColorNameForeground:
-		return color.RGBA{R: 0x1d, G: 0x1d, B: 0x1f, A: 0xff}
-	case theme.ColorNameHover:
-		return color.RGBA{R: 0xd5, G: 0xd5, B: 0xd5, A: 0xff}
-	case theme.ColorNameInputBackground:
-		return color.RGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
-	case theme.ColorNameInputBorder:
-		return color.RGBA{R: 0xd1, G: 0xd1, B: 0xd6, A: 0xff}
-	case theme.ColorNamePlaceHolder:
-		return color.RGBA{R: 0x8e, G: 0x8e, B: 0x93, A: 0xff}
-	case theme.ColorNamePressed:
-		return color.RGBA{R: 0xc8, G: 0x60, B: 0x63, A: 0xff}
-	case theme.ColorNameSelection:
-		return color.RGBA{R: 0xde, G: 0x79, B: 0x7c, A: 0x66}
-	case theme.ColorNameMenuBackground:
-		return color.RGBA{R: 0xeb, G: 0xeb, B: 0xeb, A: 0xff}
-	case theme.ColorNameOverlayBackground:
-		return color.RGBA{R: 0xeb, G: 0xeb, B: 0xeb, A: 0xff}
-	case theme.ColorNameDisabled:
-		return color.RGBA{R: 0x99, G: 0x99, B: 0x99, A: 0xff}
-	default:
-		return theme.DefaultTheme().Color(name, variant)
-	}
-}
-
-func (a *appleTheme) Icon(name fyne.ThemeIconName) fyne.Resource {
-	return theme.DefaultTheme().Icon(name)
-}
-
-func (a *appleTheme) Font(style fyne.TextStyle) fyne.Resource {
-	return resourceWotfardRegularTtf
-}
-
-func (a *appleTheme) Size(name fyne.ThemeSizeName) float32 {
-	switch name {
-	case theme.SizeNamePadding:
-		return 8
-	case theme.SizeNameInlineIcon:
-		return 20
-	case theme.SizeNameScrollBar:
-		return 12
-	default:
-		return theme.DefaultTheme().Size(name)
-	}
-}
+// appleTheme removed — Wails frontend handles styling via CSS.
 
 func cleanupTempFiles(files []string) {
 	for _, file := range files {

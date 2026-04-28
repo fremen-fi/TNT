@@ -429,7 +429,7 @@ func (p *CLIProcessor) processFile(inputPath string) bool {
 	var tempFiles []string
 	defer func() { cleanupTempFiles(tempFiles) }()
 
-	if platformCodec := getPlatformCodecMap()[cfg.Format]; platformCodec != "" {
+	if platformCodec := platformCodecMap[cfg.Format]; platformCodec != "" {
 		actualCodec = platformCodec
 	} else if codec := config.GetCodec(cfg.Format); codec != "" {
 		actualCodec = codec
