@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"math"
 	"net/http"
 	"os"
@@ -19,6 +21,10 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/wailsapp/wails/v2"
+	"github.com/wailsapp/wails/v2/pkg/options"
+	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"github.com/fremen-fi/tnt/go/internal/audio"
 	"github.com/fremen-fi/tnt/go/internal/config"
@@ -51,12 +57,12 @@ type ProcessConfig struct {
 	UseLoudnorm    bool
 	CustomLoudnorm bool
 	IsSpeech       bool
-	writeTags      bool
-	noTranscode    bool
-	originIsAAC    bool
-	dataCompLevel  int8
+	WriteTags      bool
+	NoTranscode    bool
+	OriginIsAAC    bool
+	DataCompLevel  int8
 	DynamicsPreset string
-	bypassProc     bool
+	BypassProc     bool
 	EqTarget       string
 	DynNorm        bool
 	PhaseCheck     bool
@@ -1177,12 +1183,6 @@ func (n *AudioNormalizer) resetPreferences() {
 	n.logStatus("Preferences have been reset. Restart TNT to apply defaults.")
 }
 
-// updateNormalizationLabel was a Fyne label updater. The frontend computes
-// these labels itself now; we just keep the standard on the struct.
-func (n *AudioNormalizer) updateNormalizationLabel(standard string) {
-	n.normalizationStandard = standard
-}
-
 func (n *AudioNormalizer) startWatching() {
 	n.watcherMutex.Lock()
 	if n.watching {
@@ -1273,17 +1273,42 @@ func main() {
 		files:                 make([]string, 0),
 		normalizationStandard: "EBU R128 (-23 LUFS)",
 	}
-	norm.logFile = norm.initLogFile()
-	if norm.logFile != nil {
-		defer norm.logFile.Close()
+
+	frontendFS, fsErr := fs.Sub(assets, "frontend")
+	if fsErr != nil {
+		fmt.Fprintf(os.Stderr, "embed sub: %v\n", fsErr)
+		os.Exit(1)
 	}
-	norm.loadPreferences()
 
-	go checkForUpdates(currentVersion, norm.logFile, func(v VersionInfo) {
-		fmt.Printf("Update available: %s\n", v.Version)
+	err := wails.Run(&options.App{
+		Title:     "TNT — Transcode, Normalize, Tag",
+		Width:     850,
+		Height:    700,
+		MinWidth:  750,
+		MinHeight: 600,
+		AssetServer: &assetserver.Options{
+			Assets: frontendFS,
+		},
+		OnStartup: func(ctx context.Context) {
+			norm.ctx = ctx
+			norm.logFile = norm.initLogFile()
+			norm.loadPreferences()
+			go checkForUpdates(currentVersion, norm.logFile, func(v VersionInfo) {
+				wailsruntime.EventsEmit(ctx, "update:available", v)
+			})
+		},
+		OnShutdown: func(ctx context.Context) {
+			norm.savePreferences()
+			if norm.logFile != nil {
+				norm.logFile.Close()
+			}
+		},
+		Bind: []interface{}{norm},
 	})
-
-	fmt.Println("TNT GUI is being migrated to Wails — see Phase 2.")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "wails.Run: %v\n", err)
+		os.Exit(1)
+	}
 }
 
 func (n *AudioNormalizer) removeFile(index int) {
@@ -1291,25 +1316,6 @@ func (n *AudioNormalizer) removeFile(index int) {
 	defer n.mutex.Unlock()
 
 	n.files = append(n.files[:index], n.files[index+1:]...)
-}
-
-// updateAdvancedControls was Fyne-only show/hide/enable logic. The frontend
-// applies these rules itself via onFormatChange().
-func (n *AudioNormalizer) updateAdvancedControls() {}
-
-func (n *AudioNormalizer) selectFiles() {
-	// Phase 1 stub: in Phase 2 SelectFiles in bindings.go opens the native
-	// dialog and populates n.files.
-	n.batchMode = false
-}
-
-func (n *AudioNormalizer) selectFolder() {
-	// Phase 1 stub: in Phase 2 SelectFolder in bindings.go walks the chosen
-	// directory and emits file:added events.
-}
-
-func (n *AudioNormalizer) selectOutputFolder() {
-	// Phase 1 stub: in Phase 2 SetOutputFolder in bindings.go sets n.outputDir.
 }
 
 func (n *AudioNormalizer) checkPCM() bool {
@@ -1361,20 +1367,15 @@ func (n *AudioNormalizer) addFile(path string) {
 	n.files = append(n.files, path)
 }
 
-func (n *AudioNormalizer) updateProcessButton() {
-	// Phase 1 stub: in Phase 2 the frontend toggles the Process button
-	// reactively based on file count and output dir.
-}
-
 func (n *AudioNormalizer) getProcessConfig() ProcessConfig {
 	config := ProcessConfig{
 		UseLoudnorm:    n.useLoudnorm,
 		IsSpeech:       n.isSpeech,
-		originIsAAC:    n.checkOriginAAC(),
-		writeTags:      n.writeTags,
-		noTranscode:    n.noTranscode,
-		dataCompLevel:  n.dataCompLevel,
-		bypassProc:     n.bypassProc,
+		OriginIsAAC:    n.checkOriginAAC(),
+		WriteTags:      n.writeTags,
+		NoTranscode:    n.noTranscode,
+		DataCompLevel:  n.dataCompLevel,
+		BypassProc:     n.bypassProc,
 		DynamicsPreset: n.dynamicsPreset,
 		EqTarget:       n.eqPreset,
 		DynNorm:        n.dynNorm,
@@ -1496,7 +1497,7 @@ func (n *AudioNormalizer) process() {
 
 func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool {
 	n.logToFile(n.logFile, fmt.Sprintf("DEBUG config values: EqTarget='%s', DynamicsPreset='%s', bypassProc=%v",
-		cfg.EqTarget, cfg.DynamicsPreset, cfg.bypassProc))
+		cfg.EqTarget, cfg.DynamicsPreset, cfg.BypassProc))
 	actualCodec := cfg.Format
 	var workingPath string = inputPath
 	var tempFiles []string
@@ -1553,9 +1554,9 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 
 	if cfg.UseLoudnorm {
 		outputPath = filepath.Join(outputDir, fmt.Sprintf("%s.normalized%s", baseName, ext))
-	} else if cfg.writeTags && cfg.noTranscode {
+	} else if cfg.WriteTags && cfg.NoTranscode {
 		outputPath = filepath.Join(outputDir, fmt.Sprintf("%s.tagged%s", baseName, originalExt))
-	} else if cfg.writeTags {
+	} else if cfg.WriteTags {
 		outputPath = filepath.Join(outputDir, fmt.Sprintf("%s.tagged%s", baseName, ext))
 	} else {
 		outputPath = filepath.Join(outputDir, fmt.Sprintf("%s%s", baseName, ext))
@@ -1639,9 +1640,9 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 	if usesDataCompression {
 		var level int
 		if actualCodec == "libopus" {
-			level = 10 - int(cfg.dataCompLevel)
+			level = 10 - int(cfg.DataCompLevel)
 		} else if actualCodec == "flac" {
-			level = int(math.Round(float64(cfg.dataCompLevel) * 12.0 / 10.0))
+			level = int(math.Round(float64(cfg.DataCompLevel) * 12.0 / 10.0))
 		}
 		args = append(args, "-compression_level", fmt.Sprintf("%d", level))
 	}
@@ -1684,14 +1685,14 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 	var multibandFilter string
 	var dynaudnormFilter string
 
-	n.logToFile(n.logFile, fmt.Sprintf("DEBUG: About to check EQ section - cfg.EqTarget='%s', cfg.EqTarget != ''=%v, cfg.EqTarget != 'Off'=%v, !cfg.bypassProc=%v",
+	n.logToFile(n.logFile, fmt.Sprintf("DEBUG: About to check EQ section - cfg.EqTarget='%s', cfg.EqTarget != ''=%v, cfg.EqTarget != 'Off'=%v, !cfg.BypassProc=%v",
 		cfg.EqTarget,
 		cfg.EqTarget != "",
 		cfg.EqTarget != "Off",
-		!cfg.bypassProc))
+		!cfg.BypassProc))
 
 	// Stage 1: EQ analysis and application
-	if cfg.EqTarget != "" && cfg.EqTarget != "Off" && !cfg.bypassProc {
+	if cfg.EqTarget != "" && cfg.EqTarget != "Off" && !cfg.BypassProc {
 		eqBandAnalysis := n.analyzeFrequencyResponseBands(workingPath)
 		if eqBandAnalysis == nil || len(eqBandAnalysis) == 0 {
 			n.logStatus(fmt.Sprintf("✗ Failed to analyze frequency response: %s", filepath.Base(inputPath)))
@@ -1742,14 +1743,14 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 	n.logToFile(n.logFile, fmt.Sprintf("args: %s", args))
 	n.logToFile(n.logFile, "")
 
-	n.logToFile(n.logFile, fmt.Sprintf("DEBUG: About to check Dynamics section - cfg.DynamicsPreset='%s', cfg.DynamicsPreset != ''=%v, cfg.DynamicsPreset != 'Off'=%v, !cfg.bypassProc=%v",
+	n.logToFile(n.logFile, fmt.Sprintf("DEBUG: About to check Dynamics section - cfg.DynamicsPreset='%s', cfg.DynamicsPreset != ''=%v, cfg.DynamicsPreset != 'Off'=%v, !cfg.BypassProc=%v",
 		cfg.DynamicsPreset,
 		cfg.DynamicsPreset != "",
 		cfg.DynamicsPreset != "Off",
-		!cfg.bypassProc))
+		!cfg.BypassProc))
 
 	var dsAnalysis *audio.DynamicsScoreAnalysis
-	if !cfg.bypassProc && (cfg.DynamicsPreset != "" && cfg.DynamicsPreset != "Off") {
+	if !cfg.BypassProc && (cfg.DynamicsPreset != "" && cfg.DynamicsPreset != "Off") {
 		dsAnalysis = n.calculateDynamicsScore(inputPath)
 		if dsAnalysis == nil {
 			n.logStatus(fmt.Sprintf("✗ Failed to calculate Dynamics Score: %s", filepath.Base(inputPath)))
@@ -1758,7 +1759,7 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 	}
 
 	// Stage 2: Dynaudnorm if enabled (analyze and apply to temp before loudness measurement)
-	if cfg.DynNorm && !cfg.bypassProc {
+	if cfg.DynNorm && !cfg.BypassProc {
 		dynamicsAnalysis := n.analyzeDynamics(workingPath)
 		if dynamicsAnalysis == nil {
 			n.logStatus(fmt.Sprintf("✗ Failed to analyze for dynaudnorm: %s", filepath.Base(inputPath)))
@@ -1801,7 +1802,7 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 					}
 				}
 
-				if cfg.writeTags {
+				if cfg.WriteTags {
 					measured = n.measureLoudnessEbuR128(workingPath)
 					if measured == nil {
 						n.logStatus(fmt.Sprintf("✗ Failed to measure: %s", filepath.Base(inputPath)))
@@ -1813,7 +1814,7 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 	}
 
 	// Stage 3: Dynamics analysis and application
-	if cfg.DynamicsPreset != "" && cfg.DynamicsPreset != "Off" && !cfg.bypassProc {
+	if cfg.DynamicsPreset != "" && cfg.DynamicsPreset != "Off" && !cfg.BypassProc {
 
 		// Check if MBC needs input attenuation for hot peaks
 		var attenuatedPath string = workingPath
@@ -1931,7 +1932,7 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 		}
 	}
 
-	if cfg.writeTags {
+	if cfg.WriteTags {
 		measured = n.measureLoudnessEbuR128(workingPath)
 		if measured == nil {
 			n.logStatus(fmt.Sprintf("✗ Failed to measure: %s", filepath.Base(inputPath)))
@@ -1999,7 +2000,7 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 
 	var rgTpInLin float64
 
-	if cfg.writeTags {
+	if cfg.WriteTags {
 		if measured["input_tp"] == "" {
 			n.logStatus("ERROR: input_tp is empty")
 			rgTpInLin = 1.0 // Default value
@@ -2015,14 +2016,14 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 		}
 	}
 
-	resultsInM4A := (actualCodec == "libfdk_aac" || actualCodec == "aac_at") || (cfg.originIsAAC && cfg.noTranscode)
-	useMovFlags := resultsInM4A && cfg.writeTags && measured != nil
+	resultsInM4A := (actualCodec == "libfdk_aac" || actualCodec == "aac_at") || (cfg.OriginIsAAC && cfg.NoTranscode)
+	useMovFlags := resultsInM4A && cfg.WriteTags && measured != nil
 
 	if useMovFlags {
 		args = append(args, "-movflags", "use_metadata_tags")
 	}
 
-	if cfg.writeTags && measured != nil {
+	if cfg.WriteTags && measured != nil {
 		inputI, _ := strconv.ParseFloat(measured["input_i"], 64)
 		targetFloat, _ := strconv.ParseFloat(target, 64)
 		gain := targetFloat - inputI
@@ -2080,12 +2081,12 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 		n.logToFile(n.logFile, fmt.Sprintf("TP target: %s", targetTp))
 	}
 
-	if cfg.writeTags && cfg.noTranscode {
+	if cfg.WriteTags && cfg.NoTranscode {
 		n.logToFile(n.logFile, "Writing tags and not transcoding")
 		n.logToFile(n.logFile, fmt.Sprintf("Original format is: %s", originalExt))
 		n.logToFile(n.logFile, fmt.Sprintf("LUFS I target: %s", target))
 		n.logToFile(n.logFile, fmt.Sprintf("TP target: %s", targetTp))
-	} else if cfg.writeTags {
+	} else if cfg.WriteTags {
 		n.logToFile(n.logFile, fmt.Sprintf("Writing tags and transcoding to %s", cfg.Format))
 		n.logToFile(n.logFile, fmt.Sprintf("LUFS I target: %s", target))
 		n.logToFile(n.logFile, fmt.Sprintf("TP target: %s", targetTp))

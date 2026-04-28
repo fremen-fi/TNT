@@ -1,27 +1,43 @@
 package main
 
-import "fmt"
-
-// Phase 1 stubs — Phase 2c replaces these with runtime.EventsEmit/MessageDialog.
+import (
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
+)
 
 func (n *AudioNormalizer) logStatus(message string) {
-	fmt.Print(message)
-	if !endsWithNewline(message) {
-		fmt.Println()
+	if n.ctx == nil {
+		return
 	}
+	wailsruntime.EventsEmit(n.ctx, "status:log", message)
 }
 
 func (n *AudioNormalizer) emitProgress(fraction float64) {
-	_ = fraction
+	if n.ctx == nil {
+		return
+	}
+	wailsruntime.EventsEmit(n.ctx, "progress:update", fraction)
 }
 
-func (n *AudioNormalizer) emitDone() {}
+func (n *AudioNormalizer) emitDone() {
+	if n.ctx == nil {
+		return
+	}
+	wailsruntime.EventsEmit(n.ctx, "progress:done")
+}
 
 func (n *AudioNormalizer) showConfirmDialog(title, message string) bool {
-	fmt.Printf("[confirm] %s — %s (auto-yes in Phase 1)\n", title, message)
-	return true
-}
-
-func endsWithNewline(s string) bool {
-	return len(s) > 0 && s[len(s)-1] == '\n'
+	if n.ctx == nil {
+		return true
+	}
+	result, err := wailsruntime.MessageDialog(n.ctx, wailsruntime.MessageDialogOptions{
+		Type:          wailsruntime.QuestionDialog,
+		Title:         title,
+		Message:       message,
+		Buttons:       []string{"Yes", "No"},
+		DefaultButton: "Yes",
+	})
+	if err != nil {
+		return false
+	}
+	return result == "Yes"
 }
