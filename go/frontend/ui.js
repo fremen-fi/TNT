@@ -42,6 +42,7 @@ function switchTab(id) {
     p.classList.toggle('active', p.id === 'tab-' + id));
   const chain = $('audio-chain-group');
   if (chain) chain.classList.toggle('chain-active', id === 'advanced' || id === 'processing');
+  updateChainIndicator();
 }
 
 /* ── Dialog tabs ── */
@@ -151,6 +152,37 @@ function updateAdvanced() {
   }
 }
 
+/* ── Audio-chain active indicator (left-footer) ──
+   Shows a small accent badge below the action row when EQ or Dynamics
+   processing is active, but only on tabs where the user can actually see
+   those controls (Advanced/Processing/Metadata). The point is to remind
+   the user that processing settings are about to be applied — even when
+   they're back on a tab that doesn't expose the controls. Hidden also
+   when "Bypass all processing" is checked, since nothing applies then. */
+function updateChainIndicator() {
+  const ind = $('chain-indicator');
+  if (!ind) return;
+  const activeBtn = /** @type {HTMLElement|null} */ (document.querySelector('.tab-btn.active'));
+  const activeTab = (activeBtn && activeBtn.dataset.tab) || 'fast';
+  const dyn = $select('proc-dyn');
+  const eq  = $select('proc-eq');
+  const byp = $input('proc-bypass');
+  const dynVal = (dyn && dyn.value) || 'Off';
+  const eqVal  = (eq  && eq.value)  || 'Off';
+  const dynOn = dynVal !== 'Off';
+  const eqOn  = eqVal  !== 'Off';
+  const bypassed = !!(byp && byp.checked);
+  const show = (dynOn || eqOn) && activeTab !== 'fast' && !bypassed;
+  ind.classList.toggle('hidden', !show);
+  if (show) {
+    /** @type {string[]} */
+    const parts = [];
+    if (eqOn)  parts.push(`EQ: ${eqVal}`);
+    if (dynOn) parts.push(`Dynamics: ${dynVal}`);
+    ind.textContent = `Audio chain active — ${parts.join(' · ')}`;
+  }
+}
+
 /* ── Processing bypass dim ── */
 /** @param {boolean} on */
 function updateBypass(on) {
@@ -164,6 +196,7 @@ function updateBypass(on) {
   if (dyn) dyn.disabled = on;
   if (eq)  eq.disabled  = on;
   if (dn)  dn.disabled  = on;
+  updateChainIndicator();
 }
 
 /* ── Status log bar ── */

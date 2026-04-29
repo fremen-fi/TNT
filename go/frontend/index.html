@@ -57,6 +57,7 @@
           <button class="btn btn-sm" id="btn-clear" onclick="clearFiles()" disabled>Clear</button>
           <button class="btn btn-sm btn-fixed-sm" onclick="previewSize()">Size</button>
         </div>
+        <div class="chain-indicator hidden" id="chain-indicator"></div>
       </div>
     </aside>
 
@@ -196,7 +197,7 @@
           <div class="section-label">Dynamics</div>
           <div class="form-row" id="proc-row-dyn">
             <label for="proc-dyn">Dynamics processing</label>
-            <select id="proc-dyn">
+            <select id="proc-dyn" onchange="updateChainIndicator()">
               <option value="Off" selected>Off</option>
               <option value="Light">Light</option>
               <option value="Moderate">Moderate</option>
@@ -207,7 +208,7 @@
           <div class="section-label">Equalization</div>
           <div class="form-row" id="proc-row-eq">
             <label for="proc-eq">EQ target curve</label>
-            <select id="proc-eq">
+            <select id="proc-eq" onchange="updateChainIndicator()">
               <option value="Off" selected>Off</option>
               <option value="Flat">Flat</option>
               <option value="Speech">Speech</option>

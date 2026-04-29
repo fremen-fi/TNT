@@ -500,3 +500,17 @@ dialog::backdrop { background: var(--scrim); }
 }
 
 .hidden { display: none; }
+
+/* ===== Audio-chain active indicator (left-footer) ===== */
+.chain-indicator {
+  margin-top: 8px;
+  padding: 6px 9px;
+  border-radius: 5px;
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-bdr);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 500;
+  text-align: center;
+  line-height: 1.35;
+}
