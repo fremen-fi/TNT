@@ -9,7 +9,11 @@ on:
       - 'v*-rc.*'      # Explicit release candidates
 
 jobs:
+  sanity:
+    uses: ./.github/workflows/sanity.yml
+
   build-mac-arm64:
+    needs: sanity
     if: "(!contains(github.ref, '-win') || contains(github.ref, '-unix') || contains(github.ref, '-macm') || contains(github.ref, '-macs')) && !contains(github.ref, '-linux')"
     runs-on: macos-latest
     steps:
@@ -116,6 +120,7 @@ jobs:
         run: security delete-keychain temp.keychain 2>/dev/null || true
 
   build-mac-intel:
+    needs: sanity
     runs-on: macos-15-intel
     if: "(!contains(github.ref, '-win') || contains(github.ref, '-unix') || contains(github.ref, '-macs')) && !contains(github.ref, '-linux') && !contains(github.ref, '-macm')"
     steps:
@@ -222,6 +227,7 @@ jobs:
         run: security delete-keychain temp.keychain 2>/dev/null || true
 
   build-windows:
+    needs: sanity
     if: "!contains(github.ref, '-mac') && !contains(github.ref, '-linux') && !contains(github.ref, '-unix')"
     runs-on: [self-hosted, X64, Windows, Large]
     steps:
@@ -304,6 +310,7 @@ jobs:
           path: Distribution/${{ steps.filename.outputs.exe_name }}
 
   build-linux:
+    needs: sanity
     if: "(!contains(github.ref, '-win') || contains(github.ref, '-unix')) && !contains(github.ref, '-mac')"
     runs-on: [self-hosted, X64, Linux, Large]
     steps:
@@ -514,6 +521,7 @@ jobs:
             ${{ env.TAR_FILE }}
 
   build-linux-arm64:
+    needs: sanity
     if: "(!contains(github.ref, '-win') || contains(github.ref, '-unix')) && !contains(github.ref, '-mac')"
     runs-on: ubuntu-24.04-arm
     steps:

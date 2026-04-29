@@ -2,6 +2,7 @@ name: Sanity Check
 
 on:
   pull_request:
+  workflow_call:
 
 jobs:
   sanity:
@@ -86,6 +87,7 @@ jobs:
 
   build-mac-arm64:
     needs: sanity
+    if: github.event_name == 'pull_request'
     runs-on: macos-latest
     steps:
       - name: Checkout Code
@@ -135,6 +137,7 @@ jobs:
 
   build-windows:
     needs: sanity
+    if: github.event_name == 'pull_request'
     runs-on: windows-latest
     steps:
       - name: Checkout Code
