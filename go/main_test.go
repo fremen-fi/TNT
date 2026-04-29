@@ -113,17 +113,17 @@ func TestApplyConfig(t *testing.T) {
 
 func TestProcessConfigJSONRoundTrip(t *testing.T) {
 	in := ProcessConfig{
-		Format:      "AAC",
-		SampleRate:  "44100",
-		BitDepth:    "16",
-		Bitrate:     "256",
-		UseLoudnorm: true,
-		IsSpeech:    true,
-		WriteTags:   false,
-		DataCompLevel: 3,
+		Format:         "AAC",
+		SampleRate:     "44100",
+		BitDepth:       "16",
+		Bitrate:        "256",
+		UseLoudnorm:    true,
+		IsSpeech:       true,
+		WriteTags:      false,
+		DataCompLevel:  3,
 		DynamicsPreset: "Moderate",
-		BypassProc: true,
-		EqTarget: "Broadcast",
+		BypassProc:     true,
+		EqTarget:       "Broadcast",
 	}
 	b, err := json.Marshal(in)
 	if err != nil {

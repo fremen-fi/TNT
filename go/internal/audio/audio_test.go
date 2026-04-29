@@ -11,11 +11,11 @@ func approx(a, b, tol float64) bool {
 
 func TestGetCompressionModifiers(t *testing.T) {
 	cases := []struct {
-		name             string
-		ds               float64
-		wantAttack       float64
-		wantRelease      float64
-		wantRatio        float64
+		name        string
+		ds          float64
+		wantAttack  float64
+		wantRelease float64
+		wantRatio   float64
 	}{
 		{"very_compressed", 5.0, 4.0, 4.0, 0.15},
 		{"moderate_compressed", 12.0, 2.0, 2.0, 2.1},
