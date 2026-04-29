@@ -11,13 +11,46 @@ const state = {
   normalizationStandard: 'EBU R128 (-23 LUFS)',
 };
 
-const FORMAT_MAP = {
+// Fast-tab radios use short keys; map to backend names. The advanced
+// dropdown is populated from GetPlatformFormats() and stores backend
+// names directly, so it doesn't need this map.
+const FAST_FORMAT_MAP = {
   pcm:  'PCM',
   flac: 'FLAC',
   aac:  'AAC',
   mp3:  'MPEG-II L3',
   opus: 'Opus',
 };
+
+const FORMAT_LABELS = {
+  'PCM':              'PCM (WAV)',
+  'FLAC':             'FLAC',
+  'AAC':              'AAC',
+  'AAC (Fraunhofer)': 'AAC — Fraunhofer FDK',
+  'AAC (Apple)':      'AAC — Apple AudioToolbox',
+  'MPEG-II L3':       'MP3',
+  'Opus':             'Opus',
+};
+
+async function populateFormatDropdown() {
+  const sel = $('adv-format');
+  if (!sel) return;
+  let formats = [];
+  try {
+    formats = await window.go.main.AudioNormalizer.GetPlatformFormats();
+  } catch (_) {
+    formats = ['Opus', 'AAC', 'MPEG-II L3', 'PCM', 'FLAC'];
+  }
+  sel.innerHTML = '';
+  formats.forEach((name) => {
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = FORMAT_LABELS[name] || name;
+    sel.appendChild(opt);
+  });
+  // Default to PCM when present.
+  if (Array.from(sel.options).some((o) => o.value === 'PCM')) sel.value = 'PCM';
+}
 
 const NORM_STD_MAP = {
   ebu:    'EBU R128 (-23 LUFS)',
@@ -241,18 +274,17 @@ function buildConfig() {
       DataCompLevel:  0,
     };
     switch (preset) {
-      case 'aac': cfg.Format = 'AAC';        cfg.Bitrate = '256'; break;
-      case 'mp3': cfg.Format = 'MPEG-II L3'; cfg.Bitrate = '320'; break;
+      case 'aac': cfg.Format = FAST_FORMAT_MAP.aac; cfg.Bitrate = '256'; break;
+      case 'mp3': cfg.Format = FAST_FORMAT_MAP.mp3; cfg.Bitrate = '320'; break;
       case 'pcm':
-      default:    cfg.Format = 'PCM'; cfg.SampleRate = '48000'; cfg.BitDepth = '24'; break;
+      default:    cfg.Format = FAST_FORMAT_MAP.pcm; cfg.SampleRate = '48000'; cfg.BitDepth = '24'; break;
     }
     return cfg;
   }
 
-  const fmtRaw = $('adv-format') ? $('adv-format').value : 'pcm';
   return {
     ...proc,
-    Format:         FORMAT_MAP[fmtRaw] || fmtRaw,
+    Format:         $('adv-format') ? $('adv-format').value : 'PCM',
     SampleRate:     parseSR($('adv-sr') ? $('adv-sr').value : ''),
     BitDepth:       parseBD($('adv-bd') ? $('adv-bd').value : ''),
     Bitrate:        $('adv-br') ? $('adv-br').value : '',
@@ -308,9 +340,10 @@ function applyPrefsToUI(prefs) {
     if (r) r.checked = true;
   }
   if (prefs.Format) {
-    const fmtKey = Object.keys(FORMAT_MAP).find((k) => FORMAT_MAP[k] === prefs.Format);
     const sel = $('adv-format');
-    if (sel && fmtKey) sel.value = fmtKey;
+    if (sel && Array.from(sel.options).some((o) => o.value === prefs.Format)) {
+      sel.value = prefs.Format;
+    }
   }
   if (prefs.SampleRate) {
     const sel = $('adv-sr');
@@ -366,13 +399,12 @@ function gatherPrefs() {
   const std     = NORM_STD_MAP[stdKey] || state.normalizationStandard;
   const simple  = document.querySelector('input[name="fast-preset"]:checked')?.value || '';
   const tab     = document.querySelector('.tab-btn.active')?.dataset.tab || 'fast';
-  const fmtRaw  = $('adv-format') ? $('adv-format').value : 'pcm';
 
   return {
     AdvancedMode:          tab === 'advanced' || tab === 'processing',
     LastOutputDir:         ($('output-path') && $('output-path').title) || '',
     SimpleMode:            simple,
-    Format:                FORMAT_MAP[fmtRaw] || '',
+    Format:                $('adv-format') ? $('adv-format').value : '',
     SampleRate:            parseSR($('adv-sr') ? $('adv-sr').value : ''),
     BitDepth:              parseBD($('adv-bd') ? $('adv-bd').value : ''),
     Bitrate:               $('adv-br') ? $('adv-br').value : '',
@@ -514,7 +546,7 @@ async function init() {
   setupRuntimeEvents();
   bindRealHandlers();
 
-  // Format dropdown is hard-coded in HTML; updateAdvanced syncs row visibility.
+  await populateFormatDropdown();
   updateAdvanced();
 
   try {

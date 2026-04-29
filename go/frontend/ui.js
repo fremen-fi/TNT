@@ -56,14 +56,24 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 /* ── Advanced format show/hide ── */
+function formatKind(v) {
+  const s = String(v || '');
+  if (s.startsWith('PCM'))  return 'pcm';
+  if (s.startsWith('FLAC')) return 'flac';
+  if (s.startsWith('AAC'))  return 'aac';
+  if (s.startsWith('MPEG')) return 'mp3';
+  if (s.startsWith('Opus')) return 'opus';
+  return s.toLowerCase();
+}
+
 function updateAdvanced() {
   const fmtSel = $('adv-format');
   if (!fmtSel) return;
-  const fmt    = fmtSel.value;
-  const isPCM  = fmt === 'pcm';
-  const isFLAC = fmt === 'flac';
-  const isOpus = fmt === 'opus';
-  const hasRate = ['aac', 'mp3', 'opus'].includes(fmt);
+  const kind   = formatKind(fmtSel.value);
+  const isPCM  = kind === 'pcm';
+  const isFLAC = kind === 'flac';
+  const isOpus = kind === 'opus';
+  const hasRate = ['aac', 'mp3', 'opus'].includes(kind);
 
   const toggle = (id, show) => { const el = $(id); if (el) el.classList.toggle('hidden', !show); };
   toggle('row-sr',     isPCM);
