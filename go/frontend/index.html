@@ -250,7 +250,16 @@
             <label for="mt-album">Album</label>   <input type="text" id="mt-album"   disabled>
             <label for="mt-year">Year</label>    <input type="text" id="mt-year"    disabled>
             <label for="mt-comment">Comment</label> <input type="text" id="mt-comment" disabled>
-            <label for="mt-track">Track #</label> <input type="text" id="mt-track"   disabled>
+            <label for="mt-track">Track #</label>
+            <div class="track-pair">
+              <input type="text" id="mt-track" disabled>
+              <span class="track-sep" id="mt-track-sep">of</span>
+              <input type="text" id="mt-track-total" disabled readonly>
+            </div>
+            <label for="mt-rg-gain"   class="rg-row hidden">ReplayGain</label>
+            <input type="text" id="mt-rg-gain"   class="rg-row hidden" disabled readonly>
+            <label for="mt-rg-target" class="rg-row hidden">RG target</label>
+            <input type="text" id="mt-rg-target" class="rg-row hidden" disabled readonly>
           </div>
         </section>
 

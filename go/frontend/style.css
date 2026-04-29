@@ -397,6 +397,11 @@ button, input, select, textarea { font: inherit; }
   padding: 5px 8px; font-size: 13px; width: 100%;
 }
 .meta-grid.disabled { opacity: 0.4; pointer-events: none; }
+.meta-grid .hidden { display: none; }
+.track-pair { display: flex; align-items: center; gap: 8px; }
+.track-pair input[type="text"] { width: 64px; flex: 0 0 auto; }
+.track-pair .track-sep { font-size: 13px; color: var(--muted); }
+.meta-grid input[readonly] { opacity: 0.7; }
 
 /* ===== LOG BAR ===== */
 .log-bar {

@@ -180,8 +180,15 @@ function updateMetaTab() {
   const grid = $('meta-grid');
   if (grid) {
     grid.classList.toggle('disabled', !has);
-    grid.querySelectorAll('input').forEach((i) => { i.disabled = !has; });
+    grid.querySelectorAll('input').forEach((i) => {
+      // Read-only fields (track total, RG values) stay non-editable but
+      // still enabled when a file is selected so they show their value.
+      if (i.hasAttribute('readonly')) { i.disabled = !has; return; }
+      i.disabled = !has;
+    });
   }
+  // Clear the RG rows when no file is selected.
+  if (!has) setRGRow('', '');
   const r = $('meta-read');
   const w = $('meta-write');
   if (r) r.disabled = !has;
@@ -299,15 +306,54 @@ function buildConfig() {
 }
 
 /* ── Metadata read/write ── */
+function setRGRow(gain, target) {
+  const rows = document.querySelectorAll('.rg-row');
+  const showGain   = !!gain;
+  const showTarget = !!target;
+  rows.forEach((el) => {
+    const isGain   = el.id === 'mt-rg-gain'   || el.htmlFor === 'mt-rg-gain';
+    const isTarget = el.id === 'mt-rg-target' || el.htmlFor === 'mt-rg-target';
+    if (isGain)   el.classList.toggle('hidden', !showGain);
+    if (isTarget) el.classList.toggle('hidden', !showTarget);
+  });
+  const g = $('mt-rg-gain');   if (g) g.value = gain   || '';
+  const t = $('mt-rg-target'); if (t) t.value = target || '';
+}
+
+function pickFirst(tags, keys) {
+  for (const k of keys) {
+    const v = tags && tags[k];
+    if (v && String(v).trim() !== '') return String(v);
+  }
+  return '';
+}
+
 async function readMetadataIntoForm() {
   if (state.selectedIdx == null) return;
   const path = state.files[state.selectedIdx];
   try {
     const tags = await window.go.main.AudioNormalizer.ReadMetadata(path);
     Object.entries(META_MAP).forEach(([id, key]) => {
+      if (id === 'mt-track') return; // handled below
       const el = $(id);
       if (el) el.value = (tags && tags[key]) || '';
     });
+
+    // Track may be "5" or "5/12"; show total separately, read-only.
+    const trackRaw = (tags && tags.track) || '';
+    const [cur, total] = String(trackRaw).split('/').map((s) => s.trim());
+    if ($('mt-track'))       $('mt-track').value       = cur || '';
+    if ($('mt-track-total')) $('mt-track-total').value = total || '';
+    const sep = $('mt-track-sep');
+    if (sep) sep.style.visibility = total ? 'visible' : 'hidden';
+    const tot = $('mt-track-total');
+    if (tot) tot.style.visibility = total ? 'visible' : 'hidden';
+
+    // ReplayGain — read-only display, hidden if absent.
+    const gain   = pickFirst(tags, ['replaygain_track_gain', 'replaygain_album_gain']);
+    const target = pickFirst(tags, ['replaygain_reference_loudness']);
+    setRGRow(gain, target);
+
     addLog('Tags read from ' + basename(path), 'ok');
   } catch (err) {
     addLog('Read tags failed: ' + err, 'err');
@@ -319,9 +365,14 @@ async function writeMetadataFromForm() {
   const path = state.files[state.selectedIdx];
   const tags = {};
   Object.entries(META_MAP).forEach(([id, key]) => {
+    if (id === 'mt-track') return;
     const el = $(id);
     if (el) tags[key] = el.value;
   });
+  // Recombine track as "X/N" if total is present.
+  const cur   = $('mt-track')       ? $('mt-track').value.trim()       : '';
+  const total = $('mt-track-total') ? $('mt-track-total').value.trim() : '';
+  tags.track = total ? `${cur}/${total}` : cur;
   try {
     await window.go.main.AudioNormalizer.WriteMetadata(path, tags);
     addLog('Tags written to ' + basename(path), 'ok');
