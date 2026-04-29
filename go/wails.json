@@ -1,0 +1,22 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "TNT",
+  "outputfilename": "TNT",
+  "frontend:dir": "./frontend",
+  "frontend:install": "",
+  "frontend:build": "",
+  "wailsjsdir": "./frontend",
+  "author": {
+    "name": "Collins Group",
+    "email": "appsupport@collinsgroup.fi"
+  },
+  "info": {
+    "productName": "TNT",
+    "copyright": "© Collins Group oy",
+    "comments": "Transcode, Normalize, Tag",
+    "companyName": "Collins Group oy"
+  },
+  "mac": {
+    "bundleId": "com.collinsgroup.tnt"
+  }
+}
