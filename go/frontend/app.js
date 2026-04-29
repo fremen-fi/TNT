@@ -1,625 +1,573 @@
-// TNT — frontend wiring. Talks to Go via window.go.main.AudioNormalizer.* and
-// window.runtime.EventsOn / window.runtime.EventsEmit.
+'use strict';
 
-const $ = (sel) => document.querySelector(sel);
-const $$ = (sel) => Array.from(document.querySelectorAll(sel));
-
-// ---------- DOM refs ----------
-const els = {
-    logo: () => $('#app-logo'),
-    fileList: () => $('#file-list'),
-    progress: () => $('#progress-bar'),
-    statusLog: () => $('#status-log'),
-    outputPath: () => $('#output-path'),
-    watcherWarn: () => $('#watcher-warn'),
-    btnProcess: () => $('#btn-process'),
-    btnReadMeta: () => $('#btn-read-metadata'),
-    btnWriteMeta: () => $('#btn-write-metadata'),
-    metaStatus: () => $('#metadata-status'),
-    metaForm: () => $('#metadata-form'),
-    formatSelect: () => $('#format-select'),
-};
+// TNT — Wails wiring. Talks to Go via window.go.main.AudioNormalizer.* and
+// window.runtime.EventsOn. Pure UI helpers live in ui.js.
 
 const state = {
-    files: [],
-    metadataFields: [],
-    normalizationStandard: 'EBU R128 (-23 LUFS)',
-    watching: false,
+  files: [],
+  selectedIdx: null,
+  processing: false,
+  watching: false,
+  normalizationStandard: 'EBU R128 (-23 LUFS)',
 };
 
-// ---------- helpers ----------
-function appendLog(msg) {
-    const log = els.statusLog();
-    if (!log) return;
-    log.value += (log.value ? '\n' : '') + msg;
-    log.scrollTop = log.scrollHeight;
-}
+const FORMAT_MAP = {
+  pcm:  'PCM',
+  flac: 'FLAC',
+  aac:  'AAC',
+  mp3:  'MPEG-II L3',
+  opus: 'Opus',
+};
 
-function setProgress(fraction) {
-    const p = els.progress();
-    p.hidden = false;
-    p.value = Math.max(0, Math.min(1, fraction));
-}
+const NORM_STD_MAP = {
+  ebu:    'EBU R128 (-23 LUFS)',
+  atsc:   'USA ATSC A/85 (-24 LUFS)',
+  custom: 'Custom',
+};
+const NORM_STD_REVERSE = {
+  'EBU R128 (-23 LUFS)':     'ebu',
+  'USA ATSC A/85 (-24 LUFS)': 'atsc',
+  'Custom':                   'custom',
+};
 
-function onProcessingDone() {
-    const p = els.progress();
-    p.hidden = true;
-    p.value = 0;
-}
+const META_MAP = {
+  'mt-title':   'title',
+  'mt-artist':  'artist',
+  'mt-album':   'album',
+  'mt-year':    'date',
+  'mt-comment': 'comment',
+  'mt-track':   'track',
+};
 
+/* ── Helpers ── */
 function basename(path) {
-    if (!path) return '';
-    const m = path.split(/[\\/]/);
-    return m[m.length - 1];
+  if (!path) return '';
+  const parts = String(path).split(/[\\/]/);
+  return parts[parts.length - 1];
+}
+function ext(path) {
+  const m = /\.([^./\\]+)$/.exec(String(path));
+  return m ? m[1].toUpperCase() : '';
+}
+function parseSR(s) { return (s || '').replace(/\D/g, ''); }
+function parseBD(s) {
+  const t = (s || '').toLowerCase();
+  if (t.startsWith('16')) return '16';
+  if (t.startsWith('24')) return '24';
+  if (t.startsWith('32')) return '32 (float)';
+  if (t.startsWith('64')) return '64 (float)';
+  return '24';
 }
 
-function renderFileList(files) {
-    state.files = Array.isArray(files) ? files : [];
-    const ul = els.fileList();
-    ul.innerHTML = '';
-    state.files.forEach((path, idx) => {
-        const li = document.createElement('li');
+/* ── File list rendering ── */
+function renderFileList(paths) {
+  state.files = Array.isArray(paths) ? paths : [];
+  const list = $('file-list');
+  if (!list) return;
+  list.innerHTML = '';
 
-        const name = document.createElement('span');
-        name.className = 'file-name';
-        name.textContent = basename(path);
-        name.title = path;
+  if (!state.files.length) {
+    state.selectedIdx = null;
+    const empty = document.createElement('div');
+    empty.className = 'file-empty';
+    empty.textContent = 'Drop audio files here\nor use the buttons above';
+    list.appendChild(empty);
+  } else {
+    if (state.selectedIdx == null || state.selectedIdx >= state.files.length) {
+      state.selectedIdx = 0;
+    }
+    state.files.forEach((path, i) => {
+      const item = document.createElement('div');
+      item.className = 'file-item' + (i === state.selectedIdx ? ' selected' : '');
 
-        const remove = document.createElement('button');
-        remove.className = 'remove';
-        remove.textContent = '×';
-        remove.title = 'Remove';
-        remove.addEventListener('click', async () => {
-            const updated = await window.go.main.AudioNormalizer.RemoveFile(idx);
-            renderFileList(updated);
-            updateProcessButtonState();
-            updateMetadataButtons();
-        });
+      const badge = document.createElement('div');
+      badge.className = 'file-badge';
+      const badgeText = document.createElement('span');
+      badgeText.textContent = ext(path);
+      badge.appendChild(badgeText);
 
-        li.appendChild(name);
-        li.appendChild(remove);
-        ul.appendChild(li);
+      const info = document.createElement('div');
+      info.className = 'file-info';
+      const nameEl = document.createElement('div');
+      nameEl.className = 'file-name';
+      nameEl.textContent = basename(path);
+      const metaEl = document.createElement('div');
+      metaEl.className = 'file-meta';
+      metaEl.textContent = path;
+      metaEl.title = path;
+      info.appendChild(nameEl);
+      info.appendChild(metaEl);
+
+      const remove = document.createElement('button');
+      remove.className = 'file-remove';
+      remove.title = 'Remove';
+      remove.innerHTML = '&times;';
+
+      item.appendChild(badge);
+      item.appendChild(info);
+      item.appendChild(remove);
+
+      item.addEventListener('click', () => {
+        state.selectedIdx = i;
+        renderFileList(state.files);
+      });
+      remove.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        try {
+          const updated = await window.go.main.AudioNormalizer.RemoveFile(i);
+          if (state.selectedIdx === i) state.selectedIdx = null;
+          else if (state.selectedIdx != null && state.selectedIdx > i) state.selectedIdx -= 1;
+          renderFileList(updated);
+        } catch (err) {
+          addLog('Remove failed: ' + err, 'err');
+        }
+      });
+
+      list.appendChild(item);
     });
-    updateProcessButtonState();
-    updateMetadataButtons();
+  }
+
+  const has = state.files.length > 0;
+  const proc = $('btn-process');
+  const clr  = $('btn-clear');
+  if (proc) proc.disabled = !has || state.processing;
+  if (clr)  clr.disabled  = !has;
+  updateMetaTab();
 }
 
-function updateProcessButtonState() {
-    els.btnProcess().disabled = state.files.length === 0;
+function updateMetaTab() {
+  const path = (state.selectedIdx != null) ? state.files[state.selectedIdx] : null;
+  const hint = $('meta-hint');
+  if (hint) {
+    hint.textContent = path
+      ? `Editing: ${basename(path)}`
+      : 'Select a single file in the queue to edit its metadata.';
+  }
+  const has = !!path;
+  const grid = $('meta-grid');
+  if (grid) {
+    grid.classList.toggle('disabled', !has);
+    grid.querySelectorAll('input').forEach((i) => { i.disabled = !has; });
+  }
+  const r = $('meta-read');
+  const w = $('meta-write');
+  if (r) r.disabled = !has;
+  if (w) w.disabled = !has;
 }
 
-function updateMetadataButtons() {
-    const single = state.files.length === 1;
-    els.btnReadMeta().disabled = !single;
-    els.btnWriteMeta().disabled = !single;
-    if (state.files.length === 0) {
-        els.metaStatus().textContent = 'Select a single file to edit metadata';
-    } else if (state.files.length === 1) {
-        els.metaStatus().textContent = basename(state.files[0]);
-    } else {
-        els.metaStatus().textContent = `${state.files.length} files queued — select exactly one to edit metadata`;
+/* ── Inline-handler entry points ── */
+// Both "+ Files" and "+ Folder" inline-call this; dispatch by button text.
+async function addMockFile() {
+  const t = (window.event && window.event.currentTarget && window.event.currentTarget.textContent || '').toLowerCase();
+  try {
+    const files = t.includes('folder')
+      ? await window.go.main.AudioNormalizer.SelectFolder()
+      : await window.go.main.AudioNormalizer.SelectFiles();
+    renderFileList(files || []);
+  } catch (err) {
+    addLog('Select failed: ' + err, 'err');
+  }
+}
+
+async function clearFiles() {
+  try {
+    await window.go.main.AudioNormalizer.ClearFiles();
+    state.selectedIdx = null;
+    renderFileList([]);
+  } catch (err) {
+    addLog('Clear failed: ' + err, 'err');
+  }
+}
+
+async function setOutput() {
+  try {
+    const dir = await window.go.main.AudioNormalizer.SetOutputFolder();
+    if (dir) {
+      const out = $('output-path');
+      if (out) { out.textContent = dir; out.title = dir; }
+      addLog('Output folder set', 'info');
     }
+  } catch (err) {
+    addLog('Output folder failed: ' + err, 'err');
+  }
 }
 
-// ---------- format show/hide ----------
-function onFormatChange() {
-    const f = els.formatSelect().value || '';
-    const isPCM = f === 'PCM';
-    const isFLAC = f === 'FLAC';
-    const isOpus = f.startsWith('Opus');
-
-    setRowVisible('row-sample-rate', isPCM);
-    setRowVisible('row-bit-depth', isPCM);
-    setRowVisible('row-bitrate', !isPCM && !isFLAC);
-    setRowVisible('row-comp-level', isFLAC || isOpus);
-    setRowVisible('row-is-speech', isOpus);
-    setRowVisible('row-no-transcode', !isPCM && !isFLAC);
+async function handleProcess() {
+  if (!state.files.length || state.processing) return;
+  state.processing = true;
+  $('btn-process').disabled = true;
+  setProgress(0);
+  try {
+    await window.go.main.AudioNormalizer.Process(buildConfig());
+  } catch (err) {
+    addLog('Process failed: ' + err, 'err');
+    state.processing = false;
+    clearProgress();
+    $('btn-process').disabled = state.files.length === 0;
+  }
 }
 
-function setRowVisible(id, visible) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.classList.toggle('hidden', !visible);
+async function previewSize() {
+  try {
+    await window.go.main.AudioNormalizer.PreviewSize(buildConfig());
+  } catch (err) {
+    addLog('Preview failed: ' + err, 'err');
+  }
 }
 
-function setLufsTpVisible(visible) {
-    setRowVisible('row-lufs', visible);
-    setRowVisible('row-tp', visible);
-}
-
-// ---------- normalization label ----------
-function refreshNormalizationLabel() {
-    const std = state.normalizationStandard;
-    const fastLabel = $('#fast-loudnorm-label');
-    const advLabel = $('#adv-loudnorm-label');
-    const writeTagsLabel = $('#write-tags-label');
-    let label = 'Normalize (EBU R128: -23 LUFS)';
-    let writeTagsText = 'Write RG tags (EBU R128: -23 LUFS)';
-    if (std === 'USA ATSC A/85 (-24 LUFS)') {
-        label = 'Normalize (ATSC A/85: -24 LUFS)';
-        writeTagsText = 'Write RG tags (ATSC A/85: -24 LUFS)';
-    } else if (std === 'Custom') {
-        const lufs = $('#lufs-input').value || '-23';
-        label = `Normalize (Custom: ${lufs} LUFS)`;
-        writeTagsText = `Write RG tags (Custom: ${lufs} LUFS)`;
-    }
-    if (fastLabel) fastLabel.textContent = label;
-    if (advLabel) advLabel.textContent = label;
-    if (writeTagsLabel) writeTagsLabel.textContent = writeTagsText;
-}
-
-// ---------- ProcessConfig builder ----------
-function getSimplePresetConfig() {
-    const sel = document.querySelector('input[name="simple-preset"]:checked');
-    const value = sel ? sel.value : 'Production (PCM 48kHz/24bit)';
-    switch (value) {
-        case 'Small file (AAC 256kbps)':
-            return { Format: 'AAC', Bitrate: '256' };
-        case 'Most compatible (MP3 320kbps)':
-            return { Format: 'MPEG-II L3', Bitrate: '320' };
-        case 'Production (PCM 48kHz/24bit)':
-        default:
-            return { Format: 'PCM', SampleRate: '48000', BitDepth: '24' };
-    }
-}
-
+/* ── ProcessConfig builder from current DOM ── */
 function buildConfig() {
-    // Default empty config matching ProcessConfig fields the Go side expects.
+  const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab || 'fast';
+
+  const proc = {
+    DynamicsPreset: $('proc-dyn') ? $('proc-dyn').value : 'Off',
+    EqTarget:       $('proc-eq')  ? $('proc-eq').value  : 'Off',
+    DynNorm:        $('proc-dn')  ? $('proc-dn').checked : false,
+    BypassProc:     $('proc-bypass') ? $('proc-bypass').checked : false,
+    PhaseCheck:     $('prefs-phase') ? $('prefs-phase').checked : false,
+  };
+
+  if (activeTab === 'fast') {
+    const preset = document.querySelector('input[name="fast-preset"]:checked')?.value || 'pcm';
     const cfg = {
-        Format: '',
-        SampleRate: '',
-        BitDepth: '',
-        Bitrate: '',
-        UseLoudnorm: false,
-        CustomLoudnorm: $('#custom-loudnorm').checked,
-        IsSpeech: $('#is-speech').checked,
-        WriteTags: $('#write-tags').checked,
-        NoTranscode: $('#no-transcode').checked,
-        OriginIsAAC: false,
-        DataCompLevel: parseInt($('#comp-level-input').value || '0', 10),
-        DynamicsPreset: $('#dynamics-select').value,
-        BypassProc: $('#bypass-proc').checked,
-        EqTarget: $('#eq-select').value,
-        DynNorm: $('#dyn-norm').checked,
-        PhaseCheck: false,
+      ...proc,
+      Format: '', SampleRate: '', BitDepth: '', Bitrate: '',
+      UseLoudnorm:    $('fast-norm') ? $('fast-norm').checked : false,
+      CustomLoudnorm: false,
+      IsSpeech:       false,
+      WriteTags:      false,
+      NoTranscode:    false,
+      OriginIsAAC:    false,
+      DataCompLevel:  0,
     };
-
-    // Are we on the Fast tab?
-    const activeTab = document.querySelector('.tab.active')?.dataset.tab;
-    if (activeTab === 'fast') {
-        Object.assign(cfg, getSimplePresetConfig());
-        cfg.UseLoudnorm = $('#fast-loudnorm').checked;
-    } else {
-        cfg.Format = els.formatSelect().value;
-        cfg.SampleRate = $('#sample-rate-select').value;
-        cfg.BitDepth = $('#bit-depth-select').value;
-        cfg.Bitrate = $('#bitrate-input').value || '0';
-        cfg.UseLoudnorm = $('#adv-loudnorm').checked;
+    switch (preset) {
+      case 'aac': cfg.Format = 'AAC';        cfg.Bitrate = '256'; break;
+      case 'mp3': cfg.Format = 'MPEG-II L3'; cfg.Bitrate = '320'; break;
+      case 'pcm':
+      default:    cfg.Format = 'PCM'; cfg.SampleRate = '48000'; cfg.BitDepth = '24'; break;
     }
-
     return cfg;
+  }
+
+  const fmtRaw = $('adv-format') ? $('adv-format').value : 'pcm';
+  return {
+    ...proc,
+    Format:         FORMAT_MAP[fmtRaw] || fmtRaw,
+    SampleRate:     parseSR($('adv-sr') ? $('adv-sr').value : ''),
+    BitDepth:       parseBD($('adv-bd') ? $('adv-bd').value : ''),
+    Bitrate:        $('adv-br') ? $('adv-br').value : '',
+    UseLoudnorm:    $('adv-norm') ? $('adv-norm').checked : false,
+    CustomLoudnorm: $('adv-custom-loud') ? $('adv-custom-loud').checked : false,
+    IsSpeech:       $('adv-speech') ? $('adv-speech').checked : false,
+    WriteTags:      $('adv-rg') ? $('adv-rg').checked : false,
+    NoTranscode:    $('adv-no-transcode') ? $('adv-no-transcode').checked : false,
+    OriginIsAAC:    false,
+    DataCompLevel:  parseInt($('adv-cl') ? $('adv-cl').value : '0', 10),
+  };
 }
 
-// ---------- tab switching ----------
-function setupTabs() {
-    $$('.tab').forEach((btn) => {
-        btn.addEventListener('click', () => {
-            $$('.tab').forEach((b) => b.classList.remove('active'));
-            btn.classList.add('active');
-            const target = btn.dataset.tab;
-            $$('.tab-panel').forEach((p) => p.classList.remove('active'));
-            const panel = document.getElementById(`tab-${target}`);
-            if (panel) panel.classList.add('active');
-        });
+/* ── Metadata read/write ── */
+async function readMetadataIntoForm() {
+  if (state.selectedIdx == null) return;
+  const path = state.files[state.selectedIdx];
+  try {
+    const tags = await window.go.main.AudioNormalizer.ReadMetadata(path);
+    Object.entries(META_MAP).forEach(([id, key]) => {
+      const el = $(id);
+      if (el) el.value = (tags && tags[key]) || '';
     });
-
-    $$('.prefs-tab').forEach((btn) => {
-        btn.addEventListener('click', () => {
-            const group = btn.dataset.prefsTab ? '[data-prefs-tab]' : '[data-help-tab]';
-            const dataKey = btn.dataset.prefsTab ? 'prefsTab' : 'helpTab';
-            const panelPrefix = btn.dataset.prefsTab ? 'prefs-' : 'help-';
-            const siblings = btn.parentElement.querySelectorAll(group);
-            siblings.forEach((b) => b.classList.remove('active'));
-            btn.classList.add('active');
-            const dialog = btn.closest('dialog');
-            dialog.querySelectorAll('.prefs-panel').forEach((p) => p.classList.remove('active'));
-            const target = document.getElementById(`${panelPrefix}${btn.dataset[dataKey]}`);
-            if (target) target.classList.add('active');
-        });
-    });
+    addLog('Tags read from ' + basename(path), 'ok');
+  } catch (err) {
+    addLog('Read tags failed: ' + err, 'err');
+  }
 }
 
-// ---------- metadata form ----------
-function buildMetadataForm(fields) {
-    const form = els.metaForm();
-    form.innerHTML = '';
-    fields.forEach((field) => {
-        const label = document.createElement('label');
-        const display = field.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
-        label.htmlFor = `meta-${field}`;
-        label.textContent = display;
-
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.id = `meta-${field}`;
-        input.name = field;
-        input.placeholder = field;
-
-        form.appendChild(label);
-        form.appendChild(input);
-    });
+async function writeMetadataFromForm() {
+  if (state.selectedIdx == null) return;
+  const path = state.files[state.selectedIdx];
+  const tags = {};
+  Object.entries(META_MAP).forEach(([id, key]) => {
+    const el = $(id);
+    if (el) tags[key] = el.value;
+  });
+  try {
+    await window.go.main.AudioNormalizer.WriteMetadata(path, tags);
+    addLog('Tags written to ' + basename(path), 'ok');
+  } catch (err) {
+    addLog('Write tags failed: ' + err, 'err');
+  }
 }
 
-function readMetadataIntoForm(tags) {
-    state.metadataFields.forEach((field) => {
-        const input = document.getElementById(`meta-${field}`);
-        if (input) input.value = (tags && tags[field]) || '';
-    });
-}
-
-function metadataFromForm() {
-    const tags = {};
-    state.metadataFields.forEach((field) => {
-        const input = document.getElementById(`meta-${field}`);
-        tags[field] = input ? input.value : '';
-    });
-    return tags;
-}
-
-// ---------- preferences sync ----------
+/* ── Preferences sync ── */
 function applyPrefsToUI(prefs) {
-    if (!prefs) return;
-    state.normalizationStandard = prefs.NormalizationStandard || 'EBU R128 (-23 LUFS)';
+  if (!prefs) return;
+  state.normalizationStandard = prefs.NormalizationStandard || 'EBU R128 (-23 LUFS)';
 
-    if (prefs.SimpleMode) {
-        const r = document.querySelector(`input[name="simple-preset"][value="${cssEscape(prefs.SimpleMode)}"]`);
-        if (r) r.checked = true;
+  if (prefs.SimpleMode) {
+    const r = document.querySelector(`input[name="fast-preset"][value="${prefs.SimpleMode}"]`);
+    if (r) r.checked = true;
+  }
+  if (prefs.Format) {
+    const fmtKey = Object.keys(FORMAT_MAP).find((k) => FORMAT_MAP[k] === prefs.Format);
+    const sel = $('adv-format');
+    if (sel && fmtKey) sel.value = fmtKey;
+  }
+  if (prefs.SampleRate) {
+    const sel = $('adv-sr');
+    if (sel) {
+      const want = parseSR(prefs.SampleRate);
+      Array.from(sel.options).forEach((o) => { if (parseSR(o.textContent) === want) sel.value = o.value || o.textContent; });
     }
-    if (prefs.Format) els.formatSelect().value = prefs.Format;
-    if (prefs.SampleRate) $('#sample-rate-select').value = prefs.SampleRate;
-    if (prefs.BitDepth) $('#bit-depth-select').value = prefs.BitDepth;
-    if (prefs.Bitrate) $('#bitrate-input').value = prefs.Bitrate;
-    if (prefs.NormalizeTarget) $('#lufs-input').value = prefs.NormalizeTarget;
-    if (prefs.NormalizeTargetTp) $('#tp-input').value = prefs.NormalizeTargetTp;
-    if (typeof prefs.LoudnormEnabled === 'boolean') {
-        $('#fast-loudnorm').checked = prefs.LoudnormEnabled;
-        $('#adv-loudnorm').checked = prefs.LoudnormEnabled;
+  }
+  if (prefs.BitDepth) {
+    const sel = $('adv-bd');
+    if (sel) {
+      Array.from(sel.options).forEach((o) => { if (parseBD(o.textContent) === parseBD(prefs.BitDepth)) sel.value = o.value || o.textContent; });
     }
-    if (typeof prefs.CustomLoudnorm === 'boolean') {
-        $('#custom-loudnorm').checked = prefs.CustomLoudnorm;
-        setLufsTpVisible(prefs.CustomLoudnorm);
-    }
-    if (typeof prefs.DataCompLevel === 'number') {
-        $('#comp-level-input').value = prefs.DataCompLevel;
-        $('#comp-level-output').value = prefs.DataCompLevel;
-    }
-    if (prefs.EqPreset) $('#eq-select').value = prefs.EqPreset;
-    if (prefs.DynPreset) $('#dynamics-select').value = prefs.DynPreset;
-    if (typeof prefs.DynNorm === 'boolean') $('#dyn-norm').checked = prefs.DynNorm;
-    if (typeof prefs.PhaseCheck === 'boolean') $('#prefs-phase-check').checked = prefs.PhaseCheck;
-    if (prefs.LastOutputDir) {
-        els.outputPath().textContent = prefs.LastOutputDir;
-        els.outputPath().title = prefs.LastOutputDir;
-    }
+  }
+  if (prefs.Bitrate)         { const el = $('adv-br'); if (el) el.value = prefs.Bitrate; }
+  if (prefs.NormalizeTarget) { const el = $('adv-lufs'); if (el) el.value = prefs.NormalizeTarget; }
+  if (prefs.NormalizeTargetTp) { const el = $('adv-tp'); if (el) el.value = prefs.NormalizeTargetTp; }
+  if (typeof prefs.LoudnormEnabled === 'boolean') {
+    if ($('fast-norm')) $('fast-norm').checked = prefs.LoudnormEnabled;
+    if ($('adv-norm'))  $('adv-norm').checked  = prefs.LoudnormEnabled;
+  }
+  if (typeof prefs.CustomLoudnorm === 'boolean') {
+    if ($('adv-custom-loud')) $('adv-custom-loud').checked = prefs.CustomLoudnorm;
+  }
+  if (typeof prefs.DataCompLevel === 'number') {
+    if ($('adv-cl'))     $('adv-cl').value     = prefs.DataCompLevel;
+    if ($('adv-cl-out')) $('adv-cl-out').value = prefs.DataCompLevel;
+  }
+  if (prefs.EqPreset)  { const el = $('proc-eq');  if (el) el.value = prefs.EqPreset; }
+  if (prefs.DynPreset) { const el = $('proc-dyn'); if (el) el.value = prefs.DynPreset; }
+  if (typeof prefs.DynNorm    === 'boolean' && $('proc-dn'))     $('proc-dn').checked     = prefs.DynNorm;
+  if (typeof prefs.PhaseCheck === 'boolean' && $('prefs-phase')) $('prefs-phase').checked = prefs.PhaseCheck;
+  if (prefs.LastOutputDir) {
+    const out = $('output-path');
+    if (out) { out.textContent = prefs.LastOutputDir; out.title = prefs.LastOutputDir; }
+  }
 
-    // Reflect in prefs dialog
-    const stdRadio = document.querySelector(`input[name="norm-standard"][value="${cssEscape(state.normalizationStandard)}"]`);
-    if (stdRadio) stdRadio.checked = true;
-    $('#prefs-lufs').value = prefs.NormalizeTarget || '-23';
-    $('#prefs-tp').value = prefs.NormalizeTargetTp || '-1';
+  const stdKey = NORM_STD_REVERSE[state.normalizationStandard];
+  if (stdKey) {
+    const r = document.querySelector(`input[name="norm-std"][value="${stdKey}"]`);
+    if (r) r.checked = true;
+  }
+  if ($('prefs-lufs')) $('prefs-lufs').value = prefs.NormalizeTarget   || '-23';
+  if ($('prefs-tp'))   $('prefs-tp').value   = prefs.NormalizeTargetTp || '-1';
 
-    refreshNormalizationLabel();
-    onFormatChange();
+  if (prefs.SelectedTab) switchTab(prefs.SelectedTab);
+  updateAdvanced();
+  updateBypass($('proc-bypass') ? $('proc-bypass').checked : false);
 }
 
 function gatherPrefs() {
-    const std = document.querySelector('input[name="norm-standard"]:checked')?.value || state.normalizationStandard;
-    const simple = document.querySelector('input[name="simple-preset"]:checked')?.value || '';
-    return {
-        AdvancedMode: false,
-        LastOutputDir: els.outputPath().title || '',
-        SimpleMode: simple,
-        Format: els.formatSelect().value || '',
-        SampleRate: $('#sample-rate-select').value,
-        BitDepth: $('#bit-depth-select').value,
-        Bitrate: $('#bitrate-input').value || '',
-        LoudnormEnabled: $('#adv-loudnorm').checked,
-        CustomLoudnorm: $('#custom-loudnorm').checked,
-        NormalizeTarget: std === 'Custom' ? $('#prefs-lufs').value : ($('#lufs-input').value || '-23'),
-        NormalizeTargetTp: std === 'Custom' ? $('#prefs-tp').value : ($('#tp-input').value || '-1'),
-        NormalizationStandard: std,
-        DataCompLevel: parseInt($('#comp-level-input').value || '0', 10),
-        EqPreset: $('#eq-select').value,
-        DynPreset: $('#dynamics-select').value,
-        DynNorm: $('#dyn-norm').checked,
-        SelectedTab: document.querySelector('.tab.active')?.dataset.tab || 'fast',
-        PhaseCheck: $('#prefs-phase-check').checked,
-    };
+  const stdKey  = document.querySelector('input[name="norm-std"]:checked')?.value || 'ebu';
+  const std     = NORM_STD_MAP[stdKey] || state.normalizationStandard;
+  const simple  = document.querySelector('input[name="fast-preset"]:checked')?.value || '';
+  const tab     = document.querySelector('.tab-btn.active')?.dataset.tab || 'fast';
+  const fmtRaw  = $('adv-format') ? $('adv-format').value : 'pcm';
+
+  return {
+    AdvancedMode:          tab === 'advanced' || tab === 'processing',
+    LastOutputDir:         ($('output-path') && $('output-path').title) || '',
+    SimpleMode:            simple,
+    Format:                FORMAT_MAP[fmtRaw] || '',
+    SampleRate:            parseSR($('adv-sr') ? $('adv-sr').value : ''),
+    BitDepth:              parseBD($('adv-bd') ? $('adv-bd').value : ''),
+    Bitrate:               $('adv-br') ? $('adv-br').value : '',
+    LoudnormEnabled:       $('adv-norm') ? $('adv-norm').checked : false,
+    CustomLoudnorm:        $('adv-custom-loud') ? $('adv-custom-loud').checked : false,
+    NormalizeTarget:       stdKey === 'custom' ? ($('prefs-lufs') ? $('prefs-lufs').value : '-23')
+                                                : ($('adv-lufs')   ? $('adv-lufs').value   : '-23'),
+    NormalizeTargetTp:     stdKey === 'custom' ? ($('prefs-tp')   ? $('prefs-tp').value   : '-1')
+                                                : ($('adv-tp')     ? $('adv-tp').value     : '-1'),
+    NormalizationStandard: std,
+    DataCompLevel:         parseInt($('adv-cl') ? $('adv-cl').value : '0', 10),
+    EqPreset:              $('proc-eq')  ? $('proc-eq').value  : 'Off',
+    DynPreset:             $('proc-dyn') ? $('proc-dyn').value : 'Off',
+    DynNorm:               $('proc-dn')  ? $('proc-dn').checked : false,
+    SelectedTab:           tab,
+    PhaseCheck:            $('prefs-phase') ? $('prefs-phase').checked : false,
+  };
 }
 
-function cssEscape(s) {
-    if (window.CSS && CSS.escape) return CSS.escape(s);
-    return String(s).replace(/["\\]/g, '\\$&');
-}
+/* ── Override inline mock handlers and bind extra listeners ── */
+function bindRealHandlers() {
+  // Metadata buttons — replace inline addLog stubs
+  const r = $('meta-read');  if (r) { r.onclick = null; r.addEventListener('click', readMetadataIntoForm); }
+  const w = $('meta-write'); if (w) { w.onclick = null; w.addEventListener('click', writeMetadataFromForm); }
 
-// ---------- logo theme ----------
-function setupLogo() {
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const update = () => {
-        const dark = mq.matches;
-        els.logo().src = dark ? './assets/logo-dark.png' : './assets/logo-light.png';
-    };
-    if (mq.addEventListener) mq.addEventListener('change', update);
-    else mq.addListener(update);
-    update();
-}
+  // Preferences pane buttons
+  const prefsSavePane  = $('prefs-save');
+  if (prefsSavePane) {
+    const [saveBtn, resetBtn] = prefsSavePane.querySelectorAll('button');
+    if (saveBtn)  { saveBtn.onclick  = null; saveBtn.addEventListener('click', async () => {
+      try { await window.go.main.AudioNormalizer.SavePreferences(gatherPrefs()); addLog('Configuration saved', 'ok'); }
+      catch (err) { addLog('Save failed: ' + err, 'err'); }
+    }); }
+    if (resetBtn) { resetBtn.onclick = null; resetBtn.addEventListener('click', async () => {
+      try { await window.go.main.AudioNormalizer.ResetPreferences();
+            const prefs = await window.go.main.AudioNormalizer.LoadPreferences();
+            applyPrefsToUI(prefs);
+            addLog('Settings reset to defaults', 'info'); }
+      catch (err) { addLog('Reset failed: ' + err, 'err'); }
+    }); }
+  }
 
-// ---------- wire buttons ----------
-function setupButtons() {
-    $('#btn-select-files').addEventListener('click', async () => {
-        const files = await window.go.main.AudioNormalizer.SelectFiles();
-        renderFileList(files);
-    });
+  const versionPane = $('prefs-version');
+  if (versionPane) {
+    const checkBtn = versionPane.querySelector('button');
+    if (checkBtn) { checkBtn.onclick = null; checkBtn.addEventListener('click', async () => {
+      try {
+        const v = await window.go.main.AudioNormalizer.CheckForUpdates();
+        if (v && v.version) addLog('Update available: ' + v.version, 'info');
+        else                addLog('You are up to date', 'ok');
+      } catch (err) { addLog('Update check failed: ' + err, 'err'); }
+    }); }
+  }
 
-    $('#btn-select-folder').addEventListener('click', async () => {
-        const files = await window.go.main.AudioNormalizer.SelectFolder();
-        renderFileList(files);
-    });
+  const reportPane = $('prefs-report');
+  if (reportPane) {
+    const sendBtn = reportPane.querySelector('button');
+    if (sendBtn) { sendBtn.onclick = null; sendBtn.addEventListener('click', async () => {
+      try { await window.go.main.AudioNormalizer.SendLogReport(); addLog('Error report sent', 'info'); }
+      catch (err) { addLog('Send report failed: ' + err, 'err'); }
+    }); }
+  }
 
-    $('#btn-output-folder').addEventListener('click', async () => {
-        const dir = await window.go.main.AudioNormalizer.SetOutputFolder();
-        if (dir) {
-            els.outputPath().textContent = dir;
-            els.outputPath().title = dir;
-        }
-    });
-
-    $('#btn-clear').addEventListener('click', async () => {
-        await window.go.main.AudioNormalizer.ClearFiles();
-        renderFileList([]);
-    });
-
-    $('#btn-process').addEventListener('click', async () => {
-        const cfg = buildConfig();
-        await window.go.main.AudioNormalizer.Process(cfg);
-    });
-
-    $('#btn-preview-size').addEventListener('click', async () => {
-        const cfg = buildConfig();
-        await window.go.main.AudioNormalizer.PreviewSize(cfg);
-    });
-
-    $('#btn-help').addEventListener('click', () => $('#help-dialog').showModal());
-    $('#btn-menu').addEventListener('click', () => $('#prefs-dialog').showModal());
-
-    $('#btn-read-metadata').addEventListener('click', async () => {
-        if (state.files.length !== 1) return;
-        try {
-            const tags = await window.go.main.AudioNormalizer.ReadMetadata(state.files[0]);
-            readMetadataIntoForm(tags || {});
-            els.metaStatus().textContent = `Read tags from ${basename(state.files[0])}`;
-        } catch (err) {
-            els.metaStatus().textContent = `Failed to read tags: ${err}`;
-        }
-    });
-
-    $('#btn-write-metadata').addEventListener('click', async () => {
-        if (state.files.length !== 1) return;
-        try {
-            const tags = metadataFromForm();
-            await window.go.main.AudioNormalizer.WriteMetadata(state.files[0], tags);
-            els.metaStatus().textContent = `Wrote tags to ${basename(state.files[0])}`;
-        } catch (err) {
-            els.metaStatus().textContent = `Failed to write tags: ${err}`;
-        }
-    });
-
-    // Custom loudness toggles LUFS/TP rows
-    $('#custom-loudnorm').addEventListener('change', (e) => {
-        setLufsTpVisible(e.target.checked);
+  // Watch mode toggle
+  const watch = $('prefs-watch-mode');
+  if (watch) {
+    watch.addEventListener('change', async (e) => {
+      try {
         if (e.target.checked) {
-            state.normalizationStandard = 'Custom';
-            const r = document.querySelector('input[name="norm-standard"][value="Custom"]');
-            if (r) r.checked = true;
-        }
-        refreshNormalizationLabel();
-    });
-
-    // Format change
-    els.formatSelect().addEventListener('change', onFormatChange);
-
-    // Compression slider feedback
-    $('#comp-level-input').addEventListener('input', (e) => {
-        $('#comp-level-output').value = e.target.value;
-    });
-
-    // LUFS/TP input labels
-    $('#lufs-input').addEventListener('input', refreshNormalizationLabel);
-
-    // Bypass disables Dynamics + EQ visually
-    $('#bypass-proc').addEventListener('change', (e) => {
-        $('#dynamics-select').disabled = e.target.checked;
-        $('#eq-select').disabled = e.target.checked;
-    });
-
-    // Speech forces Opus
-    $('#is-speech').addEventListener('change', (e) => {
-        if (e.target.checked) {
-            const opts = Array.from(els.formatSelect().options).map((o) => o.value);
-            const opus = opts.find((v) => v.startsWith('Opus'));
-            if (opus) {
-                els.formatSelect().value = opus;
-                onFormatChange();
-            }
-        }
-    });
-
-    // Normalize / Write RG tags are mutually exclusive
-    $('#adv-loudnorm').addEventListener('change', (e) => {
-        if (e.target.checked) $('#write-tags').checked = false;
-    });
-    $('#write-tags').addEventListener('change', (e) => {
-        if (e.target.checked) $('#adv-loudnorm').checked = false;
-    });
-
-    // Preferences dialog
-    $$('input[name="norm-standard"]').forEach((r) => {
-        r.addEventListener('change', () => {
-            const std = r.value;
-            state.normalizationStandard = std;
-            switch (std) {
-                case 'EBU R128 (-23 LUFS)':
-                    $('#prefs-lufs').value = '-23';
-                    $('#prefs-tp').value = '-1';
-                    $('#lufs-input').value = '-23';
-                    $('#tp-input').value = '-1';
-                    break;
-                case 'USA ATSC A/85 (-24 LUFS)':
-                    $('#prefs-lufs').value = '-24';
-                    $('#prefs-tp').value = '-2';
-                    $('#lufs-input').value = '-24';
-                    $('#tp-input').value = '-2';
-                    break;
-            }
-            refreshNormalizationLabel();
-        });
-    });
-
-    $('#prefs-save-btn').addEventListener('click', async () => {
-        const prefs = gatherPrefs();
-        await window.go.main.AudioNormalizer.SavePreferences(prefs);
-        appendLog('Preferences saved.');
-    });
-
-    $('#prefs-reset-btn').addEventListener('click', async () => {
-        await window.go.main.AudioNormalizer.ResetPreferences();
-        appendLog('Preferences reset to defaults.');
-    });
-
-    $('#prefs-watch-mode').addEventListener('change', async (e) => {
-        if (e.target.checked) {
-            await window.go.main.AudioNormalizer.StartWatching();
-            state.watching = true;
-            els.watcherWarn().textContent = 'WATCHING';
+          await window.go.main.AudioNormalizer.StartWatching();
+          state.watching = true;
+          const warn = $('watcher-warn'); if (warn) warn.textContent = 'WATCHING';
+          addLog('Watch mode enabled', 'info');
         } else {
-            await window.go.main.AudioNormalizer.StopWatching();
-            state.watching = false;
-            els.watcherWarn().textContent = '';
+          await window.go.main.AudioNormalizer.StopWatching();
+          state.watching = false;
+          const warn = $('watcher-warn'); if (warn) warn.textContent = '';
+          addLog('Watch mode disabled', 'info');
         }
+      } catch (err) {
+        addLog('Watch toggle failed: ' + err, 'err');
+        e.target.checked = state.watching;
+      }
     });
+  }
 
-    $('#prefs-check-update').addEventListener('click', async () => {
-        $('#prefs-update-result').textContent = 'Checking…';
-        try {
-            const v = await window.go.main.AudioNormalizer.CheckForUpdates();
-            if (v && v.version) {
-                $('#prefs-update-result').textContent = `Update available: ${v.version}`;
-            } else {
-                $('#prefs-update-result').textContent = 'You are up to date.';
-            }
-        } catch (err) {
-            $('#prefs-update-result').textContent = `Failed: ${err}`;
-        }
+  // Norm-std radios → push into adv-lufs/adv-tp + keep state in sync
+  document.querySelectorAll('input[name="norm-std"]').forEach((r) => {
+    r.addEventListener('change', () => {
+      const key = r.value;
+      state.normalizationStandard = NORM_STD_MAP[key] || state.normalizationStandard;
+      if (key === 'ebu')  { setLT('-23', '-1'); }
+      if (key === 'atsc') { setLT('-24', '-2'); }
+      // 'custom' uses whatever is in prefs-lufs/prefs-tp
     });
+  });
 
-    $('#prefs-send-report').addEventListener('click', async () => {
-        await window.go.main.AudioNormalizer.SendLogReport();
-    });
+  // Speech toggle forces Opus
+  const sp = $('adv-speech');
+  if (sp) sp.addEventListener('change', (e) => {
+    if (e.target.checked) {
+      const sel = $('adv-format');
+      if (sel) { sel.value = 'opus'; updateAdvanced(); }
+    }
+  });
+
+  // Custom loudness onchange already fires updateAdvanced via inline; nothing extra.
+
+  // Bypass already handled by ui.js updateBypass; nothing extra.
 }
 
-// ---------- runtime events ----------
+function setLT(lufs, tp) {
+  if ($('adv-lufs'))   $('adv-lufs').value   = lufs;
+  if ($('adv-tp'))     $('adv-tp').value     = tp;
+  if ($('prefs-lufs')) $('prefs-lufs').value = lufs;
+  if ($('prefs-tp'))   $('prefs-tp').value   = tp;
+}
+
+/* ── Wails runtime events ── */
 function setupRuntimeEvents() {
-    if (!window.runtime || !window.runtime.EventsOn) return;
-    window.runtime.EventsOn('status:log', (msg) => appendLog(String(msg)));
-    window.runtime.EventsOn('progress:update', (val) => setProgress(Number(val)));
-    window.runtime.EventsOn('progress:done', () => onProcessingDone());
-    window.runtime.EventsOn('file:added', (files) => renderFileList(files));
-    window.runtime.EventsOn('update:available', (info) => {
-        appendLog(`Update available: ${info && info.version ? info.version : 'see preferences'}`);
-    });
-    window.runtime.EventsOn('watch:file', (path) => appendLog(`Watch: ${path}`));
+  if (!window.runtime || !window.runtime.EventsOn) return;
+  window.runtime.EventsOn('status:log',     (msg) => addLog(String(msg), 'info'));
+  window.runtime.EventsOn('progress:update', (val) => setProgress(Number(val)));
+  window.runtime.EventsOn('progress:done',  () => {
+    state.processing = false;
+    clearProgress();
+    if ($('btn-process')) $('btn-process').disabled = state.files.length === 0;
+    addLog('Processing complete', 'ok');
+  });
+  window.runtime.EventsOn('file:added',     (files) => renderFileList(files || []));
+  window.runtime.EventsOn('update:available', (info) => {
+    addLog('Update available: ' + (info && info.version ? info.version : 'see preferences'), 'info');
+  });
+  window.runtime.EventsOn('watch:file', (path) => addLog('Watch: ' + basename(String(path)), 'info'));
 }
 
-// ---------- init ----------
+/* ── Init ── */
 async function init() {
-    setupLogo();
-    setupTabs();
-    setupButtons();
-    setupRuntimeEvents();
+  setupRuntimeEvents();
+  bindRealHandlers();
 
-    setLufsTpVisible(false);
+  // Format dropdown is hard-coded in HTML; updateAdvanced syncs row visibility.
+  updateAdvanced();
 
-    try {
-        const formats = await window.go.main.AudioNormalizer.GetPlatformFormats();
-        const sel = els.formatSelect();
-        sel.innerHTML = '';
-        formats.forEach((f) => {
-            const opt = document.createElement('option');
-            opt.value = f;
-            opt.textContent = f;
-            sel.appendChild(opt);
-        });
-        if (formats.length > 1) sel.value = formats[1];
-        onFormatChange();
-    } catch (err) {
-        appendLog(`Failed to load platform formats: ${err}`);
+  try {
+    state.metadataFields = await window.go.main.AudioNormalizer.MetadataFields();
+  } catch (_) { /* ignore */ }
+
+  try {
+    const version = await window.go.main.AudioNormalizer.GetVersion();
+    document.querySelectorAll('#prefs-version p').forEach((p) => {
+      p.textContent = 'You are running version ' + version + '.';
+    });
+  } catch (_) { /* ignore */ }
+
+  try {
+    const prefs = await window.go.main.AudioNormalizer.LoadPreferences();
+    applyPrefsToUI(prefs);
+  } catch (err) {
+    addLog('Failed to load preferences: ' + err, 'err');
+  }
+
+  try {
+    const files = await window.go.main.AudioNormalizer.GetFiles();
+    renderFileList(files || []);
+  } catch (_) {
+    renderFileList([]);
+  }
+
+  try {
+    const out = await window.go.main.AudioNormalizer.GetOutputFolder();
+    if (out) {
+      const el = $('output-path');
+      if (el) { el.textContent = out; el.title = out; }
     }
-
-    try {
-        state.metadataFields = await window.go.main.AudioNormalizer.MetadataFields();
-        buildMetadataForm(state.metadataFields);
-    } catch (err) {
-        appendLog(`Failed to load metadata fields: ${err}`);
-    }
-
-    try {
-        const version = await window.go.main.AudioNormalizer.GetVersion();
-        $('#prefs-version-text').textContent = version;
-    } catch (_) { /* ignore */ }
-
-    try {
-        const prefs = await window.go.main.AudioNormalizer.LoadPreferences();
-        applyPrefsToUI(prefs);
-    } catch (err) {
-        appendLog(`Failed to load preferences: ${err}`);
-    }
-
-    try {
-        const files = await window.go.main.AudioNormalizer.GetFiles();
-        renderFileList(files || []);
-    } catch (_) {
-        renderFileList([]);
-    }
-
-    try {
-        const out = await window.go.main.AudioNormalizer.GetOutputFolder();
-        if (out) {
-            els.outputPath().textContent = out;
-            els.outputPath().title = out;
-        }
-    } catch (_) { /* ignore */ }
+  } catch (_) { /* ignore */ }
 }
 
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
+  document.addEventListener('DOMContentLoaded', init);
 } else {
-    init();
+  init();
 }
 
 // Dev hot-reload: poll a token file written by dev.sh on every frontend change.
 // In production builds the file isn't shipped, fetch returns 404, polling no-ops.
 (function devReload() {
-    let last = null;
-    setInterval(async () => {
-        try {
-            const r = await fetch('./reload-token.txt?_=' + Date.now(), { cache: 'no-store' });
-            if (!r.ok) return;
-            const txt = (await r.text()).trim();
-            if (last !== null && txt !== last) {
-                location.reload();
-                return;
-            }
-            last = txt;
-        } catch (_) { /* offline / 404 — ignore */ }
-    }, 500);
+  let last = null;
+  setInterval(async () => {
+    try {
+      const r = await fetch('./reload-token.txt?_=' + Date.now(), { cache: 'no-store' });
+      if (!r.ok) return;
+      const txt = (await r.text()).trim();
+      if (last !== null && txt !== last) { location.reload(); return; }
+      last = txt;
+    } catch (_) { /* offline / 404 */ }
+  }, 500);
 })();
