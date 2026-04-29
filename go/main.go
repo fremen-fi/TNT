@@ -1381,26 +1381,10 @@ func (n *AudioNormalizer) getProcessConfig() ProcessConfig {
 		DynNorm:        n.dynNorm,
 		PhaseCheck:     n.phaseCheck,
 		CustomLoudnorm: n.customLoudnorm,
-	}
-
-	if n.advancedMode {
-		config.Format = n.format
-		config.SampleRate = n.sampleRate
-		config.BitDepth = n.bitDepth
-		config.Bitrate = n.bitrate
-	} else {
-		switch n.simplePreset {
-		case "Small file (AAC 256kbps)":
-			config.Format = "AAC"
-			config.Bitrate = "256"
-		case "Most compatible (MP3 320kbps)":
-			config.Format = "MPEG-II L3"
-			config.Bitrate = "320"
-		case "Production (PCM 48kHz/24bit)":
-			config.Format = "PCM"
-			config.SampleRate = "48000"
-			config.BitDepth = "24"
-		}
+		Format:         n.format,
+		SampleRate:     n.sampleRate,
+		BitDepth:       n.bitDepth,
+		Bitrate:        n.bitrate,
 	}
 
 	return config
