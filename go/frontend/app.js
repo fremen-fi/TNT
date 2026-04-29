@@ -3,6 +3,63 @@
 // TNT — Wails wiring. Talks to Go via window.go.main.AudioNormalizer.* and
 // window.runtime.EventsOn. Pure UI helpers live in ui.js.
 
+/**
+ * @typedef {Object} Prefs Wire shape of Go `Preferences` over Wails JSON
+ *   (snake_case, matching the json tags on the Go struct).
+ * @property {boolean} advanced_mode
+ * @property {string}  last_output_dir
+ * @property {string}  simple_mode_selection
+ * @property {string}  format
+ * @property {string}  sample_rate
+ * @property {string}  bit_depth
+ * @property {string}  bitrate
+ * @property {boolean} loudnorm_enabled
+ * @property {boolean} custom_loudnorm
+ * @property {string}  normalize_target
+ * @property {string}  normalize_target_tp
+ * @property {string}  normalization_standard
+ * @property {number}  data_comp_level
+ * @property {string}  eq_preset
+ * @property {string}  dyn_preset
+ * @property {boolean} dyn_norm_enabled
+ * @property {string}  selected_tab
+ * @property {boolean} phase_check_auto
+ */
+
+/**
+ * @typedef {Object} ProcessConfig Mirror of Go `ProcessConfig` struct in main.go.
+ * @property {string}  Format
+ * @property {string}  SampleRate
+ * @property {string}  BitDepth
+ * @property {string}  Bitrate
+ * @property {boolean} UseLoudnorm
+ * @property {boolean} CustomLoudnorm
+ * @property {boolean} IsSpeech
+ * @property {boolean} WriteTags
+ * @property {boolean} NoTranscode
+ * @property {boolean} OriginIsAAC
+ * @property {number}  DataCompLevel
+ * @property {string}  DynamicsPreset
+ * @property {boolean} BypassProc
+ * @property {string}  EqTarget
+ * @property {boolean} DynNorm
+ * @property {boolean} PhaseCheck
+ */
+
+/** @typedef {Record<string, string>} MetadataTags */
+/** @typedef {'ok' | 'info' | 'err'} LogType */
+
+/**
+ * @typedef {Object} AppState
+ * @property {string[]} files
+ * @property {number|null} selectedIdx
+ * @property {boolean} processing
+ * @property {boolean} watching
+ * @property {string} normalizationStandard
+ * @property {string[]} [metadataFields]
+ */
+
+/** @type {AppState} */
 const state = {
   files: [],
   selectedIdx: null,
@@ -14,6 +71,7 @@ const state = {
 // Fast-tab radios use short keys; map to backend names. The advanced
 // dropdown is populated from GetPlatformFormats() and stores backend
 // names directly, so it doesn't need this map.
+/** @type {Record<string, string>} */
 const FAST_FORMAT_MAP = {
   pcm:  'PCM',
   flac: 'FLAC',
@@ -22,6 +80,7 @@ const FAST_FORMAT_MAP = {
   opus: 'Opus',
 };
 
+/** @type {Record<string, string>} */
 const FORMAT_LABELS = {
   'PCM':              'PCM (WAV)',
   'FLAC':             'FLAC',
@@ -32,9 +91,11 @@ const FORMAT_LABELS = {
   'Opus':             'Opus',
 };
 
+/** @returns {Promise<void>} */
 async function populateFormatDropdown() {
-  const sel = $('adv-format');
+  const sel = $select('adv-format');
   if (!sel) return;
+  /** @type {string[]} */
   let formats = [];
   try {
     formats = await window.go.main.AudioNormalizer.GetPlatformFormats();
@@ -52,17 +113,20 @@ async function populateFormatDropdown() {
   if (Array.from(sel.options).some((o) => o.value === 'PCM')) sel.value = 'PCM';
 }
 
+/** @type {Record<string, string>} */
 const NORM_STD_MAP = {
   ebu:    'EBU R128 (-23 LUFS)',
   atsc:   'USA ATSC A/85 (-24 LUFS)',
   custom: 'Custom',
 };
+/** @type {Record<string, string>} */
 const NORM_STD_REVERSE = {
   'EBU R128 (-23 LUFS)':     'ebu',
   'USA ATSC A/85 (-24 LUFS)': 'atsc',
   'Custom':                   'custom',
 };
 
+/** @type {Record<string, string>} */
 const META_MAP = {
   'mt-title':   'title',
   'mt-artist':  'artist',
@@ -73,16 +137,20 @@ const META_MAP = {
 };
 
 /* ── Helpers ── */
+/** @param {string} path @returns {string} */
 function basename(path) {
   if (!path) return '';
   const parts = String(path).split(/[\\/]/);
   return parts[parts.length - 1];
 }
+/** @param {string} path @returns {string} */
 function ext(path) {
   const m = /\.([^./\\]+)$/.exec(String(path));
   return m ? m[1].toUpperCase() : '';
 }
+/** @param {string} s @returns {string} */
 function parseSR(s) { return (s || '').replace(/\D/g, ''); }
+/** @param {string} s @returns {string} */
 function parseBD(s) {
   const t = (s || '').toLowerCase();
   if (t.startsWith('16')) return '16';
@@ -93,6 +161,7 @@ function parseBD(s) {
 }
 
 /* ── File list rendering ── */
+/** @param {string[]} paths */
 function renderFileList(paths) {
   state.files = Array.isArray(paths) ? paths : [];
   const list = $('file-list');
@@ -161,8 +230,8 @@ function renderFileList(paths) {
   }
 
   const has = state.files.length > 0;
-  const proc = $('btn-process');
-  const clr  = $('btn-clear');
+  const proc = $button('btn-process');
+  const clr  = $button('btn-clear');
   if (proc) proc.disabled = !has || state.processing;
   if (clr)  clr.disabled  = !has;
   updateMetaTab();
@@ -189,18 +258,17 @@ function updateMetaTab() {
   }
   // Clear the RG rows when no file is selected.
   if (!has) setRGRow('', '');
-  const r = $('meta-read');
-  const w = $('meta-write');
+  const r = $button('meta-read');
+  const w = $button('meta-write');
   if (r) r.disabled = !has;
   if (w) w.disabled = !has;
 }
 
 /* ── Inline-handler entry points ── */
-// Both "+ Files" and "+ Folder" inline-call this; dispatch by button text.
-async function addMockFile() {
-  const t = (window.event && window.event.currentTarget && window.event.currentTarget.textContent || '').toLowerCase();
+/** @param {'files'|'folder'} kind */
+async function addMockFile(kind) {
   try {
-    const files = t.includes('folder')
+    const files = kind === 'folder'
       ? await window.go.main.AudioNormalizer.SelectFolder()
       : await window.go.main.AudioNormalizer.SelectFiles();
     renderFileList(files || []);
@@ -235,7 +303,8 @@ async function setOutput() {
 async function handleProcess() {
   if (!state.files.length || state.processing) return;
   state.processing = true;
-  $('btn-process').disabled = true;
+  const procBtn = $button('btn-process');
+  if (procBtn) procBtn.disabled = true;
   setProgress(0);
   try {
     await window.go.main.AudioNormalizer.Process(buildConfig());
@@ -243,7 +312,7 @@ async function handleProcess() {
     addLog('Process failed: ' + err, 'err');
     state.processing = false;
     clearProgress();
-    $('btn-process').disabled = state.files.length === 0;
+    if (procBtn) procBtn.disabled = state.files.length === 0;
   }
 }
 
@@ -256,23 +325,33 @@ async function previewSize() {
 }
 
 /* ── ProcessConfig builder from current DOM ── */
+/** @returns {ProcessConfig} */
 function buildConfig() {
-  const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab || 'fast';
+  const activeBtn = /** @type {HTMLElement|null} */ (document.querySelector('.tab-btn.active'));
+  const activeTab = (activeBtn && activeBtn.dataset.tab) || 'fast';
+
+  const dyn  = $select('proc-dyn');
+  const eq   = $select('proc-eq');
+  const dn   = $input('proc-dn');
+  const byp  = $input('proc-bypass');
+  const phs  = $input('prefs-phase');
 
   const proc = {
-    DynamicsPreset: $('proc-dyn') ? $('proc-dyn').value : 'Off',
-    EqTarget:       $('proc-eq')  ? $('proc-eq').value  : 'Off',
-    DynNorm:        $('proc-dn')  ? $('proc-dn').checked : false,
-    BypassProc:     $('proc-bypass') ? $('proc-bypass').checked : false,
-    PhaseCheck:     $('prefs-phase') ? $('prefs-phase').checked : false,
+    DynamicsPreset: dyn ? dyn.value      : 'Off',
+    EqTarget:       eq  ? eq.value       : 'Off',
+    DynNorm:        dn  ? dn.checked     : false,
+    BypassProc:     byp ? byp.checked    : false,
+    PhaseCheck:     phs ? phs.checked    : false,
   };
 
   if (activeTab === 'fast') {
-    const preset = document.querySelector('input[name="fast-preset"]:checked')?.value || 'pcm';
+    const presetEl = /** @type {HTMLInputElement|null} */ (document.querySelector('input[name="fast-preset"]:checked'));
+    const preset = presetEl ? presetEl.value : 'pcm';
+    const fastNorm = $input('fast-norm');
     const cfg = {
       ...proc,
       Format: '', SampleRate: '', BitDepth: '', Bitrate: '',
-      UseLoudnorm:    $('fast-norm') ? $('fast-norm').checked : false,
+      UseLoudnorm:    fastNorm ? fastNorm.checked : false,
       CustomLoudnorm: false,
       IsSpeech:       false,
       WriteTags:      false,
@@ -289,37 +368,52 @@ function buildConfig() {
     return cfg;
   }
 
+  const fmt   = $select('adv-format');
+  const sr    = $select('adv-sr');
+  const bd    = $select('adv-bd');
+  const br    = $input('adv-br');
+  const norm  = $input('adv-norm');
+  const clud  = $input('adv-custom-loud');
+  const sp    = $input('adv-speech');
+  const rg    = $input('adv-rg');
+  const noTr  = $input('adv-no-transcode');
+  const cl    = $input('adv-cl');
+
   return {
     ...proc,
-    Format:         $('adv-format') ? $('adv-format').value : 'PCM',
-    SampleRate:     parseSR($('adv-sr') ? $('adv-sr').value : ''),
-    BitDepth:       parseBD($('adv-bd') ? $('adv-bd').value : ''),
-    Bitrate:        $('adv-br') ? $('adv-br').value : '',
-    UseLoudnorm:    $('adv-norm') ? $('adv-norm').checked : false,
-    CustomLoudnorm: $('adv-custom-loud') ? $('adv-custom-loud').checked : false,
-    IsSpeech:       $('adv-speech') ? $('adv-speech').checked : false,
-    WriteTags:      $('adv-rg') ? $('adv-rg').checked : false,
-    NoTranscode:    $('adv-no-transcode') ? $('adv-no-transcode').checked : false,
+    Format:         fmt  ? fmt.value : 'PCM',
+    SampleRate:     parseSR(sr ? sr.value : ''),
+    BitDepth:       parseBD(bd ? bd.value : ''),
+    Bitrate:        br   ? br.value : '',
+    UseLoudnorm:    norm ? norm.checked : false,
+    CustomLoudnorm: clud ? clud.checked : false,
+    IsSpeech:       sp   ? sp.checked : false,
+    WriteTags:      rg   ? rg.checked : false,
+    NoTranscode:    noTr ? noTr.checked : false,
     OriginIsAAC:    false,
-    DataCompLevel:  parseInt($('adv-cl') ? $('adv-cl').value : '0', 10),
+    DataCompLevel:  parseInt(cl ? cl.value : '0', 10),
   };
 }
 
 /* ── Metadata read/write ── */
+/** @param {string} gain @param {string} target */
 function setRGRow(gain, target) {
   const rows = document.querySelectorAll('.rg-row');
   const showGain   = !!gain;
   const showTarget = !!target;
   rows.forEach((el) => {
-    const isGain   = el.id === 'mt-rg-gain'   || el.htmlFor === 'mt-rg-gain';
-    const isTarget = el.id === 'mt-rg-target' || el.htmlFor === 'mt-rg-target';
+    // Each .rg-row is either the <label> (with htmlFor) or the <input> itself.
+    const label = /** @type {HTMLLabelElement} */ (el);
+    const isGain   = el.id === 'mt-rg-gain'   || label.htmlFor === 'mt-rg-gain';
+    const isTarget = el.id === 'mt-rg-target' || label.htmlFor === 'mt-rg-target';
     if (isGain)   el.classList.toggle('hidden', !showGain);
     if (isTarget) el.classList.toggle('hidden', !showTarget);
   });
-  const g = $('mt-rg-gain');   if (g) g.value = gain   || '';
-  const t = $('mt-rg-target'); if (t) t.value = target || '';
+  const g = $input('mt-rg-gain');   if (g) g.value = gain   || '';
+  const t = $input('mt-rg-target'); if (t) t.value = target || '';
 }
 
+/** @param {MetadataTags} tags @param {string[]} keys @returns {string} */
 function pickFirst(tags, keys) {
   for (const k of keys) {
     const v = tags && tags[k];
@@ -335,19 +429,18 @@ async function readMetadataIntoForm() {
     const tags = await window.go.main.AudioNormalizer.ReadMetadata(path);
     Object.entries(META_MAP).forEach(([id, key]) => {
       if (id === 'mt-track') return; // handled below
-      const el = $(id);
+      const el = $input(id);
       if (el) el.value = (tags && tags[key]) || '';
     });
 
     // Track may be "5" or "5/12"; show total separately, read-only.
     const trackRaw = (tags && tags.track) || '';
     const [cur, total] = String(trackRaw).split('/').map((s) => s.trim());
-    if ($('mt-track'))       $('mt-track').value       = cur || '';
-    if ($('mt-track-total')) $('mt-track-total').value = total || '';
+    const trackEl  = $input('mt-track');       if (trackEl)  trackEl.value  = cur || '';
+    const totalEl  = $input('mt-track-total'); if (totalEl)  totalEl.value  = total || '';
     const sep = $('mt-track-sep');
     if (sep) sep.style.visibility = total ? 'visible' : 'hidden';
-    const tot = $('mt-track-total');
-    if (tot) tot.style.visibility = total ? 'visible' : 'hidden';
+    if (totalEl) totalEl.style.visibility = total ? 'visible' : 'hidden';
 
     // ReplayGain — read-only display, hidden if absent.
     const gain   = pickFirst(tags, ['replaygain_track_gain', 'replaygain_album_gain']);
@@ -363,15 +456,18 @@ async function readMetadataIntoForm() {
 async function writeMetadataFromForm() {
   if (state.selectedIdx == null) return;
   const path = state.files[state.selectedIdx];
+  /** @type {MetadataTags} */
   const tags = {};
   Object.entries(META_MAP).forEach(([id, key]) => {
     if (id === 'mt-track') return;
-    const el = $(id);
+    const el = $input(id);
     if (el) tags[key] = el.value;
   });
   // Recombine track as "X/N" if total is present.
-  const cur   = $('mt-track')       ? $('mt-track').value.trim()       : '';
-  const total = $('mt-track-total') ? $('mt-track-total').value.trim() : '';
+  const trackEl = $input('mt-track');
+  const totalEl = $input('mt-track-total');
+  const cur   = trackEl ? trackEl.value.trim() : '';
+  const total = totalEl ? totalEl.value.trim() : '';
   tags.track = total ? `${cur}/${total}` : cur;
   try {
     await window.go.main.AudioNormalizer.WriteMetadata(path, tags);
@@ -382,104 +478,128 @@ async function writeMetadataFromForm() {
 }
 
 /* ── Preferences sync ── */
+/** @param {Prefs | null | undefined} prefs */
 function applyPrefsToUI(prefs) {
   if (!prefs) return;
-  state.normalizationStandard = prefs.NormalizationStandard || 'EBU R128 (-23 LUFS)';
+  state.normalizationStandard = prefs.normalization_standard || 'EBU R128 (-23 LUFS)';
 
-  if (prefs.SimpleMode) {
-    const r = document.querySelector(`input[name="fast-preset"][value="${prefs.SimpleMode}"]`);
+  if (prefs.simple_mode_selection) {
+    const r = /** @type {HTMLInputElement|null} */ (document.querySelector(`input[name="fast-preset"][value="${prefs.simple_mode_selection}"]`));
     if (r) r.checked = true;
   }
-  if (prefs.Format) {
-    const sel = $('adv-format');
-    if (sel && Array.from(sel.options).some((o) => o.value === prefs.Format)) {
-      sel.value = prefs.Format;
+  if (prefs.format) {
+    const sel = $select('adv-format');
+    if (sel && Array.from(sel.options).some((o) => o.value === prefs.format)) {
+      sel.value = prefs.format;
     }
   }
-  if (prefs.SampleRate) {
-    const sel = $('adv-sr');
+  if (prefs.sample_rate) {
+    const sel = $select('adv-sr');
     if (sel) {
-      const want = parseSR(prefs.SampleRate);
-      Array.from(sel.options).forEach((o) => { if (parseSR(o.textContent) === want) sel.value = o.value || o.textContent; });
+      const want = parseSR(prefs.sample_rate);
+      Array.from(sel.options).forEach((o) => { if (parseSR(o.textContent || '') === want) sel.value = o.value || (o.textContent || ''); });
     }
   }
-  if (prefs.BitDepth) {
-    const sel = $('adv-bd');
+  if (prefs.bit_depth) {
+    const sel = $select('adv-bd');
     if (sel) {
-      Array.from(sel.options).forEach((o) => { if (parseBD(o.textContent) === parseBD(prefs.BitDepth)) sel.value = o.value || o.textContent; });
+      Array.from(sel.options).forEach((o) => { if (parseBD(o.textContent || '') === parseBD(prefs.bit_depth)) sel.value = o.value || (o.textContent || ''); });
     }
   }
-  if (prefs.Bitrate)         { const el = $('adv-br'); if (el) el.value = prefs.Bitrate; }
-  if (prefs.NormalizeTarget) { const el = $('adv-lufs'); if (el) el.value = prefs.NormalizeTarget; }
-  if (prefs.NormalizeTargetTp) { const el = $('adv-tp'); if (el) el.value = prefs.NormalizeTargetTp; }
-  if (typeof prefs.LoudnormEnabled === 'boolean') {
-    if ($('fast-norm')) $('fast-norm').checked = prefs.LoudnormEnabled;
-    if ($('adv-norm'))  $('adv-norm').checked  = prefs.LoudnormEnabled;
+  if (prefs.bitrate)               { const el = $input('adv-br');   if (el) el.value = prefs.bitrate; }
+  if (prefs.normalize_target)      { const el = $input('adv-lufs'); if (el) el.value = prefs.normalize_target; }
+  if (prefs.normalize_target_tp)   { const el = $input('adv-tp');   if (el) el.value = prefs.normalize_target_tp; }
+  if (typeof prefs.loudnorm_enabled === 'boolean') {
+    const fn = $input('fast-norm'); if (fn) fn.checked = prefs.loudnorm_enabled;
+    const an = $input('adv-norm');  if (an) an.checked = prefs.loudnorm_enabled;
   }
-  if (typeof prefs.CustomLoudnorm === 'boolean') {
-    if ($('adv-custom-loud')) $('adv-custom-loud').checked = prefs.CustomLoudnorm;
+  if (typeof prefs.custom_loudnorm === 'boolean') {
+    const cl = $input('adv-custom-loud'); if (cl) cl.checked = prefs.custom_loudnorm;
   }
-  if (typeof prefs.DataCompLevel === 'number') {
-    if ($('adv-cl'))     $('adv-cl').value     = prefs.DataCompLevel;
-    if ($('adv-cl-out')) $('adv-cl-out').value = prefs.DataCompLevel;
+  if (typeof prefs.data_comp_level === 'number') {
+    const cl  = $input('adv-cl');     if (cl)  cl.value  = String(prefs.data_comp_level);
+    const out = /** @type {HTMLOutputElement|null} */ (document.getElementById('adv-cl-out'));
+    if (out) out.value = String(prefs.data_comp_level);
   }
-  if (prefs.EqPreset)  { const el = $('proc-eq');  if (el) el.value = prefs.EqPreset; }
-  if (prefs.DynPreset) { const el = $('proc-dyn'); if (el) el.value = prefs.DynPreset; }
-  if (typeof prefs.DynNorm    === 'boolean' && $('proc-dn'))     $('proc-dn').checked     = prefs.DynNorm;
-  if (typeof prefs.PhaseCheck === 'boolean' && $('prefs-phase')) $('prefs-phase').checked = prefs.PhaseCheck;
-  if (prefs.LastOutputDir) {
+  if (prefs.eq_preset)  { const el = $select('proc-eq');  if (el) el.value = prefs.eq_preset; }
+  if (prefs.dyn_preset) { const el = $select('proc-dyn'); if (el) el.value = prefs.dyn_preset; }
+  if (typeof prefs.dyn_norm_enabled === 'boolean') { const dn = $input('proc-dn');     if (dn) dn.checked = prefs.dyn_norm_enabled; }
+  if (typeof prefs.phase_check_auto === 'boolean') { const ph = $input('prefs-phase'); if (ph) ph.checked = prefs.phase_check_auto; }
+  if (prefs.last_output_dir) {
     const out = $('output-path');
-    if (out) { out.textContent = prefs.LastOutputDir; out.title = prefs.LastOutputDir; }
+    if (out) { out.textContent = prefs.last_output_dir; out.title = prefs.last_output_dir; }
   }
 
   const stdKey = NORM_STD_REVERSE[state.normalizationStandard];
   if (stdKey) {
-    const r = document.querySelector(`input[name="norm-std"][value="${stdKey}"]`);
+    const r = /** @type {HTMLInputElement|null} */ (document.querySelector(`input[name="norm-std"][value="${stdKey}"]`));
     if (r) r.checked = true;
   }
-  if ($('prefs-lufs')) $('prefs-lufs').value = prefs.NormalizeTarget   || '-23';
-  if ($('prefs-tp'))   $('prefs-tp').value   = prefs.NormalizeTargetTp || '-1';
+  const prefsLufs = $input('prefs-lufs'); if (prefsLufs) prefsLufs.value = prefs.normalize_target    || '-23';
+  const prefsTp   = $input('prefs-tp');   if (prefsTp)   prefsTp.value   = prefs.normalize_target_tp || '-1';
 
-  if (prefs.SelectedTab) switchTab(prefs.SelectedTab);
+  if (prefs.selected_tab) switchTab(prefs.selected_tab);
   updateAdvanced();
-  updateBypass($('proc-bypass') ? $('proc-bypass').checked : false);
+  const byp = $input('proc-bypass');
+  updateBypass(byp ? byp.checked : false);
 }
 
+/** @returns {Prefs} */
 function gatherPrefs() {
-  const stdKey  = document.querySelector('input[name="norm-std"]:checked')?.value || 'ebu';
+  const stdEl   = /** @type {HTMLInputElement|null} */ (document.querySelector('input[name="norm-std"]:checked'));
+  const stdKey  = stdEl ? stdEl.value : 'ebu';
   const std     = NORM_STD_MAP[stdKey] || state.normalizationStandard;
-  const simple  = document.querySelector('input[name="fast-preset"]:checked')?.value || '';
-  const tab     = document.querySelector('.tab-btn.active')?.dataset.tab || 'fast';
+  const simpleEl = /** @type {HTMLInputElement|null} */ (document.querySelector('input[name="fast-preset"]:checked'));
+  const simple  = simpleEl ? simpleEl.value : '';
+  const tabEl   = /** @type {HTMLElement|null} */ (document.querySelector('.tab-btn.active'));
+  const tab     = (tabEl && tabEl.dataset.tab) || 'fast';
+
+  const out = $('output-path');
+  const fmt = $select('adv-format');
+  const sr  = $select('adv-sr');
+  const bd  = $select('adv-bd');
+  const br  = $input('adv-br');
+  const an  = $input('adv-norm');
+  const clu = $input('adv-custom-loud');
+  const cl  = $input('adv-cl');
+  const eq  = $select('proc-eq');
+  const dyn = $select('proc-dyn');
+  const dn  = $input('proc-dn');
+  const ph  = $input('prefs-phase');
+  const advLufs   = $input('adv-lufs');
+  const advTp     = $input('adv-tp');
+  const prefsLufs = $input('prefs-lufs');
+  const prefsTp   = $input('prefs-tp');
 
   return {
-    AdvancedMode:          tab === 'advanced' || tab === 'processing',
-    LastOutputDir:         ($('output-path') && $('output-path').title) || '',
-    SimpleMode:            simple,
-    Format:                $('adv-format') ? $('adv-format').value : '',
-    SampleRate:            parseSR($('adv-sr') ? $('adv-sr').value : ''),
-    BitDepth:              parseBD($('adv-bd') ? $('adv-bd').value : ''),
-    Bitrate:               $('adv-br') ? $('adv-br').value : '',
-    LoudnormEnabled:       $('adv-norm') ? $('adv-norm').checked : false,
-    CustomLoudnorm:        $('adv-custom-loud') ? $('adv-custom-loud').checked : false,
-    NormalizeTarget:       stdKey === 'custom' ? ($('prefs-lufs') ? $('prefs-lufs').value : '-23')
-                                                : ($('adv-lufs')   ? $('adv-lufs').value   : '-23'),
-    NormalizeTargetTp:     stdKey === 'custom' ? ($('prefs-tp')   ? $('prefs-tp').value   : '-1')
-                                                : ($('adv-tp')     ? $('adv-tp').value     : '-1'),
-    NormalizationStandard: std,
-    DataCompLevel:         parseInt($('adv-cl') ? $('adv-cl').value : '0', 10),
-    EqPreset:              $('proc-eq')  ? $('proc-eq').value  : 'Off',
-    DynPreset:             $('proc-dyn') ? $('proc-dyn').value : 'Off',
-    DynNorm:               $('proc-dn')  ? $('proc-dn').checked : false,
-    SelectedTab:           tab,
-    PhaseCheck:            $('prefs-phase') ? $('prefs-phase').checked : false,
+    advanced_mode:          tab === 'advanced' || tab === 'processing',
+    last_output_dir:        (out && out.title) || '',
+    simple_mode_selection:  simple,
+    format:                 fmt ? fmt.value : '',
+    sample_rate:            parseSR(sr ? sr.value : ''),
+    bit_depth:              parseBD(bd ? bd.value : ''),
+    bitrate:                br ? br.value : '',
+    loudnorm_enabled:       an ? an.checked : false,
+    custom_loudnorm:        clu ? clu.checked : false,
+    normalize_target:       stdKey === 'custom' ? (prefsLufs ? prefsLufs.value : '-23')
+                                                 : (advLufs   ? advLufs.value   : '-23'),
+    normalize_target_tp:    stdKey === 'custom' ? (prefsTp   ? prefsTp.value   : '-1')
+                                                 : (advTp     ? advTp.value     : '-1'),
+    normalization_standard: std,
+    data_comp_level:        parseInt(cl ? cl.value : '0', 10),
+    eq_preset:              eq  ? eq.value  : 'Off',
+    dyn_preset:             dyn ? dyn.value : 'Off',
+    dyn_norm_enabled:       dn  ? dn.checked : false,
+    selected_tab:           tab,
+    phase_check_auto:       ph  ? ph.checked : false,
   };
 }
 
 /* ── Override inline mock handlers and bind extra listeners ── */
 function bindRealHandlers() {
   // Metadata buttons — replace inline addLog stubs
-  const r = $('meta-read');  if (r) { r.onclick = null; r.addEventListener('click', readMetadataIntoForm); }
-  const w = $('meta-write'); if (w) { w.onclick = null; w.addEventListener('click', writeMetadataFromForm); }
+  const r = $button('meta-read');  if (r) { r.onclick = null; r.addEventListener('click', readMetadataIntoForm); }
+  const w = $button('meta-write'); if (w) { w.onclick = null; w.addEventListener('click', writeMetadataFromForm); }
 
   // Preferences pane buttons
   const prefsSavePane  = $('prefs-save');
@@ -504,7 +624,7 @@ function bindRealHandlers() {
     if (checkBtn) { checkBtn.onclick = null; checkBtn.addEventListener('click', async () => {
       try {
         const v = await window.go.main.AudioNormalizer.CheckForUpdates();
-        if (v && v.version) addLog('Update available: ' + v.version, 'info');
+        if (v && /** @type {any} */(v).version) addLog('Update available: ' + /** @type {any} */(v).version, 'info');
         else                addLog('You are up to date', 'ok');
       } catch (err) { addLog('Update check failed: ' + err, 'err'); }
     }); }
@@ -520,11 +640,12 @@ function bindRealHandlers() {
   }
 
   // Watch mode toggle
-  const watch = $('prefs-watch-mode');
+  const watch = $input('prefs-watch-mode');
   if (watch) {
     watch.addEventListener('change', async (e) => {
+      const t = /** @type {HTMLInputElement} */ (e.target);
       try {
-        if (e.target.checked) {
+        if (t.checked) {
           await window.go.main.AudioNormalizer.StartWatching();
           state.watching = true;
           const warn = $('watcher-warn'); if (warn) warn.textContent = 'WATCHING';
@@ -537,13 +658,14 @@ function bindRealHandlers() {
         }
       } catch (err) {
         addLog('Watch toggle failed: ' + err, 'err');
-        e.target.checked = state.watching;
+        t.checked = state.watching;
       }
     });
   }
 
   // Norm-std radios → push into adv-lufs/adv-tp + keep state in sync
-  document.querySelectorAll('input[name="norm-std"]').forEach((r) => {
+  document.querySelectorAll('input[name="norm-std"]').forEach((rEl) => {
+    const r = /** @type {HTMLInputElement} */ (rEl);
     r.addEventListener('change', () => {
       const key = r.value;
       state.normalizationStandard = NORM_STD_MAP[key] || state.normalizationStandard;
@@ -554,10 +676,11 @@ function bindRealHandlers() {
   });
 
   // Speech toggle forces Opus
-  const sp = $('adv-speech');
+  const sp = $input('adv-speech');
   if (sp) sp.addEventListener('change', (e) => {
-    if (e.target.checked) {
-      const sel = $('adv-format');
+    const t = /** @type {HTMLInputElement} */ (e.target);
+    if (t.checked) {
+      const sel = $select('adv-format');
       if (sel) { sel.value = 'opus'; updateAdvanced(); }
     }
   });
@@ -567,11 +690,12 @@ function bindRealHandlers() {
   // Bypass already handled by ui.js updateBypass; nothing extra.
 }
 
+/** @param {string} lufs @param {string} tp */
 function setLT(lufs, tp) {
-  if ($('adv-lufs'))   $('adv-lufs').value   = lufs;
-  if ($('adv-tp'))     $('adv-tp').value     = tp;
-  if ($('prefs-lufs')) $('prefs-lufs').value = lufs;
-  if ($('prefs-tp'))   $('prefs-tp').value   = tp;
+  const a = $input('adv-lufs');   if (a) a.value = lufs;
+  const b = $input('adv-tp');     if (b) b.value = tp;
+  const c = $input('prefs-lufs'); if (c) c.value = lufs;
+  const d = $input('prefs-tp');   if (d) d.value = tp;
 }
 
 /* ── Wails runtime events ── */
@@ -582,7 +706,8 @@ function setupRuntimeEvents() {
   window.runtime.EventsOn('progress:done',  () => {
     state.processing = false;
     clearProgress();
-    if ($('btn-process')) $('btn-process').disabled = state.files.length === 0;
+    const procBtn = $button('btn-process');
+    if (procBtn) procBtn.disabled = state.files.length === 0;
     addLog('Processing complete', 'ok');
   });
   window.runtime.EventsOn('file:added',     (files) => renderFileList(files || []));
@@ -643,6 +768,7 @@ if (document.readyState === 'loading') {
 // Dev hot-reload: poll a token file written by dev.sh on every frontend change.
 // In production builds the file isn't shipped, fetch returns 404, polling no-ops.
 (function devReload() {
+  /** @type {string|null} */
   let last = null;
   setInterval(async () => {
     try {

@@ -37,8 +37,8 @@
       <div id="watcher-warn"></div>
 
       <div class="file-actions">
-        <button class="btn btn-sm" onclick="addMockFile()">+ Files</button>
-        <button class="btn btn-sm" onclick="addMockFile()">+ Folder</button>
+        <button class="btn btn-sm" onclick="addMockFile('files')">+ Files</button>
+        <button class="btn btn-sm" onclick="addMockFile('folder')">+ Folder</button>
       </div>
 
       <div class="file-list-wrap" id="file-list"></div>
@@ -161,23 +161,21 @@
           </div>
 
           <div class="section-label">Options</div>
-          <label class="check-row">
-            <input type="checkbox" id="adv-norm" checked
-              onchange="if(this.checked) document.getElementById('adv-rg').checked = false">
+          <label class="check-row" id="row-norm">
+          <input type="checkbox" id="adv-norm" checked onchange="updateAdvanced()">
             <div class="check-text">
               <span class="check-label">Normalize</span>
               <span class="check-sub">EBU R128 · −23 LUFS — alters audio</span>
             </div>
           </label>
           <label class="check-row" id="row-rg">
-            <input type="checkbox" id="adv-rg"
-              onchange="if(this.checked) document.getElementById('adv-norm').checked = false">
+            <input type="checkbox" id="adv-rg" onchange="updateAdvanced()">
             <div class="check-text">
               <span class="check-label">Write ReplayGain tags</span>
               <span class="check-sub">Metadata only — mutually exclusive with Normalize</span>
             </div>
           </label>
-          <label class="check-row">
+          <label class="check-row" id="row-transcode">
             <input type="checkbox" id="adv-no-transcode">
             <div class="check-text">
               <span class="check-label">Do not transcode</span>
@@ -206,7 +204,7 @@
             </select>
           </div>
 
-          <div class="section-label">Equalisation</div>
+          <div class="section-label">Equalization</div>
           <div class="form-row" id="proc-row-eq">
             <label for="proc-eq">EQ target curve</label>
             <select id="proc-eq">
