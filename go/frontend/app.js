@@ -203,7 +203,9 @@ function renderFileList(paths) {
       const remove = document.createElement('button');
       remove.className = 'file-remove';
       remove.title = 'Remove';
-      remove.innerHTML = '&times;';
+      const removeIcon = document.createElement('span');
+      removeIcon.className = 'nrk-icon icon-close';
+      remove.appendChild(removeIcon);
 
       item.appendChild(badge);
       item.appendChild(info);

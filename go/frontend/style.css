@@ -149,13 +149,21 @@ button, input, select, textarea { font: inherit; }
   user-select: none;
 }
 .toolbar-logo {
-  width: 28px; height: 28px;
-  background: var(--accent);
-  border-radius: 7px;
+  height: 32px; width: auto;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
-.toolbar-logo span { color: #fff; font-size: 10px; font-weight: 700; letter-spacing: -0.3px; }
+.toolbar-logo .logo-img { height: 32px; width: auto; object-fit: contain; display: block; }
+/* Default (light): show the light-mode logo. */
+.toolbar-logo .logo-for-dark  { display: none; }
+/* Forced dark: swap. */
+:root.dark .toolbar-logo .logo-for-light { display: none; }
+:root.dark .toolbar-logo .logo-for-dark  { display: inline; }
+/* System dark, only when no explicit class overrides it. */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) .toolbar-logo .logo-for-light { display: none; }
+  :root:not(.light) .toolbar-logo .logo-for-dark  { display: inline; }
+}
 .toolbar-title { display: flex; flex-direction: column; gap: 2px; line-height: 1; }
 .toolbar-title strong { font-size: 14px; font-weight: 600; color: var(--text); }
 .toolbar-title small  { font-size: 11px; color: var(--muted); }
@@ -501,16 +509,44 @@ dialog::backdrop { background: var(--scrim); }
 
 .hidden { display: none; }
 
-/* ===== Audio-chain active indicator (left-footer) ===== */
-.chain-indicator {
+/* ===== NRK core icons (mask trick — inherits color via currentColor) ===== */
+.nrk-icon {
+  display: inline-block;
+  width: 14px; height: 14px;
+  background-color: currentColor;
+  mask: var(--icon) center / contain no-repeat;
+  -webkit-mask: var(--icon) center / contain no-repeat;
+  vertical-align: -2px;
+  flex-shrink: 0;
+}
+.icon-help     { --icon: url('assets/core-icons-svg/nrk-help.svg'); }
+.icon-settings { --icon: url('assets/core-icons-svg/nrk-settings.svg'); }
+.icon-plus     { --icon: url('assets/core-icons-svg/nrk-plus.svg'); }
+.icon-trash    { --icon: url('assets/core-icons-svg/nrk-trash.svg'); }
+.icon-play     { --icon: url('assets/core-icons-svg/nrk-media-play.svg'); }
+.icon-close    { --icon: url('assets/core-icons-svg/nrk-close.svg'); }
+.icon-warning  { --icon: url('assets/core-icons-svg/nrk-warning.svg'); }
+.icon-info     { --icon: url('assets/core-icons-svg/nrk-info.svg'); }
+.icon-broadcast{ --icon: url('assets/core-icons-svg/nrk-broadcast.svg'); }
+
+/* ===== Left-footer flags (chain active, dither, etc.) ===== */
+.chain-indicator,
+.dither-indicator {
   margin-top: 8px;
   padding: 6px 9px;
   border-radius: 5px;
-  background: var(--accent-bg);
-  border: 1px solid var(--accent-bdr);
-  color: var(--accent);
   font-size: 11px;
   font-weight: 500;
   text-align: center;
   line-height: 1.35;
+}
+.chain-indicator {
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-bdr);
+  color: var(--accent);
+}
+.dither-indicator {
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--muted);
 }

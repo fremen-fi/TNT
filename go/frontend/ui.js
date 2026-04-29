@@ -43,6 +43,7 @@ function switchTab(id) {
   const chain = $('audio-chain-group');
   if (chain) chain.classList.toggle('chain-active', id === 'advanced' || id === 'processing');
   updateChainIndicator();
+  updateDitherIndicator();
 }
 
 /* ── Dialog tabs ── */
@@ -150,6 +151,8 @@ function updateAdvanced() {
      normBox.disabled = willRGTag;
      if (willRGTag) normBox.checked = false;
   }
+
+  updateDitherIndicator();
 }
 
 /* ── Audio-chain active indicator (left-footer) ──
@@ -181,6 +184,26 @@ function updateChainIndicator() {
     if (dynOn) parts.push(`Dynamics: ${dynVal}`);
     ind.textContent = `Audio chain active — ${parts.join(' · ')}`;
   }
+}
+
+/* ── Dither indicator (left-footer) ──
+   ffmpeg auto-applies TPDF dither when down-converting to pcm_s16le from a
+   higher-precision source. There's no explicit "dither" toggle in the UI,
+   so this flag confirms it'll happen — otherwise the user might assume the
+   conversion is a raw truncation. Hidden on the Fast tab (no 16-bit there)
+   and whenever the format/bit-depth combination won't actually dither. */
+function updateDitherIndicator() {
+  const ind = $('dither-indicator');
+  if (!ind) return;
+  const activeBtn = /** @type {HTMLElement|null} */ (document.querySelector('.tab-btn.active'));
+  const activeTab = (activeBtn && activeBtn.dataset.tab) || 'fast';
+  const fmt = $select('adv-format');
+  const bd  = $select('adv-bd');
+  const isPCM = formatKind(fmt ? fmt.value : '') === 'pcm';
+  const is16  = (bd ? bd.value : '').startsWith('16');
+  const show  = activeTab !== 'fast' && isPCM && is16;
+  ind.classList.toggle('hidden', !show);
+  if (show) ind.textContent = 'Audio will be dithered (TPDF) — 16-bit PCM output';
 }
 
 /* ── Processing bypass dim ── */
