@@ -55,6 +55,35 @@ jobs:
       - name: FFmpeg E2E smoke test
         run: go test -tags e2e -timeout 60s ./internal/ffmpeg/...
 
+      - name: Verify bundled FFmpeg binaries have required codecs
+        working-directory: .
+        run: |
+          set -euo pipefail
+          required=(
+            --enable-nonfree
+            --enable-gpl
+            --enable-libfdk-aac
+            --enable-libmp3lame
+            --enable-libopus
+            --enable-libsoxr
+          )
+          fail=0
+          for bin in go/platform/ffmpegSource/*; do
+            cfg=$(strings "$bin" | grep -m1 -- '--enable-libfdk-aac' || true)
+            if [ -z "$cfg" ]; then
+              echo "::error file=$bin::no configure string found — wrong/corrupt binary?"
+              fail=1
+              continue
+            fi
+            for flag in "${required[@]}"; do
+              if ! grep -q -- "$flag" <<<"$cfg"; then
+                echo "::error file=$bin::missing $flag"
+                fail=1
+              fi
+            done
+          done
+          exit $fail
+
   build-mac-arm64:
     needs: sanity
     runs-on: macos-latest
