@@ -24,23 +24,18 @@ jobs:
       - name: Set up PATH
         run: echo "/opt/homebrew/bin:/usr/local/go/bin:$HOME/go/bin" >> $GITHUB_PATH
 
-      - name: Install Fyne
-        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
 
       - name: Build
         run: |
           cd go
-          GOARCH=arm64 go build -buildmode=pie -ldflags="-s -w" -o tnt
-
-      - name: Package
-        run: |
-          cd go
-          fyne package -os darwin -name TNT -icon ../Icon.png -executable tnt --appID com.collinsgroup.tnt
+          wails build -platform darwin/arm64 -ldflags "-s -w"
 
       - name: Add FFmpeg to bundle
         run: |
-          cp go/platform/ffmpegSource/ffmpegMacM go/TNT.app/Contents/MacOS/ffmpeg
-          chmod +x go/TNT.app/Contents/MacOS/ffmpeg
+          cp go/platform/ffmpegSource/ffmpegMacM go/build/bin/TNT.app/Contents/MacOS/ffmpeg
+          chmod +x go/build/bin/TNT.app/Contents/MacOS/ffmpeg
 
       - name: Import Certificate
         run: |
@@ -56,7 +51,7 @@ jobs:
 
       - name: Sign App
         run: |
-          cd go
+          cd go/build/bin
           find TNT.app -print0 | xargs -0 xattr -c 2>/dev/null || true
           xattr -cr TNT.app 2>/dev/null || true
 
@@ -65,7 +60,9 @@ jobs:
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
-              <key>com.apple.security.cs.disable-library-validation</key>
+              <key>com.apple.security.cs.allow-jit</key>
+              <true/>
+              <key>com.apple.security.network.client</key>
               <true/>
           </dict>
           </plist>
@@ -92,7 +89,7 @@ jobs:
 
       - name: Create DMG
         run: |
-          cd go
+          cd go/build/bin
           npm install -g create-dmg
           create-dmg TNT.app --overwrite --dmg-title="TNT" || true
           for f in TNT*.dmg; do mv "$f" ${{ steps.filename.outputs.dmg_name }}; break; done
@@ -100,7 +97,7 @@ jobs:
 
       - name: Notarize DMG
         run: |
-          cd go
+          cd go/build/bin
           xcrun notarytool submit ${{ steps.filename.outputs.dmg_name }} \
             --apple-id "${{ secrets.NOTARY_APPLE_ID }}" \
             --team-id "${{ secrets.NOTARY_TEAM_ID }}" \
@@ -112,7 +109,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mac-release-assets
-          path: go/${{ steps.filename.outputs.dmg_name }}
+          path: go/build/bin/${{ steps.filename.outputs.dmg_name }}
 
       - name: Cleanup Keychain
         if: always()
@@ -126,27 +123,25 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.26'
 
-      - name: Install Fyne
-        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+      - name: Set up PATH
+        run: echo "/usr/local/bin:/usr/local/go/bin:$HOME/go/bin" >> $GITHUB_PATH
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
 
       - name: Build
         run: |
           cd go
-          GOARCH=amd64 go build -buildmode=pie -ldflags="-s -w" -o tnt
-
-      - name: Package
-        run: |
-          cd go
-          fyne package -os darwin -name TNT -icon ../Icon.png -executable tnt --appID com.collinsgroup.tnt
+          wails build -platform darwin/amd64 -ldflags "-s -w"
 
       - name: Add FFmpeg to bundle
         run: |
-          cp go/platform/ffmpegSource/ffmpegMacX86 go/TNT.app/Contents/MacOS/ffmpeg
-          chmod +x go/TNT.app/Contents/MacOS/ffmpeg
+          cp go/platform/ffmpegSource/ffmpegMacX86 go/build/bin/TNT.app/Contents/MacOS/ffmpeg
+          chmod +x go/build/bin/TNT.app/Contents/MacOS/ffmpeg
 
       - name: Import Certificate
         run: |
@@ -162,7 +157,7 @@ jobs:
 
       - name: Sign App
         run: |
-          cd go
+          cd go/build/bin
           find TNT.app -print0 | xargs -0 xattr -c 2>/dev/null || true
           xattr -cr TNT.app 2>/dev/null || true
 
@@ -171,7 +166,9 @@ jobs:
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
-              <key>com.apple.security.cs.disable-library-validation</key>
+              <key>com.apple.security.cs.allow-jit</key>
+              <true/>
+              <key>com.apple.security.network.client</key>
               <true/>
           </dict>
           </plist>
@@ -198,7 +195,7 @@ jobs:
 
       - name: Create DMG
         run: |
-          cd go
+          cd go/build/bin
           npm install -g create-dmg
           create-dmg TNT.app --overwrite --dmg-title="TNT" || true
           for f in TNT*.dmg; do mv "$f" ${{ steps.filename.outputs.dmg_name }}; break; done
@@ -206,7 +203,7 @@ jobs:
 
       - name: Notarize DMG
         run: |
-          cd go
+          cd go/build/bin
           xcrun notarytool submit ${{ steps.filename.outputs.dmg_name }} \
             --apple-id "${{ secrets.NOTARY_APPLE_ID }}" \
             --team-id "${{ secrets.NOTARY_TEAM_ID }}" \
@@ -218,7 +215,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mac-intel-release-assets
-          path: go/${{ steps.filename.outputs.dmg_name }}
+          path: go/build/bin/${{ steps.filename.outputs.dmg_name }}
 
       - name: Cleanup Keychain
         if: always()
@@ -234,10 +231,10 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.26'
 
-      - name: Install Fyne CLI
-        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
 
       # No need to check for downloaded FFmpeg since it's not downloaded
       #- name: Verify FFmpeg exists
@@ -265,16 +262,14 @@ jobs:
         run: |
           $TAG = $env:GITHUB_REF -replace "refs/tags/v", ""
           $VERSION = $TAG.Split("-")[0]
-          $env:CGO_ENABLED = "1"
-          $env:GOARCH = "amd64"
           cd go
-          go build -ldflags "-s -w -X main.version=$VERSION" -o TNT.exe
+          wails build -platform windows/amd64 -ldflags "-s -w -X main.version=$VERSION"
         shell: powershell
 
       - name: Create InnoSetup installer
         run: |
           New-Item -ItemType Directory -Force -Path packaging
-          Copy-Item -Path go\TNT.exe -Destination packaging\tnt.exe
+          Copy-Item -Path go\build\bin\TNT.exe -Destination packaging\tnt.exe
           Copy-Item -Path go\platform\ffmpegSource\ffmpeg.exe -Destination packaging\ffmpeg.exe
           $iscc = @(
             "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
@@ -328,16 +323,21 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgl1-mesa-dev xorg-dev libfuse2
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libfuse2
 
       - name: Install nfpm
         run: |
           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
 
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+
       - name: Build Linux binary
         run: |
           cd go
-          go build -tags linux -o ../tnt-linux-amd64
+          wails build -platform linux/amd64 -ldflags "-s -w"
+          cp build/bin/TNT ../tnt-linux-amd64
+          chmod +x ../tnt-linux-amd64
 
       - name: Determine version and prefix
         id: meta
@@ -387,6 +387,18 @@ jobs:
           license: Proprietary
           section: sound
           priority: optional
+          depends:
+            - libwebkit2gtk-4.1-0
+            - libgtk-3-0
+          overrides:
+            rpm:
+              depends:
+                - webkit2gtk4.1
+                - gtk3
+            archlinux:
+              depends:
+                - webkit2gtk-4.1
+                - gtk3
           contents:
             - src: staging/usr/bin/tnt
               dst: /usr/bin/tnt
@@ -513,18 +525,26 @@ jobs:
         with:
           go-version: '1.26'
 
+      - name: Set up PATH
+        run: echo "/usr/local/go/bin:$HOME/go/bin" >> $GITHUB_PATH
+
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgl1-mesa-dev xorg-dev libfuse2
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libfuse2
 
       - name: Install nfpm
         run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
 
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+
       - name: Build Linux binary
         run: |
           cd go
-          GOARCH=arm64 go build -tags linux -o ../tnt-linux-arm64
+          wails build -platform linux/arm64 -ldflags "-s -w"
+          cp build/bin/TNT ../tnt-linux-arm64
+          chmod +x ../tnt-linux-arm64
 
       - name: Determine version and prefix
         id: meta
@@ -570,6 +590,18 @@ jobs:
           license: Proprietary
           section: sound
           priority: optional
+          depends:
+            - libwebkit2gtk-4.1-0
+            - libgtk-3-0
+          overrides:
+            rpm:
+              depends:
+                - webkit2gtk4.1
+                - gtk3
+            archlinux:
+              depends:
+                - webkit2gtk-4.1
+                - gtk3
           contents:
             - src: staging/usr/bin/tnt
               dst: /usr/bin/tnt
@@ -670,7 +702,7 @@ jobs:
         uses: actions/download-artifact@v4
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             mac-release-assets/*.dmg
