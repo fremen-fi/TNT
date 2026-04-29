@@ -20,8 +20,13 @@ jobs:
           go-version: '1.26'
           cache-dependency-path: go/go.sum
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Install system dependencies
-        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends libgl1-mesa-dev xorg-dev
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends libgtk-3-dev libwebkit2gtk-4.1-dev
 
       - name: Verify dependencies
         run: |
@@ -40,3 +45,124 @@ jobs:
 
       - name: Type check
         run: go vet ./...
+
+      - name: Type check frontend JS
+        run: npx -y -p typescript@5 tsc --noEmit -p frontend/jsconfig.json
+
+      - name: Unit tests
+        run: go test ./...
+
+      - name: FFmpeg E2E smoke test
+        run: go test -tags e2e -timeout 60s ./internal/ffmpeg/...
+
+      - name: Verify bundled FFmpeg binaries have required codecs
+        working-directory: .
+        run: |
+          set -euo pipefail
+          required=(
+            --enable-nonfree
+            --enable-gpl
+            --enable-libfdk-aac
+            --enable-libmp3lame
+            --enable-libopus
+            --enable-libsoxr
+          )
+          fail=0
+          for bin in go/platform/ffmpegSource/*; do
+            cfg=$(strings "$bin" | grep -m1 -- '--enable-libfdk-aac' || true)
+            if [ -z "$cfg" ]; then
+              echo "::error file=$bin::no configure string found — wrong/corrupt binary?"
+              fail=1
+              continue
+            fi
+            for flag in "${required[@]}"; do
+              if ! grep -q -- "$flag" <<<"$cfg"; then
+                echo "::error file=$bin::missing $flag"
+                fail=1
+              fi
+            done
+          done
+          exit $fail
+
+  build-mac-arm64:
+    needs: sanity
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Set up PATH
+        run: echo "/opt/homebrew/bin:/usr/local/go/bin:$HOME/go/bin" >> $GITHUB_PATH
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+
+      - name: Build
+        run: |
+          cd go
+          wails build -platform darwin/arm64 -devtools -ldflags "-s -w -X main.version=pr-${{ github.event.pull_request.number }}"
+
+      - name: Add FFmpeg to bundle
+        run: |
+          cp go/platform/ffmpegSource/ffmpegMacM go/build/bin/TNT.app/Contents/MacOS/ffmpeg
+          chmod +x go/build/bin/TNT.app/Contents/MacOS/ffmpeg
+
+      # Ad-hoc sign so reviewers can open the .app locally without Gatekeeper
+      # blocking it. No notarization — that would need release secrets.
+      - name: Ad-hoc sign
+        run: |
+          cd go/build/bin
+          find TNT.app -print0 | xargs -0 xattr -c 2>/dev/null || true
+          xattr -cr TNT.app 2>/dev/null || true
+          codesign -f -s - --deep TNT.app
+          codesign --verify --deep --strict --verbose=2 TNT.app
+
+      - name: Zip TNT.app
+        run: |
+          cd go/build/bin
+          ditto -c -k --keepParent TNT.app TNT.app.zip
+
+      - name: Upload PR macOS test build
+        uses: actions/upload-artifact@v4
+        with:
+          name: tnt-pr-${{ github.event.pull_request.number }}-mac-arm64
+          path: go/build/bin/TNT.app.zip
+
+  build-windows:
+    needs: sanity
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+
+      - name: Build
+        shell: powershell
+        run: |
+          cd go
+          wails build -platform windows/amd64 -devtools -ldflags "-s -w -X main.version=pr-${{ github.event.pull_request.number }}"
+
+      - name: Bundle FFmpeg next to exe
+        shell: powershell
+        run: |
+          Copy-Item -Path go\platform\ffmpegSource\ffmpeg.exe -Destination go\build\bin\ffmpeg.exe
+
+      - name: Upload PR Windows test build
+        uses: actions/upload-artifact@v4
+        with:
+          name: tnt-pr-${{ github.event.pull_request.number }}-windows
+          path: |
+            go/build/bin/TNT.exe
+            go/build/bin/ffmpeg.exe
