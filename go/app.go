@@ -5,6 +5,8 @@ import (
 	"os"
 	"runtime"
 	"sync"
+
+	"github.com/fremen-fi/tnt/go/internal/telemetry"
 )
 
 type AudioNormalizer struct {
@@ -44,6 +46,9 @@ type AudioNormalizer struct {
 	watcherMutex sync.Mutex
 
 	logFile *os.File
+
+	telemetry        *telemetry.Client
+	telemetryEnabled bool
 }
 
 func (n *AudioNormalizer) GetPlatformFormats() []string {

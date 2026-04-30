@@ -823,7 +823,7 @@ func (p *CLIProcessor) processFile(inputPath string) bool {
 	p.logQuiet(fmt.Sprintf("Final command: ffmpeg %s", strings.Join(args, " ")))
 
 	cmd := ffmpeg.Command(args...)
-	output, err := cmd.CombinedOutput()
+	output, err := ffmpeg.RunCmd(cmd)
 	p.logQuiet(fmt.Sprintf("FFmpeg output: %s", string(output)))
 
 	if err != nil {

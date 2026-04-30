@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
+
+	"github.com/fremen-fi/tnt/go/internal/telemetry"
 )
 
 // ----- File queue -----
@@ -203,6 +206,7 @@ func (n *AudioNormalizer) LoadPreferences() Preferences {
 		DynPreset:             n.dynamicsPreset,
 		DynNorm:               n.dynNorm,
 		PhaseCheck:            n.phaseCheck,
+		TelemetryEnabled:      n.telemetryEnabled,
 	}
 }
 
@@ -224,7 +228,32 @@ func (n *AudioNormalizer) SavePreferences(prefs Preferences) {
 	n.dynamicsPreset = prefs.DynPreset
 	n.dynNorm = prefs.DynNorm
 	n.phaseCheck = prefs.PhaseCheck
+	n.telemetryEnabled = prefs.TelemetryEnabled
+	if n.telemetry != nil {
+		n.telemetry.SetEnabled(prefs.TelemetryEnabled)
+	}
 	n.savePreferences()
+}
+
+// SetTelemetryEnabled is a granular toggle for the Preferences UI; it does
+// not require sending the full Preferences blob.
+func (n *AudioNormalizer) SetTelemetryEnabled(enabled bool) {
+	n.telemetryEnabled = enabled
+	if n.telemetry != nil {
+		n.telemetry.SetEnabled(enabled)
+	}
+	n.savePreferences()
+}
+
+// GetTelemetryEnabled returns the current opt-in state.
+func (n *AudioNormalizer) GetTelemetryEnabled() bool {
+	return n.telemetryEnabled
+}
+
+// ResetTelemetryID generates a new anonymous client ID. Used when the user
+// wants to break linkability between past and future events.
+func (n *AudioNormalizer) ResetTelemetryID() string {
+	return telemetry.ResetClientID()
 }
 
 func (n *AudioNormalizer) ResetPreferences() {
@@ -235,6 +264,10 @@ func (n *AudioNormalizer) ResetPreferences() {
 
 func (n *AudioNormalizer) GetVersion() string {
 	return currentVersion
+}
+
+func (n *AudioNormalizer) GetOS() string {
+	return runtime.GOOS
 }
 
 func (n *AudioNormalizer) CheckForUpdates() VersionInfo {
