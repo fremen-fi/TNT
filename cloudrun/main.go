@@ -179,4 +179,3 @@ func emit(e event) {
 	// fmt.Println goes to stdout, which Cloud Run forwards to Cloud Logging.
 	fmt.Println(string(out))
 }
-
