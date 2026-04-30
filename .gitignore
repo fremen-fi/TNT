@@ -9,3 +9,6 @@ go/build/darwin/Info.dev.plist
 
 *swift*.md
 *ON_PRO*.md
+*RY_PRO*.md
+
+cloudrun/*.md

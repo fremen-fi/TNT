@@ -18,8 +18,8 @@ const $button = (id) => /** @type {HTMLButtonElement|null} */ (document.getEleme
 function setTheme(mode) {
   document.documentElement.classList.remove('light', 'dark');
   document.documentElement.classList.add(mode);
-  $('theme-btn-light').classList.toggle('active', mode === 'light');
-  $('theme-btn-dark').classList.toggle('active', mode === 'dark');
+  $('theme-btn-light')?.classList.toggle('active', mode === 'light');
+  $('theme-btn-dark')?.classList.toggle('active', mode === 'dark');
 }
 
 (function initTheme() {
@@ -106,17 +106,6 @@ function updateAdvanced() {
   toggle('row-lufs', customOn);
   toggle('row-tp',   customOn);
 
-  // disable no-transcode for codecs that don't have any meaningful purpose in TNT without transcoding
-  // e.g. encoding formats that can't hold metadata in a meaningful way
-  const transCodeRow = $('row-transcode');
-  const transCodeBox = $input('adv-no-transcode');
-  const notTranscodeEncoder = isPCM || isFLAC;
-  if (transCodeRow) transCodeRow.classList.toggle('dimmed', notTranscodeEncoder);
-  if (transCodeBox) {
-      transCodeBox.disabled = notTranscodeEncoder;
-      if (notTranscodeEncoder) transCodeBox.checked = false;
-  }
-
   // disable speech optimization for others than Opus,
   // hide the whole row for non-opus encoders,
   // since speech optimization only calls a specific flag on the libopus encoder.
@@ -151,6 +140,18 @@ function updateAdvanced() {
      normBox.disabled = willRGTag;
      if (willRGTag) normBox.checked = false;
   }
+
+  // disable no-transcode for codecs that don't have any meaningful purpose in TNT without transcoding
+    // e.g. encoding formats that can't hold metadata in a meaningful way
+    const transCodeRow = $('row-transcode');
+    const transCodeBox = $input('adv-no-transcode');
+    const notTranscodeEncoder = isPCM || isFLAC;
+    const tcBlocked = notTranscodeEncoder || willNormalize;
+    if (transCodeRow) transCodeRow.classList.toggle('dimmed', tcBlocked);
+    if (transCodeBox) {
+        transCodeBox.disabled = tcBlocked;
+        if (tcBlocked) transCodeBox.checked = false;
+    }
 
   updateDitherIndicator();
 }

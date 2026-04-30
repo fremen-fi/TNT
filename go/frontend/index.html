@@ -102,7 +102,7 @@
             <input type="checkbox" id="fast-norm">
             <div class="check-text">
               <span class="check-label">Normalize</span>
-              <span class="check-sub">EBU R128 · −23 LUFS · −1 dBTP</span>
+              <span class="check-sub" id="fast-norm-sub">EBU R128 · −23 LUFS · −1 dBTP</span>
             </div>
           </label>
         </section>
@@ -139,7 +139,7 @@
             <input type="number" id="adv-br" value="256" min="12" max="510">
           </div>
           <div class="form-row hidden" id="row-cl">
-            <label for="adv-cl">Compression (0–10)</label>
+            <label for="adv-cl">Data compression<br  />0 (off) – 10 (full)</label>
             <input type="range" id="adv-cl" min="0" max="10" step="1" value="0"
               oninput="document.getElementById('adv-cl-out').value = this.value">
             <output id="adv-cl-out">0</output>
@@ -166,7 +166,7 @@
           <input type="checkbox" id="adv-norm" checked onchange="updateAdvanced()">
             <div class="check-text">
               <span class="check-label">Normalize</span>
-              <span class="check-sub">EBU R128 · −23 LUFS — alters audio</span>
+              <span class="check-sub" id="adv-norm-sub">EBU R128 · −23 LUFS — alters audio</span>
             </div>
           </label>
           <label class="check-row" id="row-rg">
@@ -288,6 +288,7 @@
     <button class="dialog-tab-btn"        data-panel="prefs-watch"   onclick="switchDialogTab(this,'prefs-tabs','prefs-panels')">Watch mode</button>
     <button class="dialog-tab-btn"        data-panel="prefs-version" onclick="switchDialogTab(this,'prefs-tabs','prefs-panels')">Version</button>
     <button class="dialog-tab-btn"        data-panel="prefs-report"  onclick="switchDialogTab(this,'prefs-tabs','prefs-panels')">Error report</button>
+    <button class="dialog-tab-btn"        data-panel="prefs-telemetry" onclick="switchDialogTab(this,'prefs-tabs','prefs-panels')">Telemetry</button>
   </div>
   <div class="dialog-body" id="prefs-panels">
     <div class="dialog-pane active" id="prefs-norm">
@@ -319,19 +320,63 @@
       </label>
     </div>
     <div class="dialog-pane" id="prefs-watch">
-      <p>Watch mode automatically processes files added to the input folder. Origin folder is set via "+ Folder"; output via "Set". Existing files are ignored — only new arrivals trigger processing.</p>
+      <p>Watch mode automatically processes files added to the input folder.</p>
+      <ul style="margin-top:0;">
+      <li>Origin folder is set via "+ Folder"</li>
+      <li>Output folder is set via "Set" above the "Processing" button</li>
+      </ul>
+      <p>Existing files are ignored — only new arrivals trigger processing.</p>
       <label class="check-row">
         <input type="checkbox" id="prefs-watch-mode">
         <div class="check-text"><span class="check-label">Watch mode enabled</span></div>
       </label>
     </div>
     <div class="dialog-pane" id="prefs-version">
-      <p>You are running version 2.4.1.</p>
-      <button class="btn" onclick="addLog('Up to date — v2.4.1 is the latest','ok'); closeDialog('prefs-dialog')">Check for updates</button>
+      <p id="prefs-version-text">Checking version…</p>
+      <button class="btn">Check for updates</button>
     </div>
     <div class="dialog-pane" id="prefs-report">
-      <p>Send an error report. Opens your default email client with the processing log attached.</p>
+      <p id="prefs-report-text">Send an error report.</p>
       <button class="btn" onclick="addLog('Preparing error report…','info')">Send error report</button>
+    </div>
+    <div class="dialog-pane" id="prefs-telemetry">
+      <p>Help us make TNT better by sharing anonymous usage data. When enabled, TNT sends each ffmpeg command and its output to our server so we can see which formats and options the users pick. <strong>Off by default.</strong></p>
+      <p>Before transmission we strip:</p>
+      <ul style="margin-top:0;">
+        <li>File paths and filenames (only the file extension is kept)</li>
+        <li>Audio metadata (title, artist, album, comments, etc.)</li>
+      </ul>
+      <p>Sent: ffmpeg flags, codec settings, success/failure, error messages, app version, OS, and a random anonymous ID generated on this device. Never sent: your name, email, IP-derived location, or anything that identifies you.</p>
+      <details style="margin: 6px 0 12px;">
+        <summary style="cursor: pointer; color: var(--muted); font-size: 12px;">Example of what gets sent</summary>
+<pre style="margin: 8px 0 0; padding: 10px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 11px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; color: var(--muted);">{
+  "event": "ffmpeg_run",
+  "client_id": "9f3a1e72c4b8...",
+  "app_version": "1.3.0",
+  "os": "darwin",
+  "arch": "arm64",
+  "args": [
+    "-i", "&lt;path&gt;/&lt;file&gt;.wav",
+    "-af", "loudnorm=I=-23:TP=-1",
+    "-metadata", "title=&lt;redacted&gt;",
+    "-c:a", "flac",
+    "-y", "&lt;path&gt;/&lt;file&gt;.flac"
+  ],
+  "exit_ok": true,
+  "duration_ms": 1842,
+  "output_tail": "Input #0, wav, from '&lt;path&gt;':\n  Duration: 00:03:42.18, bitrate: 1411 kb/s\n  Stream #0:0: Audio: pcm_s24le, 48000 Hz, stereo\nOutput #0, flac, to '&lt;path&gt;':\nsize=4567kB time=00:03:42.18"
+}</pre>
+      </details>
+      <label class="check-row">
+        <input type="checkbox" id="prefs-telemetry-enabled" onchange="setTelemetryEnabled(this.checked)">
+        <div class="check-text">
+          <span class="check-label">Share anonymous usage data</span>
+          <span class="check-sub">Helps us prioritize fixes and new features</span>
+        </div>
+      </label>
+      <div class="form-divider"></div>
+      <p>If you'd like to break linkability between past and future events, reset the anonymous ID, and a fresh random value is generated.</p>
+      <button class="btn" onclick="resetTelemetryID()">Reset anonymous ID</button>
     </div>
   </div>
 </dialog>

@@ -24,6 +24,7 @@
  * @property {boolean} dyn_norm_enabled
  * @property {string}  selected_tab
  * @property {boolean} phase_check_auto
+ * @property {boolean} telemetry_enabled
  */
 
 /**
@@ -527,6 +528,7 @@ function applyPrefsToUI(prefs) {
   if (prefs.dyn_preset) { const el = $select('proc-dyn'); if (el) el.value = prefs.dyn_preset; }
   if (typeof prefs.dyn_norm_enabled === 'boolean') { const dn = $input('proc-dn');     if (dn) dn.checked = prefs.dyn_norm_enabled; }
   if (typeof prefs.phase_check_auto === 'boolean') { const ph = $input('prefs-phase'); if (ph) ph.checked = prefs.phase_check_auto; }
+  if (typeof prefs.telemetry_enabled === 'boolean') { const t = $input('prefs-telemetry-enabled'); if (t) t.checked = prefs.telemetry_enabled; }
   if (prefs.last_output_dir) {
     const out = $('output-path');
     if (out) { out.textContent = prefs.last_output_dir; out.title = prefs.last_output_dir; }
@@ -542,6 +544,7 @@ function applyPrefsToUI(prefs) {
 
   if (prefs.selected_tab) switchTab(prefs.selected_tab);
   updateAdvanced();
+  updateNormSubText();
   const byp = $input('proc-bypass');
   updateBypass(byp ? byp.checked : false);
 }
@@ -594,8 +597,29 @@ function gatherPrefs() {
     dyn_norm_enabled:       dn  ? dn.checked : false,
     selected_tab:           tab,
     phase_check_auto:       ph  ? ph.checked : false,
+    telemetry_enabled:      (function(){ const t = $input('prefs-telemetry-enabled'); return t ? t.checked : false; })(),
   };
 }
+
+async function setTelemetryEnabled(enabled) {
+  try {
+    await window.go.main.AudioNormalizer.SetTelemetryEnabled(!!enabled);
+    addLog(enabled ? 'Anonymous telemetry enabled' : 'Anonymous telemetry disabled', 'info');
+  } catch (e) {
+    addLog('Failed to update telemetry preference', 'error');
+  }
+}
+
+async function resetTelemetryID() {
+  try {
+    await window.go.main.AudioNormalizer.ResetTelemetryID();
+    addLog('Anonymous telemetry ID reset', 'ok');
+  } catch (e) {
+    addLog('Failed to reset telemetry ID', 'error');
+  }
+}
+window.setTelemetryEnabled = setTelemetryEnabled;
+window.resetTelemetryID = resetTelemetryID;
 
 /* ── Override inline mock handlers and bind extra listeners ── */
 function bindRealHandlers() {
@@ -674,8 +698,19 @@ function bindRealHandlers() {
       if (key === 'ebu')  { setLT('-23', '-1'); }
       if (key === 'atsc') { setLT('-24', '-2'); }
       // 'custom' uses whatever is in prefs-lufs/prefs-tp
+      updateNormSubText();
     });
   });
+
+  // Live-update the Fast/Advanced normalize sub-labels while the user
+  // edits the Preferences custom targets, or the per-session Advanced
+  // custom targets, or toggles "Custom loudness targets" in Advanced.
+  ['prefs-lufs', 'prefs-tp', 'adv-lufs', 'adv-tp'].forEach((id) => {
+    const el = $input(id);
+    if (el) el.addEventListener('input', updateNormSubText);
+  });
+  const advCustom = $input('adv-custom-loud');
+  if (advCustom) advCustom.addEventListener('change', updateNormSubText);
 
   // Speech toggle forces Opus
   const sp = $input('adv-speech');
@@ -683,7 +718,7 @@ function bindRealHandlers() {
     const t = /** @type {HTMLInputElement} */ (e.target);
     if (t.checked) {
       const sel = $select('adv-format');
-      if (sel) { sel.value = 'opus'; updateAdvanced(); }
+      if (sel) { sel.value = 'Opus'; updateAdvanced(); }
     }
   });
 
@@ -698,6 +733,40 @@ function setLT(lufs, tp) {
   const b = $input('adv-tp');     if (b) b.value = tp;
   const c = $input('prefs-lufs'); if (c) c.value = lufs;
   const d = $input('prefs-tp');   if (d) d.value = tp;
+  updateNormSubText();
+}
+
+/** Render the Normalize sub-labels in Fast and Advanced.
+ *  Fast always reflects the Preferences-defined standard.
+ *  Advanced's "Custom loudness targets" toggle, when on, overrides
+ *  with the per-session adv-lufs / adv-tp values. */
+function updateNormSubText() {
+  const stdEl = /** @type {HTMLInputElement|null} */ (document.querySelector('input[name="norm-std"]:checked'));
+  const stdKey = stdEl ? stdEl.value : 'ebu';
+  let label, lufs, tp;
+  if (stdKey === 'ebu')        { label = 'EBU R128';      lufs = '-23'; tp = '-1'; }
+  else if (stdKey === 'atsc')  { label = 'USA ATSC A/85'; lufs = '-24'; tp = '-2'; }
+  else {
+    label = 'Custom';
+    const l = $input('prefs-lufs'); const t = $input('prefs-tp');
+    lufs = l && l.value ? l.value : '-23';
+    tp   = t && t.value ? t.value : '-1';
+  }
+  const fmt = (s) => String(s).replace(/^-/, '−');
+
+  const fast = $('fast-norm-sub');
+  if (fast) fast.textContent = `${label} · ${fmt(lufs)} LUFS · ${fmt(tp)} dBTP`;
+
+  let advLabel = label, advLufs = lufs, advTp = tp;
+  const advCustom = $input('adv-custom-loud');
+  if (advCustom && advCustom.checked) {
+    const al = $input('adv-lufs'); const at = $input('adv-tp');
+    advLabel = 'Custom';
+    advLufs  = al && al.value ? al.value : lufs;
+    advTp    = at && at.value ? at.value : tp;
+  }
+  const adv = $('adv-norm-sub');
+  if (adv) adv.textContent = `${advLabel} · ${fmt(advLufs)} LUFS · ${fmt(advTp)} dBTP — alters audio`;
 }
 
 /* ── Wails runtime events ── */
@@ -733,9 +802,18 @@ async function init() {
 
   try {
     const version = await window.go.main.AudioNormalizer.GetVersion();
-    document.querySelectorAll('#prefs-version p').forEach((p) => {
-      p.textContent = 'You are running version ' + version + '.';
-    });
+    const vEl = $('prefs-version-text');
+    if (vEl) vEl.textContent = 'You are running version ' + version + '.';
+  } catch (_) { /* ignore */ }
+
+  try {
+    const goos = await window.go.main.AudioNormalizer.GetOS();
+    const rEl = $('prefs-report-text');
+    if (rEl) {
+      rEl.textContent = goos === 'windows'
+        ? 'Send an error report. The processing log will be copied to your desktop. You can then send it to us with your request to appsupport@collinsgroup.fi.'
+        : 'Send an error report. Opens your default email client with the processing log attached. If a mailing app cannot be found, the log will be copied to your desktop. You can then send that to us with your request to appsupport@collinsgroup.fi.';
+    }
   } catch (_) { /* ignore */ }
 
   try {
