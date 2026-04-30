@@ -601,12 +601,13 @@ function gatherPrefs() {
   };
 }
 
+/** @param {boolean} enabled */
 async function setTelemetryEnabled(enabled) {
   try {
     await window.go.main.AudioNormalizer.SetTelemetryEnabled(!!enabled);
     addLog(enabled ? 'Anonymous telemetry enabled' : 'Anonymous telemetry disabled', 'info');
   } catch (e) {
-    addLog('Failed to update telemetry preference', 'error');
+    addLog('Failed to update telemetry preference', 'err');
   }
 }
 
@@ -615,7 +616,7 @@ async function resetTelemetryID() {
     await window.go.main.AudioNormalizer.ResetTelemetryID();
     addLog('Anonymous telemetry ID reset', 'ok');
   } catch (e) {
-    addLog('Failed to reset telemetry ID', 'error');
+    addLog('Failed to reset telemetry ID', 'err');
   }
 }
 window.setTelemetryEnabled = setTelemetryEnabled;
@@ -752,6 +753,7 @@ function updateNormSubText() {
     lufs = l && l.value ? l.value : '-23';
     tp   = t && t.value ? t.value : '-1';
   }
+  /** @param {string} s */
   const fmt = (s) => String(s).replace(/^-/, '−');
 
   const fast = $('fast-norm-sub');
