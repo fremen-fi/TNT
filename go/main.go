@@ -29,6 +29,7 @@ import (
 	"github.com/fremen-fi/tnt/go/internal/audio"
 	"github.com/fremen-fi/tnt/go/internal/config"
 	"github.com/fremen-fi/tnt/go/internal/ffmpeg"
+	"github.com/fremen-fi/tnt/go/internal/telemetry"
 )
 
 const (
@@ -1108,6 +1109,7 @@ type Preferences struct {
 	DynNorm               bool   `json:"dyn_norm_enabled"`
 	SelectedTab           string `json:"selected_tab"`
 	PhaseCheck            bool   `json:"phase_check_auto"`
+	TelemetryEnabled      bool   `json:"telemetry_enabled"`
 }
 
 func (n *AudioNormalizer) loadPreferences() {
@@ -1139,6 +1141,7 @@ func (n *AudioNormalizer) loadPreferences() {
 	n.dynamicsPreset = prefs.DynPreset
 	n.dynNorm = prefs.DynNorm
 	n.phaseCheck = prefs.PhaseCheck
+	n.telemetryEnabled = prefs.TelemetryEnabled
 }
 
 func (n *AudioNormalizer) savePreferences() {
@@ -1160,6 +1163,7 @@ func (n *AudioNormalizer) savePreferences() {
 		DynPreset:             n.dynamicsPreset,
 		DynNorm:               n.dynNorm,
 		PhaseCheck:            n.phaseCheck,
+		TelemetryEnabled:      n.telemetryEnabled,
 	}
 
 	configDir, _ := os.UserConfigDir()
@@ -1289,12 +1293,24 @@ func main() {
 			norm.ctx = ctx
 			norm.logFile = norm.initLogFile()
 			norm.loadPreferences()
+
+			norm.telemetry = telemetry.New(currentVersion)
+			norm.telemetry.SetEnabled(norm.telemetryEnabled)
+			norm.telemetry.Start()
+			ffmpeg.Recorder = func(args []string, output []byte, exitOK bool, dur time.Duration) {
+				norm.telemetry.FFmpegRun(args, output, exitOK, dur)
+			}
+			norm.telemetry.AppOpen()
+
 			go checkForUpdates(currentVersion, norm.logFile, func(v VersionInfo) {
 				wailsruntime.EventsEmit(ctx, "update:available", v)
 			})
 		},
 		OnShutdown: func(ctx context.Context) {
 			norm.savePreferences()
+			if norm.telemetry != nil {
+				norm.telemetry.Stop()
+			}
 			if norm.logFile != nil {
 				norm.logFile.Close()
 			}
@@ -2029,7 +2045,7 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 
 	cmd := ffmpeg.Command(args...)
 
-	output, err := cmd.CombinedOutput()
+	output, err := ffmpeg.RunCmd(cmd)
 	n.logToFile(n.logFile, fmt.Sprintf("FFmpeg output: %s", string(output)))
 
 	if err != nil {

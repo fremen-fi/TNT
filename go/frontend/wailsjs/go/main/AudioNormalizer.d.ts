@@ -10,9 +10,13 @@ export function ClearFiles():Promise<Array<string>>;
 
 export function GetFiles():Promise<Array<string>>;
 
+export function GetOS():Promise<string>;
+
 export function GetOutputFolder():Promise<string>;
 
 export function GetPlatformFormats():Promise<Array<string>>;
+
+export function GetTelemetryEnabled():Promise<boolean>;
 
 export function GetVersion():Promise<string>;
 
@@ -30,6 +34,8 @@ export function RemoveFile(arg1:number):Promise<Array<string>>;
 
 export function ResetPreferences():Promise<void>;
 
+export function ResetTelemetryID():Promise<string>;
+
 export function SavePreferences(arg1:main.Preferences):Promise<void>;
 
 export function SelectFiles():Promise<Array<string>>;
@@ -41,6 +47,8 @@ export function SendLogReport():Promise<void>;
 export function SetInputFolder(arg1:string):Promise<string>;
 
 export function SetOutputFolder():Promise<string>;
+
+export function SetTelemetryEnabled(arg1:boolean):Promise<void>;
 
 export function StartWatching():Promise<void>;
 

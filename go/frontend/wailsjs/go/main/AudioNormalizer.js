@@ -18,12 +18,20 @@ export function GetFiles() {
   return window['go']['main']['AudioNormalizer']['GetFiles']();
 }
 
+export function GetOS() {
+  return window['go']['main']['AudioNormalizer']['GetOS']();
+}
+
 export function GetOutputFolder() {
   return window['go']['main']['AudioNormalizer']['GetOutputFolder']();
 }
 
 export function GetPlatformFormats() {
   return window['go']['main']['AudioNormalizer']['GetPlatformFormats']();
+}
+
+export function GetTelemetryEnabled() {
+  return window['go']['main']['AudioNormalizer']['GetTelemetryEnabled']();
 }
 
 export function GetVersion() {
@@ -58,6 +66,10 @@ export function ResetPreferences() {
   return window['go']['main']['AudioNormalizer']['ResetPreferences']();
 }
 
+export function ResetTelemetryID() {
+  return window['go']['main']['AudioNormalizer']['ResetTelemetryID']();
+}
+
 export function SavePreferences(arg1) {
   return window['go']['main']['AudioNormalizer']['SavePreferences'](arg1);
 }
@@ -80,6 +92,10 @@ export function SetInputFolder(arg1) {
 
 export function SetOutputFolder() {
   return window['go']['main']['AudioNormalizer']['SetOutputFolder']();
+}
+
+export function SetTelemetryEnabled(arg1) {
+  return window['go']['main']['AudioNormalizer']['SetTelemetryEnabled'](arg1);
 }
 
 export function StartWatching() {

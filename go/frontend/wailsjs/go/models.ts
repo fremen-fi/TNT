@@ -19,6 +19,7 @@ export namespace main {
 	    dyn_norm_enabled: boolean;
 	    selected_tab: string;
 	    phase_check_auto: boolean;
+	    telemetry_enabled: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Preferences(source);
@@ -44,6 +45,7 @@ export namespace main {
 	        this.dyn_norm_enabled = source["dyn_norm_enabled"];
 	        this.selected_tab = source["selected_tab"];
 	        this.phase_check_auto = source["phase_check_auto"];
+	        this.telemetry_enabled = source["telemetry_enabled"];
 	    }
 	}
 	export class ProcessConfig {
