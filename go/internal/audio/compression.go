@@ -78,33 +78,40 @@ func CalculateMakeupGain(analysis *DynamicsAnalysis, thresholdDb float64, ratio 
 
 // Clamp returns the clamped value
 func clamp(x, lo, hi float64) float64 {
-    return max(lo, min(hi, x))
+	return max(lo, min(hi, x))
 }
 
 // ClampCompressorParams ensures all compressor parameters are within valid ranges
 func ClampCompressorParams(thresholdLin, ratio, attackMs, releaseMs, makeupLin float64) (float64, float64, float64, float64, float64) {
 
-    clamp(thresholdLin, 0.00097563, 1.) // threshold in lin dB ... Threshold: 0.00097563 (-60dB) to 1.0 (0dB)
-    clamp(ratio, 1., 20.) // ratio
-    clamp(attackMs, 0.01, 2000.) // attack in ms
-    clamp(releaseMs, 0.01, 9000.) // release in ms
-    clamp(makeupLin, 1., 64.) // makeup in lin dB
+	clamp(thresholdLin, 0.00097563, 1.) // threshold in lin dB ... Threshold: 0.00097563 (-60dB) to 1.0 (0dB)
+	clamp(ratio, 1., 20.)               // ratio
+	clamp(attackMs, 0.01, 2000.)        // attack in ms
+	clamp(releaseMs, 0.01, 9000.)       // release in ms
+	clamp(makeupLin, 1., 64.)           // makeup in lin dB
 
-    return thresholdLin, ratio, attackMs, releaseMs, makeupLin
+	return thresholdLin, ratio, attackMs, releaseMs, makeupLin
 
 }
 
 // GetKneeFromRatio returns appropriate knee value based on compression ratio
 func GetKneeFromRatio(ratio float64) float64 {
-    switch {
-        case ratio < 1.: return 1.
-        case ratio < 2.: return 2.
-        case ratio < 4.: return 3.
-        case ratio < 8.: return 4.
-        case ratio < 12.: return 6.
-        case ratio >= 12.: return 7.5
-        default: return 4.
-    }
+	switch {
+	case ratio < 1.:
+		return 1.
+	case ratio < 2.:
+		return 2.
+	case ratio < 4.:
+		return 3.
+	case ratio < 8.:
+		return 4.
+	case ratio < 12.:
+		return 6.
+	case ratio >= 12.:
+		return 7.5
+	default:
+		return 4.
+	}
 }
 
 // DbToLinear converts decibels to linear amplitude
