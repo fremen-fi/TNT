@@ -84,11 +84,11 @@ func clamp(x, lo, hi float64) float64 {
 // ClampCompressorParams ensures all compressor parameters are within valid ranges
 func ClampCompressorParams(thresholdLin, ratio, attackMs, releaseMs, makeupLin float64) (float64, float64, float64, float64, float64) {
 
-	clamp(thresholdLin, 0.00097563, 1.) // threshold in lin dB ... Threshold: 0.00097563 (-60dB) to 1.0 (0dB)
-	clamp(ratio, 1., 20.)               // ratio
-	clamp(attackMs, 0.01, 2000.)        // attack in ms
-	clamp(releaseMs, 0.01, 9000.)       // release in ms
-	clamp(makeupLin, 1., 64.)           // makeup in lin dB
+	thresholdLin = clamp(thresholdLin, 0.00097563, 1.) // -60dB to 0dB
+	ratio = clamp(ratio, 1., 20.)
+	attackMs = clamp(attackMs, 0.01, 2000.)
+	releaseMs = clamp(releaseMs, 0.01, 9000.)
+	makeupLin = clamp(makeupLin, 1., 64.)
 
 	return thresholdLin, ratio, attackMs, releaseMs, makeupLin
 
