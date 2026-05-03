@@ -76,67 +76,35 @@ func CalculateMakeupGain(analysis *DynamicsAnalysis, thresholdDb float64, ratio 
 	return 1.0
 }
 
+// Clamp returns the clamped value
+func clamp(x, lo, hi float64) float64 {
+    return max(lo, min(hi, x))
+}
+
 // ClampCompressorParams ensures all compressor parameters are within valid ranges
 func ClampCompressorParams(thresholdLin, ratio, attackMs, releaseMs, makeupLin float64) (float64, float64, float64, float64, float64) {
-	// Threshold: 0.00097563 (-60dB) to 1.0 (0dB)
-	if thresholdLin < 0.00097563 {
-		thresholdLin = 0.00097563
-	}
-	if thresholdLin > 1.0 {
-		thresholdLin = 1.0
-	}
 
-	// Ratio: 1.0 to 20.0
-	if ratio < 1.0 {
-		ratio = 1.0
-	}
-	if ratio > 20.0 {
-		ratio = 20.0
-	}
+    clamp(thresholdLin, 0.00097563, 1.) // threshold in lin dB ... Threshold: 0.00097563 (-60dB) to 1.0 (0dB)
+    clamp(ratio, 1., 20.) // ratio
+    clamp(attackMs, 0.01, 2000.) // attack in ms
+    clamp(releaseMs, 0.01, 9000.) // release in ms
+    clamp(makeupLin, 1., 64.) // makeup in lin dB
 
-	// Attack: 0.01ms to 2000ms
-	if attackMs < 0.01 {
-		attackMs = 0.01
-	}
-	if attackMs > 2000.0 {
-		attackMs = 2000.0
-	}
+    return thresholdLin, ratio, attackMs, releaseMs, makeupLin
 
-	// Release: 0.01ms to 9000ms
-	if releaseMs < 0.01 {
-		releaseMs = 0.01
-	}
-	if releaseMs > 9000.0 {
-		releaseMs = 9000.0
-	}
-
-	// Makeup: 1.0 to 64.0
-	if makeupLin < 1.0 {
-		makeupLin = 1.0
-	}
-	if makeupLin > 64.0 {
-		makeupLin = 64.0
-	}
-
-	return thresholdLin, ratio, attackMs, releaseMs, makeupLin
 }
 
 // GetKneeFromRatio returns appropriate knee value based on compression ratio
 func GetKneeFromRatio(ratio float64) float64 {
-	if ratio < 1.0 {
-		return 1.0
-	} else if ratio < 2.0 {
-		return 2.0
-	} else if ratio < 4.0 {
-		return 3.0
-	} else if ratio < 8.0 {
-		return 4.0
-	} else if ratio < 12.0 {
-		return 6.0
-	} else if ratio >= 12.0 {
-		return 7.5
-	}
-	return 4.0
+    switch {
+        case ratio < 1.: return 1.
+        case ratio < 2.: return 2.
+        case ratio < 4.: return 3.
+        case ratio < 8.: return 4.
+        case ratio < 12.: return 6.
+        case ratio >= 12.: return 7.5
+        default: return 4.
+    }
 }
 
 // DbToLinear converts decibels to linear amplitude
