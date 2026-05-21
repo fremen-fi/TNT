@@ -6,6 +6,7 @@ App/
 Distribution/
 go/frontend/reload-token.txt
 go/build/darwin/Info.dev.plist
+go/go
 
 *swift*.md
 *ON_PRO*.md

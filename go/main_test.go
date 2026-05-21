@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"reflect"
 	"runtime"
 	"testing"
@@ -245,5 +246,87 @@ func TestParseCLIFlagsNonFlagFirstArgReturnsFalse(t *testing.T) {
 	os.Args = []string{"tnt", "filename.wav"}
 	if _, ok := parseCLIFlags(); ok {
 		t.Error("expected ok=false when first arg is not a flag")
+	}
+}
+
+// TestParseCLIFlagsEBUOverridesLufsTargets verifies that -ebu forces the LUFS
+// integrated and true-peak targets to the EBU R128 values (-23 / -1), and that
+// it does so even when the user passes explicit, conflicting targets.
+func TestParseCLIFlagsEBUOverridesLufsTargets(t *testing.T) {
+	saved := os.Args
+	defer func() { os.Args = saved }()
+
+	custom := []string{"-i", "/in", "-o", "/out",
+		"-lufs-target-i", "-16", "-lufs-target-tp", "-2"}
+
+	// Without -ebu the explicit targets are kept verbatim.
+	os.Args = append([]string{"tnt"}, custom...)
+	cfg, ok := parseCLIFlags()
+	if !ok {
+		t.Fatal("parseCLIFlags returned ok=false (no -ebu)")
+	}
+	if cfg.LufsTargetI != "-16" || cfg.LufsTargetTP != "-2" {
+		t.Errorf("without -ebu, custom targets should be kept: I=%q TP=%q",
+			cfg.LufsTargetI, cfg.LufsTargetTP)
+	}
+
+	// With -ebu the explicit targets are overridden to -23 / -1.
+	os.Args = append([]string{"tnt", "-ebu"}, custom...)
+	cfg, ok = parseCLIFlags()
+	if !ok {
+		t.Fatal("parseCLIFlags returned ok=false (-ebu)")
+	}
+	if cfg.LufsTargetI != "-23" || cfg.LufsTargetTP != "-1" {
+		t.Errorf("-ebu must override targets to -23/-1, got I=%q TP=%q",
+			cfg.LufsTargetI, cfg.LufsTargetTP)
+	}
+}
+
+// -v/-version and -h/-help call os.Exit(0), so they cannot be exercised in the
+// test process directly. Each test re-runs this binary as a child with
+// TNT_TEST_CLI_FLAG set; the child branch drives parseCLIFlags with that single
+// flag and is expected to exit 0 after printing.
+
+func TestParseCLIFlagsVersionExits(t *testing.T) {
+	if flag := os.Getenv("TNT_TEST_CLI_FLAG"); flag != "" {
+		os.Args = []string{"tnt", flag}
+		parseCLIFlags()
+		return // unreachable: parseCLIFlags should have exited
+	}
+	for _, flag := range []string{"-v", "-version"} {
+		t.Run(flag, func(t *testing.T) {
+			cmd := exec.Command(os.Args[0], "-test.run=^TestParseCLIFlagsVersionExits$")
+			cmd.Env = append(os.Environ(), "TNT_TEST_CLI_FLAG="+flag)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("%s should exit 0, got %v\noutput:\n%s", flag, err, out)
+			}
+			if !contains(string(out), "TNT version is") || !contains(string(out), currentVersion) {
+				t.Errorf("%s did not print version %q:\n%s", flag, currentVersion, out)
+			}
+		})
+	}
+}
+
+func TestParseCLIFlagsHelpExits(t *testing.T) {
+	if flag := os.Getenv("TNT_TEST_CLI_FLAG"); flag != "" {
+		os.Args = []string{"tnt", flag}
+		parseCLIFlags()
+		return // unreachable: parseCLIFlags should have exited
+	}
+	for _, flag := range []string{"-h", "-help"} {
+		t.Run(flag, func(t *testing.T) {
+			cmd := exec.Command(os.Args[0], "-test.run=^TestParseCLIFlagsHelpExits$")
+			cmd.Env = append(os.Environ(), "TNT_TEST_CLI_FLAG="+flag)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("%s should exit 0, got %v\noutput:\n%s", flag, err, out)
+			}
+			for _, want := range []string{"CLI Daemon Mode", "-ebu", "EBU-flag"} {
+				if !contains(string(out), want) {
+					t.Errorf("%s usage output missing %q:\n%s", flag, want, out)
+				}
+			}
+		})
 	}
 }
