@@ -9,6 +9,12 @@ jobs:
   sanity:
     uses: ./.github/workflows/sanity.yml
 
+      - name: Unit tests
+        run: go test ./...
+
+      - name: FFmpeg E2E smoke test
+        run: go test -tags e2e -timeout 60s ./internal/ffmpeg/...
+
   build-mac-arm64:
     needs: sanity
     if: "(!contains(github.ref, '-win') || contains(github.ref, '-unix') || contains(github.ref, '-macm') || contains(github.ref, '-macs')) && !contains(github.ref, '-linux')"
