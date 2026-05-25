@@ -85,6 +85,9 @@ tnt -i ./inbox -o ./out -format opus -br 128 -speech 1 -lufs 1 -lufs-target-i -1
 | `-comp` | Data compression level `0`–`10` (FLAC/Opus only) | `0` |
 | `-phase-check` | Check for phase inversion before processing: `1`=on, `0`=off | `0` |
 | `-workers` | Number of parallel worker threads (`0`=auto: CPU cores − 1) | `0` |
+| `-ebu` | Use EBU R128 -defined values for loudness (-23 LUFS-I, -1 dBTP) | `0`/false |
+| `-h`/`--help` | Print help and defaults | |
+| `-v`/`--version` | Print version | |
 
 #### About the `-comp`-flag
 This flag is the amount of data compression you want for codecs that allow you to specify data compression level. It **does not** follow the encoder's own data compression argument, but maps to that argument.
