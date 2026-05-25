@@ -14,7 +14,7 @@ import (
 
 // Default endpoint. Overridable via TNT_TELEMETRY_ENDPOINT env var so we can
 // point at a local receiver during dev or self-host without a release.
-const defaultEndpoint = "https://tnt-telemetry-uc.a.run.app/v1/events"
+const defaultEndpoint = "https://tnt-telemetry.fremen.fi/v1/events"
 
 // Output captured per ffmpeg invocation. Keep modest — we only need enough
 // stderr to diagnose failures and see which encoders/filters real users hit.
