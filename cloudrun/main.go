@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -160,6 +161,7 @@ func emit(e event) {
 	}
 	if e.Args != nil {
 		rec["args"] = e.Args
+		rec["cmd"] = "ffmpeg " + strings.Join(e.Args, " ")
 	}
 	if e.ExitOK != nil {
 		rec["exit_ok"] = *e.ExitOK
