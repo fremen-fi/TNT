@@ -55,7 +55,7 @@ func ParseAstatsOutput(output string) *DynamicsAnalysis {
 	}
 
 	noiseFloorRe := regexp.MustCompile(`Noise floor dB:\s+([-\d.]+)`)
-	if match := noiseFloorRe.FindStringSubmatch(output); len(match) > 1 {
+	if match := noiseFloorRe.FindStringSubmatch(overallSection); len(match) > 1 {
 		result.NoiseFloor, _ = strconv.ParseFloat(match[1], 64)
 	}
 

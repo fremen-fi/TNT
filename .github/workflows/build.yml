@@ -9,7 +9,11 @@ on:
       - 'v*-rc.*'      # Explicit release candidates
 
 jobs:
+  sanity:
+    uses: ./.github/workflows/sanity.yml
+
   build-mac-arm64:
+    needs: sanity
     if: "(!contains(github.ref, '-win') || contains(github.ref, '-unix') || contains(github.ref, '-macm') || contains(github.ref, '-macs')) && !contains(github.ref, '-linux')"
     runs-on: macos-latest
     steps:
@@ -20,6 +24,9 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.26'
+
+      - name: Install AWSCLI
+        run: brew install awscli
 
       - name: Set up PATH
         run: echo "/opt/homebrew/bin:/usr/local/go/bin:$HOME/go/bin" >> $GITHUB_PATH
@@ -105,6 +112,16 @@ jobs:
             --wait
           xcrun stapler staple ${{ steps.filename.outputs.dmg_name }}
 
+      - name: Upload to OVH
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.OVH_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.OVH_SECRET }}
+        run: |
+          cd go/build/bin
+          aws s3 cp "${{ steps.filename.outputs.dmg_name }}" "s3://${{ secrets.OVH_BUCKET }}/mac/m/tnt.dmg" \
+            --endpoint-url "${{ secrets.OVH_ENDPOINT }}" \
+            --acl public-read
+
       - name: Upload macOS DMG Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -116,6 +133,7 @@ jobs:
         run: security delete-keychain temp.keychain 2>/dev/null || true
 
   build-mac-intel:
+    needs: sanity
     runs-on: macos-15-intel
     if: "(!contains(github.ref, '-win') || contains(github.ref, '-unix') || contains(github.ref, '-macs')) && !contains(github.ref, '-linux') && !contains(github.ref, '-macm')"
     steps:
@@ -126,6 +144,9 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.26'
+
+      - name: Install awscli
+        run: brew install awscli
 
       - name: Set up PATH
         run: echo "/usr/local/bin:/usr/local/go/bin:$HOME/go/bin" >> $GITHUB_PATH
@@ -211,6 +232,16 @@ jobs:
             --wait
           xcrun stapler staple ${{ steps.filename.outputs.dmg_name }}
 
+      - name: Upload to OVH
+        env:
+            AWS_ACCESS_KEY_ID: ${{ secrets.OVH_ACCESS_KEY }}
+            AWS_SECRET_ACCESS_KEY: ${{ secrets.OVH_SECRET }}
+        run: |
+            cd go/build/bin
+            aws s3 cp "${{ steps.filename.outputs.dmg_name }}" "s3://${{ secrets.OVH_BUCKET }}/mac/intel/tnt.dmg" \
+            --endpoint-url "${{ secrets.OVH_ENDPOINT }}" \
+            --acl public-read
+
       - name: Upload macOS DMG Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -222,6 +253,7 @@ jobs:
         run: security delete-keychain temp.keychain 2>/dev/null || true
 
   build-windows:
+    needs: sanity
     if: "!contains(github.ref, '-mac') && !contains(github.ref, '-linux') && !contains(github.ref, '-unix')"
     runs-on: [self-hosted, X64, Windows, Large]
     steps:
@@ -235,17 +267,6 @@ jobs:
 
       - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
-
-      # No need to check for downloaded FFmpeg since it's not downloaded
-      #- name: Verify FFmpeg exists
-      #  run: |
-      #    if (Test-Path go\platform\ffmpegSource\ffmpeg.exe) {
-      #      Write-Host "FFmpeg found, size: $((Get-Item go\platform\ffmpegSource\ffmpeg.exe).Length) bytes"
-      #    } else {
-      #      Write-Host "ERROR: FFmpeg not found!"
-      #      exit 1
-      #    }
-      #  shell: pwsh
 
       - name: Refresh PATH from registry
         run: |
@@ -297,6 +318,14 @@ jobs:
           Move-Item -Path Distribution\TNT.exe -Destination "Distribution\${{ steps.filename.outputs.exe_name }}"
         shell: powershell
 
+      - name: Upload to OVH
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.OVH_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.OVH_SECRET }}
+        run: |
+          aws s3 cp "Distribution\${{ steps.filename.outputs.exe_name }}" "s3://${{ secrets.OVH_BUCKET }}/win/amd/tnt.exe" --endpoint-url "${{ secrets.OVH_ENDPOINT }}" --acl public-read
+        shell: powershell
+
       - name: Upload Windows Installer Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -304,6 +333,7 @@ jobs:
           path: Distribution/${{ steps.filename.outputs.exe_name }}
 
   build-linux:
+    needs: sanity
     if: "(!contains(github.ref, '-win') || contains(github.ref, '-unix')) && !contains(github.ref, '-mac')"
     runs-on: [self-hosted, X64, Linux, Large]
     steps:
@@ -323,7 +353,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libfuse2
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libfuse2 awscli
 
       - name: Install nfpm
         run: |
@@ -431,6 +461,15 @@ jobs:
           nfpm package -p deb -f nfpm.yaml --target "${DEB_FILE}"
           echo "DEB_FILE=${DEB_FILE}" >> $GITHUB_ENV
 
+      - name: Upload to OVH
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.OVH_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.OVH_SECRET }}
+        run: |
+          aws s3 cp "${DEB_FILE}" "s3://${{ secrets.OVH_BUCKET }}/linux/amd/tnt.deb" \
+            --endpoint-url "${{ secrets.OVH_ENDPOINT }}" \
+            --acl public-read
+
       - name: Build rpm package (Fedora/RHEL/openSUSE)
         run: |
           RPM_FILE="${{ steps.meta.outputs.prefix }}tnt-${{ steps.meta.outputs.version }}-1.x86_64.rpm"
@@ -514,6 +553,7 @@ jobs:
             ${{ env.TAR_FILE }}
 
   build-linux-arm64:
+    needs: sanity
     if: "(!contains(github.ref, '-win') || contains(github.ref, '-unix')) && !contains(github.ref, '-mac')"
     runs-on: ubuntu-24.04-arm
     steps:

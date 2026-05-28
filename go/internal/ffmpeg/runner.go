@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/fremen-fi/tnt/go/platform"
 )
@@ -56,6 +57,12 @@ func hasRequiredCodecs(ffmpegPath string) bool {
 	return strings.Contains(string(out), "enable-libfdk-aac")
 }
 
+// Recorder, when set, is invoked after every ffmpeg invocation that runs
+// through Run / RunCmd. main.go installs the telemetry hook here at startup;
+// when nil (tests, CLI subcommands that don't need telemetry), capture is a
+// no-op. Setting Recorder must happen before any ffmpeg calls.
+var Recorder func(args []string, output []byte, exitOK bool, dur time.Duration)
+
 // Command creates an exec.Cmd for FFmpeg with the given arguments
 // It automatically applies platform-specific settings (like hiding console on Windows)
 func Command(args ...string) *exec.Cmd {
@@ -64,8 +71,27 @@ func Command(args ...string) *exec.Cmd {
 	return cmd
 }
 
-// Run executes FFmpeg with the given arguments and returns combined output
+// Run executes FFmpeg with the given arguments and returns combined output.
+// Records telemetry via Recorder if installed.
 func Run(args ...string) ([]byte, error) {
 	cmd := Command(args...)
-	return cmd.CombinedOutput()
+	return RunCmd(cmd)
+}
+
+// RunCmd runs a pre-built ffmpeg command via CombinedOutput and records
+// telemetry. Use this in place of `cmd.CombinedOutput()` for call sites that
+// need to configure cmd before running (env, custom dir, etc.).
+func RunCmd(cmd *exec.Cmd) ([]byte, error) {
+	start := time.Now()
+	out, err := cmd.CombinedOutput()
+	if Recorder != nil {
+		// Strip the program path; we only want the args list, not the full
+		// command which would include /tmp/ffmpeg or similar absolute paths.
+		args := cmd.Args
+		if len(args) > 0 {
+			args = args[1:]
+		}
+		Recorder(args, out, err == nil, time.Since(start))
+	}
+	return out, err
 }

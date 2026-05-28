@@ -54,6 +54,20 @@ type CLIProcessor struct {
 
 var cliMode bool
 
+func usage(fs *flag.FlagSet) {
+	fmt.Fprintf(os.Stderr, "TNT %s - CLI Daemon Mode\n", currentVersion)
+	fmt.Fprintf(os.Stderr, "Watches a directory and processes audio files.\n\n")
+	fmt.Fprintf(os.Stderr, "Usage:\n")
+	fmt.Fprintf(os.Stderr, "  tnt -i /dir/to/watch -o /dir/to/out [options]\n\n")
+	fmt.Fprintf(os.Stderr, "Examples:\n")
+	fmt.Fprintf(os.Stderr, "  tnt -i ./inbox -o ./processed -p:eq 1 -p:dyn 2 -lufs 1 -lufs-target-i -23 -lufs-target-tp -1\n")
+	fmt.Fprintf(os.Stderr, "  tnt -i ./inbox -o ./tagged -rg 1 -format flac\n")
+	fmt.Fprintf(os.Stderr, "  tnt -i ./inbox -o ./out -format mp3 -br 320 -p:dyn 3 -lufs 1\n\n")
+	fmt.Fprintf(os.Stderr, "Options:\n")
+	fs.PrintDefaults()
+	fmt.Fprintf(os.Stderr, "\nThe EBU-flag (-ebu) is a shorthand for LUFS-I: -23 and TP: -1.\nThis always overrides any LUFS-I or TP value you input.\n")
+}
+
 func parseCLIFlags() (*CLIConfig, bool) {
 	// Check if any CLI flags are present
 	if len(os.Args) < 2 {
@@ -97,6 +111,15 @@ func parseCLIFlags() (*CLIConfig, bool) {
 	phaseCheck := fs.Int("phase-check", 0, "Phase check before processing: 1=on, 0=off")
 	workers := fs.Int("workers", 0, "Number of worker threads (0=auto: CPU cores - 1)")
 
+	// Shorthand
+	ebu := fs.Bool("ebu", false, "Normalize to EBU R128 (LUFS-I: -23, TP: -1)")
+
+	help := fs.Bool("h", false, "help")
+	helpLong := fs.Bool("help", false, "help")
+
+	version := fs.Bool("v", false, "version")
+	versionLong := fs.Bool("version", false, "version")
+
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, "TNT %s - CLI Daemon Mode\n", currentVersion)
 		fmt.Fprintf(os.Stderr, "Watches a directory and processes audio files.\n\n")
@@ -108,10 +131,26 @@ func parseCLIFlags() (*CLIConfig, bool) {
 		fmt.Fprintf(os.Stderr, "  tnt -i ./inbox -o ./out -format mp3 -br 320 -p:dyn 3 -lufs 1\n\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		fs.PrintDefaults()
+		fmt.Fprintf(os.Stderr, "\nThe EBU-flag (-ebu) is a shorthand for LUFS-I: -23 and TP: -1.\nThis always overrides any LUFS-I or TP value you input.\n\n")
 	}
 
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		return nil, false
+	}
+
+	if *ebu {
+		cfg.LufsTargetI = "-23"
+		cfg.LufsTargetTP = "-1"
+	}
+
+	if *help || *helpLong {
+		usage(fs)
+		os.Exit(0)
+	}
+
+	if *version || *versionLong {
+		fmt.Fprintf(os.Stderr, "TNT version is %s.\n", currentVersion)
+		os.Exit(0)
 	}
 
 	// Validate required flags
@@ -429,7 +468,7 @@ func (p *CLIProcessor) processFile(inputPath string) bool {
 	var tempFiles []string
 	defer func() { cleanupTempFiles(tempFiles) }()
 
-	if platformCodec := getPlatformCodecMap()[cfg.Format]; platformCodec != "" {
+	if platformCodec := platformCodecMap[cfg.Format]; platformCodec != "" {
 		actualCodec = platformCodec
 	} else if codec := config.GetCodec(cfg.Format); codec != "" {
 		actualCodec = codec
@@ -823,7 +862,7 @@ func (p *CLIProcessor) processFile(inputPath string) bool {
 	p.logQuiet(fmt.Sprintf("Final command: ffmpeg %s", strings.Join(args, " ")))
 
 	cmd := ffmpeg.Command(args...)
-	output, err := cmd.CombinedOutput()
+	output, err := ffmpeg.RunCmd(cmd)
 	p.logQuiet(fmt.Sprintf("FFmpeg output: %s", string(output)))
 
 	if err != nil {

@@ -2,6 +2,7 @@ name: Sanity Check
 
 on:
   pull_request:
+  workflow_call:
 
 jobs:
   sanity:
@@ -55,6 +56,9 @@ jobs:
       - name: FFmpeg E2E smoke test
         run: go test -tags e2e -timeout 60s ./internal/ffmpeg/...
 
+      - name: CLI daemon E2E smoke test
+        run: go test -tags e2e -timeout 180s -run TestCLIDaemonProducesOutput .
+
       - name: Verify bundled FFmpeg binaries have required codecs
         working-directory: .
         run: |
@@ -86,6 +90,7 @@ jobs:
 
   build-mac-arm64:
     needs: sanity
+    if: github.event_name == 'pull_request'
     runs-on: macos-latest
     steps:
       - name: Checkout Code
@@ -122,6 +127,36 @@ jobs:
           codesign -f -s - --deep TNT.app
           codesign --verify --deep --strict --verbose=2 TNT.app
 
+      # Smoke-test the actual shipping binary: drop a synthetic WAV in a watch
+      # dir, run TNT in CLI daemon mode against the in-bundle ffmpeg, and
+      # confirm an output file appears. Verifies *something* runnable shipped —
+      # not audio substance.
+      - name: CLI smoke test (shipping binary)
+        run: |
+          set -euo pipefail
+          cd go/build/bin
+          BUNDLE_FFMPEG="$PWD/TNT.app/Contents/MacOS/ffmpeg"
+          BUNDLE_BIN="$PWD/TNT.app/Contents/MacOS/TNT"
+          SMOKE="$RUNNER_TEMP/cli-smoke"
+          mkdir -p "$SMOKE/in" "$SMOKE/out"
+          "$BUNDLE_FFMPEG" -y -f lavfi -i anullsrc=r=8000:cl=mono -t 0.5 \
+            -c:a pcm_s16le "$SMOKE/in/smoke.wav"
+          "$BUNDLE_BIN" -i "$SMOKE/in" -o "$SMOKE/out" \
+            -format pcm -bd 16 -sr 8000 \
+            -lufs 0 -rg 0 -dyn-norm 0 -p:eq 0 -p:dyn 0 \
+            -phase-check 0 -workers 1 &
+          PID=$!
+          for _ in $(seq 1 120); do
+            if [ -s "$SMOKE/out/smoke.wav" ]; then break; fi
+            sleep 0.5
+          done
+          kill -INT "$PID" 2>/dev/null || true
+          wait "$PID" 2>/dev/null || true
+          if [ ! -s "$SMOKE/out/smoke.wav" ]; then
+            echo "::error::shipping binary produced no output"
+            exit 1
+          fi
+
       - name: Zip TNT.app
         run: |
           cd go/build/bin
@@ -135,6 +170,7 @@ jobs:
 
   build-windows:
     needs: sanity
+    if: github.event_name == 'pull_request'
     runs-on: windows-latest
     steps:
       - name: Checkout Code
@@ -158,6 +194,36 @@ jobs:
         shell: powershell
         run: |
           Copy-Item -Path go\platform\ffmpegSource\ffmpeg.exe -Destination go\build\bin\ffmpeg.exe
+
+      # Smoke-test the actual shipping exe: drop a synthetic WAV, run in CLI
+      # daemon mode against the sidecar ffmpeg, confirm output appears. Does
+      # not check audio substance — only that the shipping binary is runnable.
+      - name: CLI smoke test (shipping binary)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bin = "$PWD\go\build\bin"
+          $smoke = "$env:RUNNER_TEMP\cli-smoke"
+          New-Item -ItemType Directory -Force -Path "$smoke\in","$smoke\out" | Out-Null
+          & "$bin\ffmpeg.exe" -y -f lavfi -i "anullsrc=r=8000:cl=mono" -t 0.5 `
+            -c:a pcm_s16le "$smoke\in\smoke.wav"
+          if ($LASTEXITCODE -ne 0) { throw "ffmpeg fixture generation failed" }
+          $proc = Start-Process -FilePath "$bin\TNT.exe" `
+            -ArgumentList @('-i', "$smoke\in", '-o', "$smoke\out",
+              '-format','pcm','-bd','16','-sr','8000',
+              '-lufs','0','-rg','0','-dyn-norm','0',
+              '-p:eq','0','-p:dyn','0','-phase-check','0','-workers','1') `
+            -PassThru -WindowStyle Hidden
+          $out = "$smoke\out\smoke.wav"
+          $found = $false
+          for ($i = 0; $i -lt 120; $i++) {
+            if ((Test-Path $out) -and ((Get-Item $out).Length -gt 0)) { $found = $true; break }
+            Start-Sleep -Milliseconds 500
+          }
+          # Windows lacks SIGINT semantics for non-console children spawned via
+          # Start-Process; terminate the worker. We've already verified output.
+          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          if (-not $found) { throw "shipping binary produced no output" }
 
       - name: Upload PR Windows test build
         uses: actions/upload-artifact@v4
