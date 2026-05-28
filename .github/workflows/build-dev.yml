@@ -9,14 +9,22 @@ jobs:
   sanity:
     uses: ./.github/workflows/sanity.yml
 
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
       - name: Unit tests
         run: go test ./...
-
+        working-directory: go
       - name: FFmpeg E2E smoke test
         run: go test -tags e2e -timeout 60s ./internal/ffmpeg/...
+        working-directory: go
 
   build-mac-arm64:
-    needs: sanity
+    needs: [sanity, test]
     if: "(!contains(github.ref, '-win') || contains(github.ref, '-unix') || contains(github.ref, '-macm') || contains(github.ref, '-macs')) && !contains(github.ref, '-linux')"
     runs-on: macos-latest
     steps:
@@ -124,7 +132,7 @@ jobs:
 
 
   build-windows:
-    needs: sanity
+    needs: [sanity, test]
     runs-on: windows-latest
     steps:
       - name: Checkout Code
