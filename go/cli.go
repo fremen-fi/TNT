@@ -815,9 +815,9 @@ func (p *CLIProcessor) processFile(inputPath string) bool {
 	// Dithering for 16-bit PCM
 	if actualCodec == "PCM" && cfg.BitDepth == "16" {
 		if finalFilterChain != "" {
-			finalFilterChain += ",aresample=resampler=soxr:dither_method=triangular"
+			finalFilterChain += ",aresample=resampler=soxr:dither_method=high_shibata"
 		} else {
-			finalFilterChain = "aresample=resampler=soxr:dither_method=triangular"
+			finalFilterChain = "aresample=resampler=soxr:dither_method=high_shibata"
 		}
 	}
 

@@ -1979,9 +1979,9 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 	// Add dithering for 16-bit PCM output
 	if actualCodec == "PCM" && cfg.BitDepth == "16" {
 		if finalFilterChain != "" {
-			finalFilterChain = finalFilterChain + ",aresample=resampler=soxr:dither_method=triangular"
+			finalFilterChain = finalFilterChain + ",aresample=resampler=soxr:dither_method=high_shibata"
 		} else {
-			finalFilterChain = "aresample=resampler=soxr:dither_method=triangular"
+			finalFilterChain = "aresample=resampler=soxr:dither_method=high_shibata"
 		}
 	}
 
