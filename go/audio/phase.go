@@ -2,15 +2,17 @@ package audio
 
 import (
 	"fmt"
-	"github.com/fremen-fi/tnt/go/internal/ffmpeg"
 	"math"
-	"os"
+	"os/exec"
 	"regexp"
 	"strconv"
 )
 
-func PhaseCheck(inputPath string, logFile *os.File) (inverted bool, offset float64, err error) {
-	output, err := buildPhaseCheck(inputPath, logFile)
+// PhaseCheck runs an astats pass over the first 30 seconds of inputPath and
+// reports whether the two channels appear phase-inverted, along with the
+// computed phase offset. ffmpegPath is the path to the ffmpeg binary.
+func PhaseCheck(ffmpegPath, inputPath string) (inverted bool, offset float64, err error) {
+	output, err := runPhaseCheck(ffmpegPath, inputPath)
 	if err != nil {
 		return false, 0, err
 	}
@@ -21,19 +23,16 @@ func PhaseCheck(inputPath string, logFile *os.File) (inverted bool, offset float
 	}
 
 	offset = calculatePhaseOffset(ch1Min, ch1Max, ch2Min, ch2Max)
-	inverted = offset < 0.01 // or whatever threshold you want
+	inverted = offset < 0.01
 
 	return inverted, offset, nil
 }
 
-func buildPhaseCheck(inputPath string, logFile *os.File) (string, error) {
-	cmd := ffmpeg.Command("-i", inputPath, "-t", "30", "-af", "astats", "-f", "null", "-")
+func runPhaseCheck(ffmpegPath, inputPath string) (string, error) {
+	cmd := exec.Command(ffmpegPath, "-i", inputPath, "-t", "30", "-af", "astats", "-f", "null", "-")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		if logFile != nil {
-			logFile.WriteString(fmt.Sprintf("astats failed: %v\n", err))
-		}
-		return "", err
+		return "", fmt.Errorf("ffmpeg astats failed: %w", err)
 	}
 	return string(output), nil
 }

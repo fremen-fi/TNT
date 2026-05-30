@@ -19,7 +19,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 
-	"github.com/fremen-fi/tnt/go/internal/audio"
+	"github.com/fremen-fi/tnt/go/audio"
 	"github.com/fremen-fi/tnt/go/internal/config"
 	"github.com/fremen-fi/tnt/go/internal/ffmpeg"
 )
@@ -351,7 +351,7 @@ func (p *CLIProcessor) processFiles(files []string) {
 			defer wg.Done()
 			for file := range jobs {
 				if p.cfg.PhaseCheck {
-					inverted, offset, err := audio.PhaseCheck(file, p.logFile)
+					inverted, offset, err := audio.PhaseCheck(ffmpeg.Path, file)
 					if err != nil {
 						p.log(fmt.Sprintf("Phase check failed for %s: %v", filepath.Base(file), err))
 					} else if inverted {
@@ -423,7 +423,7 @@ func (p *CLIProcessor) watchAndProcess() {
 				time.Sleep(500 * time.Millisecond)
 
 				if p.cfg.PhaseCheck {
-					inverted, offset, err := audio.PhaseCheck(file, p.logFile)
+					inverted, offset, err := audio.PhaseCheck(ffmpeg.Path, file)
 					if err != nil {
 						p.log(fmt.Sprintf("Phase check failed for %s: %v", filepath.Base(file), err))
 					} else if inverted {

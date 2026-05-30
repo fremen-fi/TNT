@@ -5,7 +5,8 @@ import (
 	"math"
 )
 
-// CalculateDynaudnormParams creates dynaudnorm parameters from dynamics analysis
+// CalculateDynaudnormParams creates dynaudnorm parameters from dynamics
+// analysis. Returns nil if analysis is nil.
 func CalculateDynaudnormParams(analysis *DynamicsAnalysis) *DynaudnormParams {
 	if analysis == nil {
 		return nil
@@ -41,7 +42,15 @@ func CalculateDynaudnormParams(analysis *DynamicsAnalysis) *DynaudnormParams {
 	return params
 }
 
-// BuildDynaudnormFilter creates the dynaudnorm filter string from params
+// AnalyzeDynaudnormParams derives dynaudnorm parameters from an existing
+// dynamics analysis. It is the canonical name used by the TNT app and is
+// equivalent to CalculateDynaudnormParams.
+func AnalyzeDynaudnormParams(analysis *DynamicsAnalysis) *DynaudnormParams {
+	return CalculateDynaudnormParams(analysis)
+}
+
+// BuildDynaudnormFilter creates the dynaudnorm filter string from params.
+// Returns an empty string if params is nil.
 func BuildDynaudnormFilter(params *DynaudnormParams) string {
 	if params == nil {
 		return ""

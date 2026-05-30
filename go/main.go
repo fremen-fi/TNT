@@ -26,7 +26,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"github.com/fremen-fi/tnt/go/internal/audio"
+	"github.com/fremen-fi/tnt/go/audio"
 	"github.com/fremen-fi/tnt/go/internal/config"
 	"github.com/fremen-fi/tnt/go/internal/ffmpeg"
 	"github.com/fremen-fi/tnt/go/internal/telemetry"
@@ -65,23 +65,11 @@ type ProcessConfig struct {
 	PhaseCheck     bool
 }
 
-type DynamicsAnalysis struct {
-	PeakLevel    float64
-	RMSPeak      float64
-	RMSTrough    float64
-	CrestFactor  float64
-	DynamicRange float64
-	RMSLevel     float64
-	NoiseFloor   float64
-}
+// DynamicsAnalysis and FrequencyBandAnalysis are aliases for the public audio
+// package types so app code keeps using the short names.
+type DynamicsAnalysis = audio.DynamicsAnalysis
 
-type FrequencyBandAnalysis struct {
-	BandName     string
-	PeakLevel    float64
-	RMSLevel     float64
-	CrestFactor  float64
-	DynamicRange float64
-}
+type FrequencyBandAnalysis = audio.FrequencyBandAnalysis
 
 func getPlatformKey() string {
 	switch runtime.GOOS {
@@ -1436,7 +1424,7 @@ func (n *AudioNormalizer) process() {
 					shouldProcess := true
 
 					if config.PhaseCheck {
-						inverted, offset, err := audio.PhaseCheck(file, n.logFile)
+						inverted, offset, err := audio.PhaseCheck(ffmpeg.Path, file)
 						if err != nil {
 							n.logStatus(fmt.Sprintf("✗ Phase check failed for %s: %v", filepath.Base(file), err))
 						} else if inverted {

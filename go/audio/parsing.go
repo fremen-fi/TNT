@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// ParseAstatsOutput parses FFmpeg astats filter output into DynamicsAnalysis
+// ParseAstatsOutput parses FFmpeg astats filter output into DynamicsAnalysis.
 func ParseAstatsOutput(output string) *DynamicsAnalysis {
 	result := &DynamicsAnalysis{}
 
@@ -62,7 +62,7 @@ func ParseAstatsOutput(output string) *DynamicsAnalysis {
 	return result
 }
 
-// ParseDynamicsScore parses astats output for Dynamics Score calculation
+// ParseDynamicsScore parses astats output for Dynamics Score calculation.
 func ParseDynamicsScore(output string) *DynamicsScoreAnalysis {
 	result := &DynamicsScoreAnalysis{}
 
@@ -107,7 +107,7 @@ func ParseDynamicsScore(output string) *DynamicsScoreAnalysis {
 	return result
 }
 
-// ParseFrequencyBandOutput parses astats output for a single frequency band
+// ParseFrequencyBandOutput parses astats output for a single frequency band.
 func ParseFrequencyBandOutput(output string, bandName string) *FrequencyBandAnalysis {
 	result := &FrequencyBandAnalysis{BandName: bandName}
 
@@ -145,7 +145,7 @@ func ParseFrequencyBandOutput(output string, bandName string) *FrequencyBandAnal
 	return result
 }
 
-// FrequencyBandFilters returns the filter strings for each frequency band
+// FrequencyBandFilters returns the ffmpeg filter strings for each frequency band.
 func FrequencyBandFilters() map[string]string {
 	return map[string]string{
 		"sub":     "lowpass=f=80",
