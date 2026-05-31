@@ -1,33 +1,50 @@
 {
-  "version": "1.2.3",
-  "os": ["darwin", "darwin-senior", "penguin", "orangutan"],
-  "download_url": [{
-	  "darwin": "https://software.collinsgroup.fi/TNT.dmg",
-	  "darwin-senior": "https://software.collinsgroup.fi/TNT-Intel.dmg",
-	  "orangutan": "https://software.collinsgroup.fi/TNT.exe",
-	  "penguin": "https://software.collinsgroup.fi/tnt-amd64.deb"
-  }],
-  "release_notes": "Automatically check mono compatibility before processing.",
-  "release_date": "2 February, 2026",
-  "supported_platforms": "macOS (M-series), macOS 15- (Intel), Debian/Ubuntu (amd64)",
-  "history": [
-	  {
-	  "version": "1.2.2",
-		"os": ["darwin", "orangutan", "penguin"],
-		"release_notes": "Library linking fixes affecting all Debian users.",
-		"release_date": "19 January, 2026",
-		"supported_platforms": "macOS (M-series), macOS 15- (Intel), Windows (Intel), Ubuntu/Debian (Intel)"
-	  },
-	  {
-		  "version": "1.2.1",
-		  "release_notes": "Lets you update the version in the app.",
-		  "release_date": "31 December, 2025"
-		},
-	  {
-    "version": "1.2.0",
-    "release_notes": "Adds powerful processing features.",
-    "release_date": "5 December, 2025"
+  "platforms": {
+    "darwin-arm64": {
+      "version": "1.2.3",
+      "download_url": "https://frm-sw-storage.s3.rbx.io.cloud.ovh.net/mac/m/tnt.dmg",
+      "supported_platforms": "macOS (M-series)",
+      "release_notes": "Automatically check mono compatibility before processing.",
+      "release_date": "2 February, 2026"
+    },
+    "darwin-amd64": {
+      "version": "1.2.3",
+      "download_url": "https://frm-sw-storage.s3.rbx.io.cloud.ovh.net/mac/intel/tnt.dmg",
+      "supported_platforms": "macOS 15- (Intel)",
+      "release_notes": "Automatically check mono compatibility before processing.",
+      "release_date": "2 February, 2026"
+    },
+    "windows": {
+      "version": "1.2.3",
+      "download_url": "https://frm-sw-storage.s3.rbx.io.cloud.ovh.net/win/tnt.exe",
+      "supported_platforms": "Windows (Intel)",
+      "release_notes": "Automatically check mono compatibility before processing.",
+      "release_date": "2 February, 2026"
+    },
+    "linux": {
+      "version": "1.2.3",
+      "download_url": "https://frm-sw-storage.s3.rbx.io.cloud.ovh.net/linux/amd/tnt.deb",
+      "supported_platforms": "Debian/Ubuntu (amd64)",
+      "release_notes": "Automatically check mono compatibility before processing.",
+      "release_date": "2 February, 2026"
+    }
   },
+  "history": [
+    {
+      "version": "1.2.2",
+      "release_notes": "Library linking fixes affecting all Debian users.",
+      "release_date": "19 January, 2026"
+    },
+    {
+      "version": "1.2.1",
+      "release_notes": "Lets you update the version in the app.",
+      "release_date": "31 December, 2025"
+    },
+    {
+      "version": "1.2.0",
+      "release_notes": "Adds powerful processing features.",
+      "release_date": "5 December, 2025"
+    },
     {
       "version": "1.1.0",
       "release_notes": "Adds FLAC encoder and data compression methods for FLAC and Opus.\nHides disabled items from UI based on encoding format.\nRewritten help section.",

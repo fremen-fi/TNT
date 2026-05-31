@@ -91,10 +91,12 @@ export namespace main {
 	    }
 	}
 	export class VersionInfo {
+	    platform: string;
 	    version: string;
-	    os: string[];
-	    download_url: any[];
+	    download_url: string;
+	    supported_platforms: string;
 	    release_notes: string;
+	    release_date: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new VersionInfo(source);
@@ -102,10 +104,12 @@ export namespace main {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.platform = source["platform"];
 	        this.version = source["version"];
-	        this.os = source["os"];
 	        this.download_url = source["download_url"];
+	        this.supported_platforms = source["supported_platforms"];
 	        this.release_notes = source["release_notes"];
+	        this.release_date = source["release_date"];
 	    }
 	}
 

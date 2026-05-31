@@ -36,8 +36,9 @@ jobs:
 
       - name: Build
         run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"; VERSION="${VERSION%%-*}"
           cd go
-          wails build -platform darwin/arm64 -ldflags "-s -w"
+          wails build -platform darwin/arm64 -ldflags "-s -w -X main.currentVersion=${VERSION}"
 
       - name: Add FFmpeg to bundle
         run: |
@@ -156,8 +157,9 @@ jobs:
 
       - name: Build
         run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"; VERSION="${VERSION%%-*}"
           cd go
-          wails build -platform darwin/amd64 -ldflags "-s -w"
+          wails build -platform darwin/amd64 -ldflags "-s -w -X main.currentVersion=${VERSION}"
 
       - name: Add FFmpeg to bundle
         run: |
@@ -277,7 +279,7 @@ jobs:
           $TAG = $env:GITHUB_REF -replace "refs/tags/v", ""
           $VERSION = $TAG.Split("-")[0]
           cd go
-          wails build -platform windows/amd64 -ldflags "-s -w -X main.version=$VERSION"
+          wails build -platform windows/amd64 -ldflags "-s -w -X main.currentVersion=$VERSION"
         shell: powershell
 
       - name: Create InnoSetup installer
@@ -316,7 +318,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.OVH_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.OVH_SECRET }}
         run: |
-          aws s3 cp "Distribution\${{ steps.filename.outputs.exe_name }}" "s3://${{ secrets.OVH_BUCKET }}/win/amd/tnt.exe" --endpoint-url "${{ secrets.OVH_ENDPOINT }}" --acl public-read
+          aws s3 cp "Distribution\${{ steps.filename.outputs.exe_name }}" "s3://${{ secrets.OVH_BUCKET }}/win/tnt.exe" --endpoint-url "${{ secrets.OVH_ENDPOINT }}" --acl public-read
         shell: powershell
 
       - name: Upload Windows Installer Artifact
@@ -355,8 +357,9 @@ jobs:
 
       - name: Build Linux binary
         run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"; VERSION="${VERSION%%-*}"
           cd go
-          wails build -platform linux/amd64 -ldflags "-s -w" -tags webkit2_41
+          wails build -platform linux/amd64 -ldflags "-s -w -X main.currentVersion=${VERSION}" -tags webkit2_41
           cp build/bin/TNT ../tnt-linux-amd64
           chmod +x ../tnt-linux-amd64
 
@@ -572,8 +575,9 @@ jobs:
 
       - name: Build Linux binary
         run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"; VERSION="${VERSION%%-*}"
           cd go
-          wails build -platform linux/arm64 -ldflags "-s -w" -tags webkit2_41
+          wails build -platform linux/arm64 -ldflags "-s -w -X main.currentVersion=${VERSION}" -tags webkit2_41
           cp build/bin/TNT ../tnt-linux-arm64
           chmod +x ../tnt-linux-arm64
 
@@ -715,6 +719,71 @@ jobs:
             ${{ env.ARCH_FILE }}
             ${{ env.APPIMAGE_FILE }}
             ${{ env.TAR_FILE }}
+
+  update-manifest:
+    needs:
+      - build-linux
+      - build-windows
+      - build-mac-intel
+      - build-mac-arm64
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Update tnt-version.json
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.OVH_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.OVH_SECRET }}
+          OVH_BUCKET: ${{ secrets.OVH_BUCKET }}
+          OVH_ENDPOINT: ${{ secrets.OVH_ENDPOINT }}
+          MAC_ARM64_RESULT: ${{ needs.build-mac-arm64.result }}
+          MAC_INTEL_RESULT: ${{ needs.build-mac-intel.result }}
+          WINDOWS_RESULT: ${{ needs.build-windows.result }}
+          LINUX_RESULT: ${{ needs.build-linux.result }}
+        run: |
+          set -euo pipefail
+
+          # Version comes from the tag (v1.4.0-macm -> 1.4.0).
+          TAG="${GITHUB_REF#refs/tags/v}"
+          VERSION="${TAG%%-*}"
+          TODAY="$(date +'%-d %B, %Y')"
+
+          # Structure (download URLs, release notes, history) is taken from the
+          # repo template. Per-platform versions for platforms NOT built in this
+          # run are preserved from the live bucket manifest.
+          cp Distribution/tnt-version.json out.json
+          aws s3 cp "s3://${OVH_BUCKET}/tnt-version.json" live.json \
+            --endpoint-url "${OVH_ENDPOINT}" 2>/dev/null || echo '{}' > live.json
+
+          set_platform() {
+            key="$1"; result="$2"
+            if [ "$result" = "success" ]; then
+              ver="$VERSION"
+              date="$TODAY"
+            else
+              ver="$(jq -r --arg k "$key" '.platforms[$k].version // empty' live.json)"
+              date="$(jq -r --arg k "$key" '.platforms[$k].release_date // empty' live.json)"
+              [ -n "$ver" ]  || ver="$(jq -r  --arg k "$key" '.platforms[$k].version' out.json)"
+              [ -n "$date" ] || date="$(jq -r --arg k "$key" '.platforms[$k].release_date' out.json)"
+            fi
+            jq --arg k "$key" --arg v "$ver" --arg d "$date" \
+              '.platforms[$k].version = $v | .platforms[$k].release_date = $d' \
+              out.json > out.tmp && mv out.tmp out.json
+          }
+
+          set_platform darwin-arm64 "$MAC_ARM64_RESULT"
+          set_platform darwin-amd64 "$MAC_INTEL_RESULT"
+          set_platform windows      "$WINDOWS_RESULT"
+          set_platform linux        "$LINUX_RESULT"
+
+          cat out.json
+
+          aws s3 cp out.json "s3://${OVH_BUCKET}/tnt-version.json" \
+            --endpoint-url "${OVH_ENDPOINT}" \
+            --content-type "application/json" \
+            --acl public-read
 
   release:
     needs:

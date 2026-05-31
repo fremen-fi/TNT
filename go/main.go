@@ -31,16 +31,56 @@ import (
 	"github.com/fremen-fi/tnt/go/internal/telemetry"
 )
 
-const (
-	currentVersion  = "1.4.0"
-	versionCheckURL = "https://frm-sw-storage.s3.rbx.io.cloud.ovh.net/tnt-version.json"
-)
+const versionCheckURL = "https://frm-sw-storage.s3.rbx.io.cloud.ovh.net/tnt-version.json"
 
+// currentVersion is the version of this build. It is injected at link time from
+// the git tag by the release workflow (-X main.currentVersion=...). A plain
+// `go build` leaves it as "dev", which makes un-stamped builds obvious.
+var currentVersion = "dev"
+
+// PlatformRelease is the per-platform release entry inside the manifest. Each
+// supported platform tracks its own version independently, so a platform-only
+// release (e.g. a darwin/arm64 build) bumps just that platform.
+type PlatformRelease struct {
+	Version            string `json:"version"`
+	DownloadURL        string `json:"download_url"`
+	SupportedPlatforms string `json:"supported_platforms"`
+	ReleaseNotes       string `json:"release_notes"`
+	ReleaseDate        string `json:"release_date"`
+}
+
+// VersionManifest is the full tnt-version.json document.
+type VersionManifest struct {
+	Platforms map[string]PlatformRelease `json:"platforms"`
+	History   []map[string]string        `json:"history"`
+}
+
+// VersionInfo is what gets handed to the frontend: the release for the running
+// platform, flattened with the platform key it was selected by.
 type VersionInfo struct {
-	Version      string              `json:"version"`
-	OS           []string            `json:"os"`
-	DownloadURL  []map[string]string `json:"download_url"`
-	ReleaseNotes string              `json:"release_notes"`
+	Platform           string `json:"platform"`
+	Version            string `json:"version"`
+	DownloadURL        string `json:"download_url"`
+	SupportedPlatforms string `json:"supported_platforms"`
+	ReleaseNotes       string `json:"release_notes"`
+	ReleaseDate        string `json:"release_date"`
+}
+
+// platformKey maps the running OS/arch to a key in the manifest's platforms map.
+// darwin is split by architecture (Apple Silicon vs Intel); other OSes have a
+// single distributed build.
+func platformKey() string {
+	switch runtime.GOOS {
+	case "darwin":
+		if runtime.GOARCH == "arm64" {
+			return "darwin-arm64"
+		}
+		return "darwin-amd64"
+	case "windows":
+		return "windows"
+	default:
+		return "linux"
+	}
 }
 
 // AudioNormalizer struct moved to app.go (Wails migration — Phase 1).
@@ -86,20 +126,34 @@ func checkForUpdates(currentVersion string, logFile *os.File, notify func(Versio
 	defer resp.Body.Close()
 
 	logToFile(logFile, "Parsing JSON...")
-	var versionInfo VersionInfo
-	if err := json.NewDecoder(resp.Body).Decode(&versionInfo); err != nil {
+	var manifest VersionManifest
+	if err := json.NewDecoder(resp.Body).Decode(&manifest); err != nil {
 		logToFile(logFile, fmt.Sprintf("JSON decode error: %v", err))
 		return
 	}
 
-	logToFile(logFile, fmt.Sprintf("Current: %s, Remote: %s", currentVersion, versionInfo.Version))
-	comparison := compareVersions(versionInfo.Version, currentVersion)
+	key := platformKey()
+	release, ok := manifest.Platforms[key]
+	if !ok {
+		logToFile(logFile, fmt.Sprintf("No release entry for platform %q", key))
+		return
+	}
+
+	logToFile(logFile, fmt.Sprintf("Platform: %s, Current: %s, Remote: %s", key, currentVersion, release.Version))
+	comparison := compareVersions(release.Version, currentVersion)
 	logToFile(logFile, fmt.Sprintf("Comparison result: %d", comparison))
 
 	if comparison > 0 {
 		logToFile(logFile, "Update available")
 		if notify != nil {
-			notify(versionInfo)
+			notify(VersionInfo{
+				Platform:           key,
+				Version:            release.Version,
+				DownloadURL:        release.DownloadURL,
+				SupportedPlatforms: release.SupportedPlatforms,
+				ReleaseNotes:       release.ReleaseNotes,
+				ReleaseDate:        release.ReleaseDate,
+			})
 		}
 	} else {
 		logToFile(logFile, "Already up to date")
