@@ -21,4 +21,3 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.OVH_SECRET }}
         run: |
           aws s3 cp "Distribution/tnt-version.json" "s3://${{ secrets.OVH_BUCKET }}/"
-
