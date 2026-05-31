@@ -1676,9 +1676,9 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 
 	// Check for speech-specific standards
 	// Overwrites the values set by case above
-    // AES77-2023 defines a target level of -16 LUFS, -1 dB TP for music,
-    // and if speech is measurable separately, it shall be attenuated by 2 LU,
-    // hence the target -18 LUFS for speech
+	// AES77-2023 defines a target level of -16 LUFS, -1 dB TP for music,
+	// and if speech is measurable separately, it shall be attenuated by 2 LU,
+	// hence the target -18 LUFS for speech
 	if n.normalizationStandard == "AES77-2023 (-16/-18 LUFS)" {
 		if cfg.IsSpeech {
 			target = "-18"
