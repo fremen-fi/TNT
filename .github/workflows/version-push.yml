@@ -2,7 +2,7 @@ name: Upload TNT JSON
 
 on:
   push:
-    branches: [ main ]
+    branches: ["*"]
     paths:
       - 'Distribution/tnt-version.json'
   workflow_dispatch:
