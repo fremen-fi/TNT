@@ -1,5 +1,7 @@
 package audio
 
+import "strings"
+
 // FilterChain accumulates ffmpeg audio-filter expressions across pipeline
 // stages so the whole graph can be applied in a single ffmpeg invocation —
 // no intermediate WAV files between stages.
@@ -35,11 +37,7 @@ func (c *FilterChain) String() string {
 	if len(c.parts) == 0 {
 		return ""
 	}
-	out := c.parts[0]
-	for _, p := range c.parts[1:] {
-		out += "," + p
-	}
-	return out
+	return strings.Join(c.parts, ",")
 }
 
 // IsEmpty reports whether anything has been added.

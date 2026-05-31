@@ -359,7 +359,7 @@ func (p *CLIProcessor) processFiles(files []string) {
 
 	for i := 0; i < workers; i++ {
 		wg.Add(1)
-		go func() {
+		wg.Go(func() {
 			defer wg.Done()
 			for file := range jobs {
 				if p.cfg.PhaseCheck {
@@ -375,7 +375,7 @@ func (p *CLIProcessor) processFiles(files []string) {
 				success := p.processFile(file)
 				results <- success
 			}
-		}()
+		})
 	}
 
 	for _, file := range files {
@@ -428,7 +428,7 @@ func (p *CLIProcessor) watchAndProcess() {
 	var wg sync.WaitGroup
 	for i := 0; i < workers; i++ {
 		wg.Add(1)
-		go func() {
+		wg.Go(func() {
 			defer wg.Done()
 			for file := range jobQueue {
 				// Small delay to let file writes complete
@@ -445,7 +445,7 @@ func (p *CLIProcessor) watchAndProcess() {
 				}
 				p.processFile(file)
 			}
-		}()
+		})
 	}
 
 	p.log("Watching for new files...")
@@ -1433,7 +1433,7 @@ func (p *CLIProcessor) buildEqFilter(bands []FrequencyBand, eqTarget string) str
 		gains[i] = max(-maxGain, min(maxGain, gain))
 	}
 
-	gains = clampExtremeEQCLI(gains, p)
+	gains = clampExtremeEQCLI(gains)
 
 	var filterParts []string
 	for i, band := range bands {
@@ -1547,7 +1547,7 @@ func getOctavesFrom1kCLI(freqStr string) float64 {
 	return m[freqStr]
 }
 
-func clampExtremeEQCLI(gains []float64, p *CLIProcessor) []float64 {
+func clampExtremeEQCLI(gains []float64) []float64 {
 	if len(gains) < 3 {
 		return gains
 	}

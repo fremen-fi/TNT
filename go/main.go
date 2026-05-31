@@ -5,7 +5,6 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/fs"
 	"math"
 	"net/http"
@@ -33,8 +32,8 @@ import (
 )
 
 const (
-	currentVersion  = "1.3.0"
-	versionCheckURL = "https://software.collinsgroup.fi/tnt-version.json"
+	currentVersion  = "1.4.0"
+	versionCheckURL = "https://frm-sw-storage.s3.rbx.io.cloud.ovh.net/tnt-version.json"
 )
 
 type VersionInfo struct {
@@ -70,22 +69,6 @@ type ProcessConfig struct {
 type DynamicsAnalysis = audio.DynamicsAnalysis
 
 type FrequencyBandAnalysis = audio.FrequencyBandAnalysis
-
-func getPlatformKey() string {
-	switch runtime.GOOS {
-	case "darwin":
-		if runtime.GOARCH == "arm64" {
-			return "darwin"
-		}
-		return "darwin-senior"
-	case "windows":
-		return "orangutan"
-	case "linux":
-		return "penguin"
-	default:
-		return runtime.GOOS
-	}
-}
 
 // checkForUpdates fetches the latest version info; the caller decides what to
 // do with the result (Phase 1 stub — Wails frontend will hook this up via an
@@ -164,100 +147,6 @@ func compareVersions(v1, v2 string) int {
 	}
 
 	return 0
-}
-
-// downloadAndInstallUpdate downloads the platform binary and launches the
-// installer when ready. Errors are returned via onError so the Wails frontend
-// can surface them; onReady is fired once the file is on disk.
-func downloadAndInstallUpdate(versionInfo VersionInfo, onReady func(string), onError func(error)) {
-	logFile, _ := os.OpenFile(filepath.Join(os.TempDir(), "tnt_update.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-	defer logFile.Close()
-
-	logToFile(logFile, "Starting update download...")
-
-	platformKey := getPlatformKey()
-	var downloadURL string
-	for _, urlMap := range versionInfo.DownloadURL {
-		if url, ok := urlMap[platformKey]; ok && url != "" {
-			downloadURL = url
-			break
-		}
-	}
-
-	if downloadURL == "" {
-		logToFile(logFile, fmt.Sprintf("No download URL found for platform: %s", platformKey))
-		if onError != nil {
-			onError(fmt.Errorf("Update not available for your platform"))
-		}
-		return
-	}
-
-	logToFile(logFile, fmt.Sprintf("Platform: %s, Download URL: %s", platformKey, downloadURL))
-
-	var fileName string
-	switch platformKey {
-	case "darwin":
-		fileName = "TNT.dmg"
-	case "darwin-senior":
-		fileName = "TNT-Intel.dmg"
-	case "orangutan":
-		fileName = "TNT-Setup.exe"
-	case "penguin":
-		fileName = "tnt-amd64.deb"
-	}
-
-	tempPath := filepath.Join(os.TempDir(), fileName)
-
-	go func() {
-		resp, err := http.Get(downloadURL)
-		if err != nil {
-			logToFile(logFile, fmt.Sprintf("Download failed: %v", err))
-			if onError != nil {
-				onError(err)
-			}
-			return
-		}
-		defer resp.Body.Close()
-
-		out, err := os.Create(tempPath)
-		if err != nil {
-			logToFile(logFile, fmt.Sprintf("File create failed: %v", err))
-			if onError != nil {
-				onError(err)
-			}
-			return
-		}
-		defer out.Close()
-
-		if _, err := io.Copy(out, resp.Body); err != nil {
-			logToFile(logFile, fmt.Sprintf("File write failed: %v", err))
-			if onError != nil {
-				onError(err)
-			}
-			return
-		}
-
-		logToFile(logFile, fmt.Sprintf("Downloaded to: %s", tempPath))
-		if onReady != nil {
-			onReady(tempPath)
-		}
-	}()
-}
-
-// launchInstaller opens the downloaded installer with the OS handler.
-func launchInstaller(tempPath string) error {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = exec.Command("open", tempPath)
-	case "windows":
-		cmd = exec.Command("cmd", "/c", "start", "", tempPath)
-	case "linux":
-		cmd = exec.Command("xdg-open", tempPath)
-	default:
-		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
-	}
-	return cmd.Start()
 }
 
 var ffmpegPath string
@@ -724,43 +613,6 @@ func (n *AudioNormalizer) buildBandAcompressor(band *FrequencyBandAnalysis, atta
 
 	//return fmt.Sprintf("acompressor=threshold=%.6f:ratio=%.1f:attack=%.1f:release=%.1f:makeup=1.0:knee=6.8,volume=%.3f",
 	//thresholdLin, ratio, attackMs, releaseMs, makeupLin)
-}
-
-func (n *AudioNormalizer) measureLoudnessFromFilter(inputPath string, filterChain string) map[string]string {
-	n.logStatus(fmt.Sprintf("→ Measuring compressed audio: %s", filepath.Base(inputPath)))
-
-	target := "-23"
-	if n.customLoudnorm && n.normalizeTarget != "" {
-		if strings.Contains(n.normalizeTarget, "-") {
-			target = n.normalizeTarget
-		} else {
-			target = "-" + n.normalizeTarget
-		}
-	}
-
-	targetTp := "-1"
-	if n.customLoudnorm && n.normalizeTargetTp != "" {
-		if strings.Contains(n.normalizeTargetTp, "-") {
-			targetTp = n.normalizeTargetTp
-		} else {
-			targetTp = "-" + n.normalizeTargetTp
-		}
-	}
-
-	cmd := exec.Command(
-		ffmpegPath,
-		"-i", inputPath,
-		"-af", fmt.Sprintf("%s,loudnorm=linear=false:I=%s:TP=%s:LRA=5:print_format=json", filterChain, target, targetTp),
-		"-f", "null",
-		"-",
-	)
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil
-	}
-
-	return n.parseLoudnormJSON(string(output))
 }
 
 func (n *AudioNormalizer) parseAstatsOutput(output string) *DynamicsAnalysis {
@@ -1319,31 +1171,6 @@ func main() {
 	}
 }
 
-func (n *AudioNormalizer) removeFile(index int) {
-	n.mutex.Lock()
-	defer n.mutex.Unlock()
-
-	n.files = append(n.files[:index], n.files[index+1:]...)
-}
-
-func (n *AudioNormalizer) checkPCM() bool {
-	for _, file := range n.files {
-		if strings.TrimPrefix(filepath.Ext(file), ".") == "wav" {
-			return true
-		}
-	}
-	return false
-}
-
-func (n *AudioNormalizer) checkNonTranscode() bool {
-	for _, file := range n.files {
-		if strings.TrimPrefix(filepath.Ext(file), ".") == "ogg" {
-			return true
-		}
-	}
-	return false
-}
-
 func (n *AudioNormalizer) checkOriginAAC() bool {
 	for _, file := range n.files {
 		ext := strings.TrimPrefix(filepath.Ext(file), ".")
@@ -1426,7 +1253,7 @@ func (n *AudioNormalizer) process() {
 
 		for i := 0; i < workers; i++ {
 			wg.Add(1)
-			go func() {
+			wg.Go(func() {
 				defer wg.Done()
 				for file := range jobs {
 					shouldProcess := true
@@ -1458,7 +1285,7 @@ func (n *AudioNormalizer) process() {
 						results <- false
 					}
 				}
-			}()
+			})
 		}
 
 		for _, file := range n.files {
