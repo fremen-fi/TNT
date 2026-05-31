@@ -20,4 +20,6 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.OVH_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.OVH_SECRET }}
         run: |
-          aws s3 cp "Distribution/tnt-version.json" "s3://${{ secrets.OVH_BUCKET }}/"
+          aws s3 cp "Distribution/tnt-version.json" "s3://${{ secrets.OVH_BUCKET }}/" \
+          --endpoint-url "${{ secrets.OVH_ENDPOINT }} \
+          --acl public-read
