@@ -48,12 +48,6 @@ func ParseAstatsOutput(output string) *DynamicsAnalysis {
 		result.CrestFactor, _ = strconv.ParseFloat(match[1], 64)
 	}
 
-	// Parse from Channel 1 section: Dynamic range: 51.779619
-	dynRe := regexp.MustCompile(`Dynamic range:\s+([-\d.]+)`)
-	if match := dynRe.FindStringSubmatch(output); len(match) > 1 {
-		result.DynamicRange, _ = strconv.ParseFloat(match[1], 64)
-	}
-
 	noiseFloorRe := regexp.MustCompile(`Noise floor dB:\s+([-\d.]+)`)
 	if match := noiseFloorRe.FindStringSubmatch(overallSection); len(match) > 1 {
 		result.NoiseFloor, _ = strconv.ParseFloat(match[1], 64)
@@ -136,12 +130,6 @@ func ParseFrequencyBandOutput(output string, bandName string) *FrequencyBandAnal
 		result.CrestFactor, _ = strconv.ParseFloat(match[1], 64)
 	}
 
-	// Parse: Dynamic range
-	dynRe := regexp.MustCompile(`Dynamic range:\s+([-\d.]+)`)
-	if match := dynRe.FindStringSubmatch(overallSection); len(match) > 1 {
-		result.DynamicRange, _ = strconv.ParseFloat(match[1], 64)
-	}
-
 	return result
 }
 
@@ -154,4 +142,12 @@ func FrequencyBandFilters() map[string]string {
 		"mid":     "highpass=f=1000,lowpass=f=4000",
 		"high":    "highpass=f=4000",
 	}
+}
+
+// ParseFrequencyBandStats extracts RMS, peak, and crest from a single
+// astats invocation's combined output. Exposed (vs. the lower-case copies
+// inside parseAstats helpers) because the multiband analyzers parse
+// astats output the same way.
+func ParseFrequencyBandStats(output string) map[string]float64 {
+	return parseFrequencyBandStats(output)
 }

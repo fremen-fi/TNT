@@ -11,22 +11,20 @@ package audio
 
 // DynamicsAnalysis holds the results of astats analysis for a file.
 type DynamicsAnalysis struct {
-	PeakLevel    float64
-	RMSPeak      float64
-	RMSTrough    float64
-	CrestFactor  float64
-	DynamicRange float64
-	RMSLevel     float64
-	NoiseFloor   float64
+	PeakLevel   float64
+	RMSPeak     float64
+	RMSTrough   float64
+	CrestFactor float64
+	RMSLevel    float64
+	NoiseFloor  float64
 }
 
 // FrequencyBandAnalysis holds per-band analysis for multiband compression.
 type FrequencyBandAnalysis struct {
-	BandName     string
-	PeakLevel    float64
-	RMSLevel     float64
-	CrestFactor  float64
-	DynamicRange float64
+	BandName    string
+	PeakLevel   float64
+	RMSLevel    float64
+	CrestFactor float64
 }
 
 // DynamicsScoreAnalysis holds the calculated Dynamics Score.

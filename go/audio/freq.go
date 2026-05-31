@@ -5,13 +5,18 @@ import (
 	"math"
 	"os/exec"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 )
 
-// AnalyzeFrequencyResponseBands analyzes the frequency response across 10 bands
-// using lowpass, bandpass, and highpass filters with astats. It runs one ffmpeg
-// pass per band itself; ffmpegPath is the path to the ffmpeg binary.
+// AnalyzeFrequencyResponseBands analyzes the frequency response across 10
+// bands using lowpass, bandpass, and highpass filters with astats. Each
+// band is an independent ffmpeg invocation reading the source file; they
+// run concurrently up to min(numBands, GOMAXPROCS) goroutines to use
+// available cores. A single failed band stops the analysis and returns
+// the first error.
 func AnalyzeFrequencyResponseBands(ffmpegPath, inputPath string) ([]FrequencyBand, error) {
 	bands := []FrequencyBand{
 		{Frequency: "50Hz", FilterType: "lowpass"},
@@ -26,45 +31,67 @@ func AnalyzeFrequencyResponseBands(ffmpegPath, inputPath string) ([]FrequencyBan
 		{Frequency: "12.8kHz+", FilterType: "highpass"},
 	}
 
-	for i := range bands {
-		band := &bands[i]
-
-		var filterChain string
-		switch band.FilterType {
-		case "lowpass":
-			// Everything below 50Hz
-			filterChain = "highpass=f=25:p=1:r=f64:p=2,lowpass=f=50,astats"
-
-		case "highpass":
-			// Everything above 12.8kHz
-			filterChain = "highpass=f=12800,astats"
-
-		case "bandpass":
-			// Extract center frequency and build a 1-octave bandpass
-			centerFreq, _ := getBandpassParams(band.Frequency)
-			filterChain = fmt.Sprintf("bandpass=f=%d:width_type=o:width=1,astats", centerFreq)
-		}
-
-		cmd := exec.Command(
-			ffmpegPath,
-			"-i", inputPath,
-			"-af", filterChain,
-			"-f", "null",
-			"-",
-		)
-
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			return nil, fmt.Errorf("ffmpeg analysis of %s band failed: %w", band.Frequency, err)
-		}
-
-		// Parse astats output for this band
-		stats := parseFrequencyBandStats(string(output))
-		band.RMSLevel = stats["rms"]
-		band.PeakLevel = stats["peak"]
-		band.CrestFactor = stats["crest"]
+	// Bound concurrency at GOMAXPROCS to avoid swamping the box on small
+	// hosts; 10 ffmpeg processes on a 4-core machine is worse than 4.
+	maxParallel := runtime.GOMAXPROCS(0)
+	if maxParallel < 1 {
+		maxParallel = 1
+	}
+	if maxParallel > len(bands) {
+		maxParallel = len(bands)
 	}
 
+	sem := make(chan struct{}, maxParallel)
+	errs := make([]error, len(bands))
+	var wg sync.WaitGroup
+
+	for i := range bands {
+		i := i
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			band := &bands[i]
+			var filterChain string
+			switch band.FilterType {
+			case "lowpass":
+				// Everything below 50Hz
+				filterChain = "highpass=f=25:p=1:r=f64:p=2,lowpass=f=50,astats"
+			case "highpass":
+				// Everything above 12.8kHz
+				filterChain = "highpass=f=12800,astats"
+			case "bandpass":
+				centerFreq, _ := getBandpassParams(band.Frequency)
+				filterChain = fmt.Sprintf("bandpass=f=%d:width_type=o:width=1,astats", centerFreq)
+			}
+
+			cmd := exec.Command(
+				ffmpegPath,
+				"-i", inputPath,
+				"-af", filterChain,
+				"-f", "null",
+				"-",
+			)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				errs[i] = fmt.Errorf("ffmpeg analysis of %s band failed: %w", band.Frequency, err)
+				return
+			}
+			stats := parseFrequencyBandStats(string(out))
+			band.RMSLevel = stats["rms"]
+			band.PeakLevel = stats["peak"]
+			band.CrestFactor = stats["crest"]
+		}()
+	}
+	wg.Wait()
+
+	for _, err := range errs {
+		if err != nil {
+			return nil, err
+		}
+	}
 	return bands, nil
 }
 

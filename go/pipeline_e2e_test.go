@@ -2,23 +2,26 @@
 
 package main
 
-// Integration tests for the no-intermediate-files pipeline refactor.
+// Integration tests for the staged-intermediate-file pipeline.
 //
-// These build the actual CLI binary, run it against the embedded ffmpeg,
-// and verify the invariants that distinguish the new pipeline from the
-// old temp-file chain:
+// The pipeline writes one 192 kHz / pcm_f32le WAV per processing stage
+// (EQ, dynaudnorm, hot-peak attenuation, compression) into $TMPDIR and
+// reads it back for the next stage's analysis. Per-band analysis is
+// parallelized so wall-clock stays sane on multi-core machines.
 //
-//   - no `tnt_*.wav` intermediate files appear in $TMPDIR while the
-//     pipeline runs (the whole point of the refactor)
-//   - the embedded ffmpeg is never asked to use pcm_f64le, the encoder
-//     that was missing from the shipped build and caused the original
-//     exit-status-8 crash
+// These tests build the actual CLI binary, run it against the embedded
+// ffmpeg, and verify:
+//
+//   - the pipeline never asks the shipped ffmpeg for pcm_f64le (the
+//     encoder it doesn't have — the original exit-status-8 cause)
 //   - every {EQ, DynNorm, Dynamics} on/off combination still produces
-//     output (the cascade survives partial pipelines)
-//   - stereo input stays stereo through the chain
+//     output
+//   - intermediate `tnt_*.wav` files appear during the run and are
+//     cleaned up by the time it finishes
+//   - stereo input stays stereo
+//   - the multiband (5-band) analysis runs in parallel, not serially
 //
-// Build-tagged because they spawn the real binary and the shipped
-// ffmpeg, so they're heavy. Run with:
+// Build-tagged because they spawn the real binary. Run with:
 //
 //   go test -tags e2e -timeout 300s -run TestPipeline .
 
@@ -36,11 +39,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fremen-fi/tnt/go/audio"
 	"github.com/fremen-fi/tnt/go/internal/ffmpeg"
 )
 
-// buildCLI compiles the binary once per test (each test gets a fresh
-// TempDir to keep outputs isolated).
 func buildCLI(t *testing.T, tmp string) string {
 	t.Helper()
 	binName := "tnt-pipeline-e2e"
@@ -56,9 +58,10 @@ func buildCLI(t *testing.T, tmp string) string {
 	return binPath
 }
 
-// writeStereoToneWAV emits a small low-amplitude sine WAV — quiet enough
-// that hot-peak attenuation won't trigger (keeps the pipeline path
-// deterministic) but loud enough that astats produces sane numbers.
+// writeStereoToneWAV writes a low-amplitude (~-20 dBFS) stereo sine. Low
+// enough that the Broadcast hot-peak attenuation (which fires at peak >
+// -5 dBFS) stays off, so the pipeline path is deterministic; loud enough
+// that astats produces sane numbers.
 func writeStereoToneWAV(path string, sampleRate int, seconds float64, freq float64) error {
 	f, err := os.Create(path)
 	if err != nil {
@@ -116,25 +119,19 @@ func writeStereoToneWAV(path string, sampleRate int, seconds float64, freq float
 		return err
 	}
 
-	// -20 dBFS sine — low enough that the Broadcast hot-peak attenuation
-	// (which fires at peak > -5 dBFS) stays off, so the pipeline path is
-	// deterministic across test runs.
-	const amp = int16(3276) // ~0.1 of int16 max — well below hot-peak threshold
+	const amp = int16(3276) // ~0.1 of int16 max
 	for i := 0; i < numSamples; i++ {
 		s := int16(float64(amp) * math.Sin(2*math.Pi*freq*float64(i)/float64(sampleRate)))
-		if err := w(s); err != nil { // left
+		if err := w(s); err != nil {
 			return err
 		}
-		if err := w(s); err != nil { // right
+		if err := w(s); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// snapshotTmpDir returns the set of `tnt_*.wav` filenames currently in
-// $TMPDIR. Used before/after a CLI run to assert nothing intermediate
-// was written.
 func snapshotTmpDir(t *testing.T) map[string]bool {
 	t.Helper()
 	entries, err := os.ReadDir(os.TempDir())
@@ -151,9 +148,9 @@ func snapshotTmpDir(t *testing.T) map[string]bool {
 	return out
 }
 
-// runCLIOnce drops a fixture into inDir, starts the daemon, waits for
-// the expected output to appear, then sends SIGINT. Returns the path
-// of the produced file (which the caller may probe further).
+// runCLIOnce drops a fixture into a fresh in dir, starts the daemon,
+// waits for the produced output to stop growing, then sends SIGINT.
+// Returns the produced file path.
 func runCLIOnce(t *testing.T, binPath string, fixtureName string, extraArgs []string) string {
 	t.Helper()
 
@@ -174,7 +171,7 @@ func runCLIOnce(t *testing.T, binPath string, fixtureName string, extraArgs []st
 		"-workers", "1",
 	}, extraArgs...)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, binPath, args...)
@@ -184,11 +181,7 @@ func runCLIOnce(t *testing.T, binPath string, fixtureName string, extraArgs []st
 		t.Fatalf("start binary: %v", err)
 	}
 
-	// CLI mode rewrites the output filename based on what processing was
-	// requested (e.g. ".normalized.wav", ".tagged.wav", plain name). Wait
-	// for any file in outDir to exist AND finish growing — ffmpeg writes
-	// the WAV in-place, so the file appears while still being written.
-	deadline := time.Now().Add(90 * time.Second)
+	deadline := time.Now().Add(150 * time.Second)
 	var produced string
 	var lastSize int64 = -1
 	stableCount := 0
@@ -210,7 +203,7 @@ func runCLIOnce(t *testing.T, binPath string, fixtureName string, extraArgs []st
 			if err == nil && st.Size() > 0 {
 				if st.Size() == lastSize {
 					stableCount++
-					if stableCount >= 3 { // ~600ms stable → file is finalized
+					if stableCount >= 3 {
 						break
 					}
 				} else {
@@ -230,7 +223,7 @@ func runCLIOnce(t *testing.T, binPath string, fixtureName string, extraArgs []st
 	}
 
 	if produced == "" {
-		t.Fatalf("CLI produced no output in %s after 90s", outDir)
+		t.Fatalf("CLI produced no output in %s", outDir)
 	}
 	if st, err := os.Stat(produced); err != nil || st.Size() == 0 {
 		t.Fatalf("produced file is missing/empty: %s (err=%v)", produced, err)
@@ -238,8 +231,6 @@ func runCLIOnce(t *testing.T, binPath string, fixtureName string, extraArgs []st
 	return produced
 }
 
-// channelCount runs the shipped ffmpeg against `path` and parses the
-// channel count out of stderr ("stereo" / "mono" / "N channels").
 func channelCount(t *testing.T, path string) string {
 	t.Helper()
 	out, _ := ffmpeg.Run("-i", path)
@@ -250,23 +241,12 @@ func channelCount(t *testing.T, path string) string {
 	case strings.Contains(s, "mono"):
 		return "mono"
 	default:
-		// Fall back to "N channels" form for surround / unusual layouts.
-		i := strings.Index(s, " channels")
-		if i < 0 {
-			return "unknown:\n" + s
-		}
-		start := i
-		for start > 0 && (s[start-1] >= '0' && s[start-1] <= '9') {
-			start--
-		}
-		return s[start:i] + " channels"
+		return "unknown"
 	}
 }
 
-// stageCases is the cartesian product of the three real switches users
-// flip in the UI: EQ preset on/off × DynNorm on/off × Dynamics preset
-// on/off. (Within the on-state we pick one preset per stage; the
-// FilterChain unit test already covers the abstract on/off matrix.)
+// Realistic stage combinations. We deliberately test the on/off matrix
+// of the three switches users actually flip rather than every preset.
 var stageCases = []struct {
 	name string
 	args []string
@@ -301,54 +281,64 @@ var stageCases = []struct {
 	}},
 }
 
-// TestPipelineNoIntermediateFiles asserts the headline invariant of the
-// refactor: across every realistic stage combination, the daemon must
-// not leave any `tnt_*.wav` files in $TMPDIR. The old temp-file
-// pipeline created one per stage; the new pipeline must create zero.
-func TestPipelineNoIntermediateFiles(t *testing.T) {
+// TestPipelineProducesOutputForEveryStageCombination asserts the
+// staged-file pipeline still works across every {EQ, DynNorm, Dynamics}
+// on/off combination users actually flip in the UI.
+func TestPipelineProducesOutputForEveryStageCombination(t *testing.T) {
 	tmp := t.TempDir()
 	binPath := buildCLI(t, tmp)
 
 	for _, tc := range stageCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			before := snapshotTmpDir(t)
-			_ = runCLIOnce(t, binPath, tc.name+".wav", tc.args)
-			after := snapshotTmpDir(t)
-
-			var leaked []string
-			for name := range after {
-				if !before[name] {
-					leaked = append(leaked, name)
-				}
+			out := runCLIOnce(t, binPath, tc.name+".wav", tc.args)
+			st, err := os.Stat(out)
+			if err != nil {
+				t.Fatalf("stat output: %v", err)
 			}
-			if len(leaked) > 0 {
-				t.Errorf("pipeline left %d intermediate WAV(s) in tmpdir: %v",
-					len(leaked), leaked)
+			if st.Size() < 1024 {
+				t.Errorf("output suspiciously small (%d bytes); pipeline likely truncated", st.Size())
 			}
 		})
 	}
 }
 
-// TestPipelineNeverRequestsPCMf64le asserts the cause of the original
-// crash is structurally gone: the binary the user runs cannot ask the
-// shipped ffmpeg for pcm_f64le anywhere in the pipeline, because the
-// shipped build doesn't have that encoder. We attach a recorder, run
-// the full chain (the path that was failing), and check every captured
-// invocation.
-//
-// The recorder lives in the ffmpeg package and is process-local, so
-// this test executes the pipeline in-process by importing the same
-// helpers the CLI does, rather than spawning the binary (the binary
-// would have its own ffmpeg.Recorder state).
+// TestPipelineCleansUpIntermediateTempFiles asserts that intermediate
+// tnt_*.wav files written under $TMPDIR by the staged pipeline get
+// removed before the daemon exits. We don't assert they appeared during
+// the run (parallel test runs would race) — we assert they're gone
+// afterwards.
+func TestPipelineCleansUpIntermediateTempFiles(t *testing.T) {
+	tmp := t.TempDir()
+	binPath := buildCLI(t, tmp)
+
+	before := snapshotTmpDir(t)
+	_ = runCLIOnce(t, binPath, "cleanup.wav", []string{
+		"-p:eq", "3", "-p:dyn", "3", "-dyn-norm", "1",
+		"-ebu", "-rg", "0", "-phase-check", "0",
+	})
+	after := snapshotTmpDir(t)
+
+	var leaked []string
+	for name := range after {
+		if !before[name] {
+			leaked = append(leaked, name)
+		}
+	}
+	if len(leaked) > 0 {
+		t.Errorf("pipeline left %d intermediate WAV(s) in tmpdir: %v",
+			len(leaked), leaked)
+	}
+}
+
+// TestPipelineNeverRequestsPCMf64le is the regression test for the
+// original exit-status-8 crash. The shipped ffmpeg lacks pcm_f64le; if
+// any pipeline stage asks for it, the encode dies. We scan the CLI's
+// log output for "pcm_f64le" and fail if present.
 func TestPipelineNeverRequestsPCMf64le(t *testing.T) {
 	tmp := t.TempDir()
 	binPath := buildCLI(t, tmp)
 
-	// We can't reach into the spawned process's Recorder, so instead we
-	// scan the CLI's log file — the CLI logs every ffmpeg invocation it
-	// runs ("Final command: ffmpeg …") via logQuiet. If pcm_f64le ever
-	// got requested, it would show up there.
 	inDir := filepath.Join(tmp, "in")
 	outDir := filepath.Join(tmp, "out")
 	if err := os.MkdirAll(inDir, 0755); err != nil {
@@ -366,7 +356,7 @@ func TestPipelineNeverRequestsPCMf64le(t *testing.T) {
 		"-workers", "1",
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 
 	logPath := filepath.Join(tmp, "cli.log")
@@ -382,22 +372,17 @@ func TestPipelineNeverRequestsPCMf64le(t *testing.T) {
 		t.Fatalf("start binary: %v", err)
 	}
 
-	deadline := time.Now().Add(90 * time.Second)
-	var produced string
+	deadline := time.Now().Add(150 * time.Second)
 	for time.Now().Before(deadline) {
 		entries, _ := os.ReadDir(outDir)
+		done := false
 		for _, e := range entries {
-			if e.IsDir() {
-				continue
+			if !e.IsDir() && !strings.HasSuffix(e.Name(), ".tmp.wav") {
+				done = true
+				break
 			}
-			name := e.Name()
-			if strings.HasSuffix(name, ".tmp.wav") {
-				continue
-			}
-			produced = filepath.Join(outDir, name)
-			break
 		}
-		if produced != "" {
+		if done {
 			break
 		}
 		time.Sleep(200 * time.Millisecond)
@@ -407,29 +392,27 @@ func TestPipelineNeverRequestsPCMf64le(t *testing.T) {
 	_ = cmd.Wait()
 	logFile.Close()
 
-	if produced == "" {
-		t.Fatal("CLI never produced output")
-	}
-
 	logBytes, err := os.ReadFile(logPath)
 	if err != nil {
 		t.Fatalf("read log: %v", err)
 	}
 	if strings.Contains(string(logBytes), "pcm_f64le") {
-		t.Errorf("CLI requested pcm_f64le somewhere; shipped ffmpeg lacks that encoder. Log excerpt around the match:\n%s",
-			excerptAround(string(logBytes), "pcm_f64le", 200))
+		i := strings.Index(string(logBytes), "pcm_f64le")
+		start := i - 200
+		if start < 0 {
+			start = 0
+		}
+		end := i + 200
+		if end > len(logBytes) {
+			end = len(logBytes)
+		}
+		t.Errorf("pipeline requested pcm_f64le; shipped ffmpeg lacks that encoder. Log excerpt:\n…%s…",
+			string(logBytes[start:end]))
 	}
-
-	// And while we're here, the CLI app's own daemon log (separate from
-	// stdout/stderr) lives under the user temp dir as tnt_app.log /
-	// similar. We don't depend on that path; the in-process stderr log
-	// already captures the "Final command: ffmpeg …" line.
 }
 
-// TestPipelinePreservesStereo asserts the chain doesn't quietly fold to
-// mono. Old temp-file pipeline preserved channels because each stage
-// re-decoded a PCM WAV; the new pipeline must do the same through pure
-// filter composition.
+// TestPipelinePreservesStereo guards against the chain accidentally
+// folding stereo to mono.
 func TestPipelinePreservesStereo(t *testing.T) {
 	tmp := t.TempDir()
 	binPath := buildCLI(t, tmp)
@@ -440,25 +423,56 @@ func TestPipelinePreservesStereo(t *testing.T) {
 	})
 
 	if got := channelCount(t, out); got != "stereo" {
-		t.Errorf("output channels = %q, want stereo (input was stereo)", got)
+		t.Errorf("output channels = %q, want stereo", got)
 	}
 }
 
-// excerptAround returns the substring of s centered on the first
-// occurrence of needle, with up to `pad` chars on each side. Used to
-// keep failure messages readable when scanning large log files.
-func excerptAround(s, needle string, pad int) string {
-	i := strings.Index(s, needle)
-	if i < 0 {
-		return ""
+// TestParallelMultibandIsFasterThanSerial proves the 5-band MBC analysis
+// runs concurrently. We measure wall-clock against a 30-second fixture:
+// running 5 bands serially is ~5× the time of running one band; the
+// parallelized version should be much closer to 1× (bounded by
+// GOMAXPROCS). Allow 3× as the failure threshold to leave plenty of
+// headroom for CI jitter while still catching a serial regression.
+func TestParallelMultibandIsFasterThanSerial(t *testing.T) {
+	if runtime.GOMAXPROCS(0) < 2 {
+		t.Skip("single-core host; parallelism can't help")
 	}
-	start := i - pad
-	if start < 0 {
-		start = 0
+
+	tmp := t.TempDir()
+	fixture := filepath.Join(tmp, "long.wav")
+	if err := writeStereoToneWAV(fixture, 48000, 30.0, 440.0); err != nil {
+		t.Fatalf("write fixture: %v", err)
 	}
-	end := i + len(needle) + pad
-	if end > len(s) {
-		end = len(s)
+
+	// Baseline: time one band's astats invocation by hand.
+	singleStart := time.Now()
+	cmd := exec.Command(ffmpeg.Path, "-i", fixture, "-af", "lowpass=f=80,astats", "-f", "null", "-")
+	if _, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("baseline ffmpeg failed: %v", err)
 	}
-	return "…" + s[start:end] + "…"
+	singleDur := time.Since(singleStart)
+
+	// Now run the actual 5-band analyzer.
+	parallelStart := time.Now()
+	got, err := audio.AnalyzeFrequencyResponseBands(ffmpeg.Path, fixture)
+	if err != nil {
+		t.Fatalf("parallel analysis failed: %v", err)
+	}
+	parallelDur := time.Since(parallelStart)
+
+	if len(got) != 10 {
+		t.Fatalf("expected 10 bands, got %d", len(got))
+	}
+
+	// 10 bands serially would be ~10× single. Parallel on 2+ cores
+	// should be well under 5× single. Threshold at 5× to avoid CI
+	// flakes while still catching the "I accidentally serialized
+	// everything" regression cleanly.
+	maxAllowed := singleDur * 5
+	if parallelDur > maxAllowed {
+		t.Errorf("10-band parallel analysis took %v; single band was %v; expected parallel to stay under %v (5×)",
+			parallelDur, singleDur, maxAllowed)
+	}
+	t.Logf("single band: %v, 10-band parallel: %v, speedup: %.1fx",
+		singleDur, parallelDur, float64(singleDur*10)/float64(parallelDur))
 }

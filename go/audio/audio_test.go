@@ -140,12 +140,9 @@ func TestParseAstatsOutput(t *testing.T) {
 	if !approx(a.NoiseFloor, -77.123456, 1e-4) {
 		t.Errorf("NoiseFloor = %v", a.NoiseFloor)
 	}
-	// Crest/dyn come from the first match (Channel 1)
+	// Crest comes from the first match (Channel 1)
 	if !approx(a.CrestFactor, 4.567890, 1e-4) {
 		t.Errorf("CrestFactor = %v", a.CrestFactor)
-	}
-	if !approx(a.DynamicRange, 25.678901, 1e-4) {
-		t.Errorf("DynamicRange = %v", a.DynamicRange)
 	}
 }
 
