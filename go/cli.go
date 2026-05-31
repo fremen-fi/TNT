@@ -66,6 +66,7 @@ func usage(fs *flag.FlagSet) {
 	fmt.Fprintf(os.Stderr, "Options:\n")
 	fs.PrintDefaults()
 	fmt.Fprintf(os.Stderr, "\nThe EBU-flag (-ebu) is a shorthand for LUFS-I: -23 and TP: -1.\nThis always overrides any LUFS-I or TP value you input.\n")
+    fmt.Fprintf(os.Stderr, "\nThe AES77-flag (-aes77) is a shorthand for LUFS-I: -16 and TP: -1. \nThis always overrides any LUFS-I or TP value you input.\nEBU takes precedence of all other flags.\n")
 }
 
 func parseCLIFlags() (*CLIConfig, bool) {
@@ -111,8 +112,11 @@ func parseCLIFlags() (*CLIConfig, bool) {
 	phaseCheck := fs.Int("phase-check", 0, "Phase check before processing: 1=on, 0=off")
 	workers := fs.Int("workers", 0, "Number of worker threads (0=auto: CPU cores - 1)")
 
-	// Shorthand
+	// Shorthands
+    // EBU R128
 	ebu := fs.Bool("ebu", false, "Normalize to EBU R128 (LUFS-I: -23, TP: -1)")
+    // AES77-2023
+    aes77 := fs.Bool("aes77", false, "Normalize to AES77-2023 (Music -16 LUFS, Speech -18 LUFS, both -1 dB TP")
 
 	help := fs.Bool("h", false, "help")
 	helpLong := fs.Bool("help", false, "help")
@@ -131,13 +135,21 @@ func parseCLIFlags() (*CLIConfig, bool) {
 		fmt.Fprintf(os.Stderr, "  tnt -i ./inbox -o ./out -format mp3 -br 320 -p:dyn 3 -lufs 1\n\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		fs.PrintDefaults()
-		fmt.Fprintf(os.Stderr, "\nThe EBU-flag (-ebu) is a shorthand for LUFS-I: -23 and TP: -1.\nThis always overrides any LUFS-I or TP value you input.\n\n")
+		fmt.Fprintf(os.Stderr, "\nThe EBU-flag (-ebu) is a shorthand for LUFS-I: -23 and TP: -1.\nThis always overrides any LUFS-I or TP value you input.\n")
+        fmt.Fprintf(os.Stderr, "\nThe AES77-flag (-aes77) is a shorthand for LUFS-I: -16 and TP: -1. \nThis always overrides any LUFS-I or TP value you input.\nEBU takes precedence of all other flags.\n")
 	}
 
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		return nil, false
 	}
 
+    // Check for standards
+    if *aes77 {
+        cfg.LufsTargetI = "-16"
+        cfg.LufsTargetTP = "-1"
+    }
+
+    // Check for EBU last to always use EBU if multiple flags are passed.
 	if *ebu {
 		cfg.LufsTargetI = "-23"
 		cfg.LufsTargetTP = "-1"
@@ -600,9 +612,31 @@ func (p *CLIProcessor) processFile(inputPath string) bool {
 	eqTarget := cfg.eqPresetName()
 	dynPreset := cfg.dynPresetName()
 
+	// Single-pass pipeline: accumulate stage filters into `prefix` and render
+	// once at the end. No intermediate WAVs — analysis passes apply the
+	// accumulated filters live (-f null -), preserving the measure→process
+	// cascade without writing pcm_f64le files. The first applied stage runs at
+	// the source rate; addFilter inserts the 192 kHz upsample right after it so
+	// later stages operate at 192 kHz, matching the old temp-file chain.
+	var prefix string
+	upsampled := false
+	addFilter := func(f string) {
+		if f == "" {
+			return
+		}
+		if prefix != "" {
+			prefix += ","
+		}
+		prefix += f
+		if !upsampled {
+			prefix += ",aresample=192000"
+			upsampled = true
+		}
+	}
+
 	// Stage 1: EQ
 	if eqTarget != "Off" {
-		eqBandAnalysis := p.analyzeFrequencyResponseBands(workingPath)
+		eqBandAnalysis := p.analyzeFrequencyResponseBands(inputPath)
 		if eqBandAnalysis == nil || len(eqBandAnalysis) == 0 {
 			p.log(fmt.Sprintf("Failed to analyze frequency response: %s", filepath.Base(inputPath)))
 			return false
@@ -610,26 +644,8 @@ func (p *CLIProcessor) processFile(inputPath string) bool {
 
 		eqFilter := p.buildEqFilter(eqBandAnalysis, eqTarget)
 		if eqFilter != "" {
-			eqTempPath := filepath.Join(os.TempDir(), fmt.Sprintf("tnt_eq_%d.wav", time.Now().UnixNano()))
-			tempFiles = append(tempFiles, eqTempPath)
-
 			p.log(fmt.Sprintf("  Applying EQ (%s): %s", eqTarget, filepath.Base(inputPath)))
-
-			fullEqFilter := eqFilter + ",deesser=i=1.0:m=1.0:f=0.05:s=o"
-			cmd := ffmpeg.Command(
-				"-i", workingPath,
-				"-af", fullEqFilter,
-				"-ar", "192000",
-				"-acodec", "pcm_f64le",
-				"-y", eqTempPath,
-			)
-
-			if err := cmd.Run(); err != nil {
-				p.log(fmt.Sprintf("  Failed to apply EQ: %s - %v", filepath.Base(inputPath), err))
-				return false
-			}
-
-			workingPath = eqTempPath
+			addFilter(eqFilter + ",deesser=i=1.0:m=1.0:f=0.05:s=o")
 			p.log(fmt.Sprintf("  EQ applied: %s", filepath.Base(inputPath)))
 		}
 	}
@@ -647,7 +663,7 @@ func (p *CLIProcessor) processFile(inputPath string) bool {
 	// Stage 2: Dynamic normalization (dynaudnorm)
 	var measured map[string]string
 	if cfg.DynNorm {
-		dynamicsAnalysis := p.analyzeDynamics(workingPath)
+		dynamicsAnalysis := p.analyzeDynamics(inputPath, prefix)
 		if dynamicsAnalysis == nil {
 			p.log(fmt.Sprintf("  Failed to analyze for dynaudnorm: %s", filepath.Base(inputPath)))
 			return false
@@ -657,42 +673,22 @@ func (p *CLIProcessor) processFile(inputPath string) bool {
 		if dynParams != nil {
 			dynaudnormFilter := p.buildDynaudnormFilter(dynParams)
 			if dynaudnormFilter != "" {
-				dynTempPath := filepath.Join(os.TempDir(), fmt.Sprintf("tnt_dyn_%d.wav", time.Now().UnixNano()))
-				tempFiles = append(tempFiles, dynTempPath)
-
 				p.log(fmt.Sprintf("  Applying dynaudnorm: %s", filepath.Base(inputPath)))
-				cmd := ffmpeg.Command(
-					"-i", workingPath,
-					"-af", dynaudnormFilter,
-					"-ar", "192000",
-					"-acodec", "pcm_f64le",
-					"-y", dynTempPath,
-				)
-
-				if err := cmd.Run(); err != nil {
-					p.log(fmt.Sprintf("  Failed to apply dynaudnorm: %s - %v", filepath.Base(inputPath), err))
-					return false
-				}
-
-				workingPath = dynTempPath
-
-				if useLufs {
-					measured = p.measureLoudness(workingPath, target, targetTp)
-				}
-				if writeTags {
-					measured = p.measureLoudnessEbuR128(workingPath)
-				}
+				addFilter(dynaudnormFilter)
 			}
 		}
 	}
 
 	// Stage 3: Dynamics / Compression
 	if dynPreset != "Off" {
-		var attenuatedPath string = workingPath
 
 		if dynPreset == "Broadcast" {
-			// Quick peak check for hot peaks
-			cmd := ffmpeg.Command("-i", workingPath, "-af", "astats", "-f", "null", "-")
+			// Quick peak check on the accumulated signal
+			peakAf := "astats"
+			if prefix != "" {
+				peakAf = prefix + ",astats"
+			}
+			cmd := ffmpeg.Command("-i", inputPath, "-af", peakAf, "-f", "null", "-")
 			output, _ := cmd.CombinedOutput()
 
 			peakRe := regexp.MustCompile(`Peak level dB:\s+([-\d.]+)`)
@@ -703,22 +699,8 @@ func (p *CLIProcessor) processFile(inputPath string) bool {
 					inputAttenuationDb := targetPeak - peakLevel
 					inputVolumeLinear := math.Pow(10, inputAttenuationDb/20)
 
-					attenuatedPath = filepath.Join(os.TempDir(), fmt.Sprintf("tnt_atten_%d.wav", time.Now().UnixNano()))
-					tempFiles = append(tempFiles, attenuatedPath)
-
 					p.logQuiet(fmt.Sprintf("Hot peaks (%.2f dBFS), attenuating %.2f dB", peakLevel, inputAttenuationDb))
-
-					cmd := ffmpeg.Command(
-						"-i", workingPath,
-						"-af", fmt.Sprintf("volume=%.6f", inputVolumeLinear),
-						"-ar", "192000",
-						"-acodec", "pcm_f64le",
-						"-y", attenuatedPath,
-					)
-					if err := cmd.Run(); err != nil {
-						p.log(fmt.Sprintf("  Failed to attenuate: %s", filepath.Base(inputPath)))
-						return false
-					}
+					addFilter(fmt.Sprintf("volume=%.6f", inputVolumeLinear))
 				}
 			}
 		}
@@ -726,14 +708,14 @@ func (p *CLIProcessor) processFile(inputPath string) bool {
 		var compressionFilter string
 
 		if dynPreset == "Broadcast" {
-			bandAnalysis := p.analyzeFrequencyBands(attenuatedPath)
+			bandAnalysis := p.analyzeFrequencyBands(inputPath, prefix)
 			if bandAnalysis == nil || len(bandAnalysis) == 0 {
 				p.log(fmt.Sprintf("  Failed to analyze frequency bands: %s", filepath.Base(inputPath)))
 				return false
 			}
 			compressionFilter = p.buildMultibandCompression(bandAnalysis, dsAnalysis, dynPreset)
 		} else {
-			dynamicsAnalysis := p.analyzeDynamics(workingPath)
+			dynamicsAnalysis := p.analyzeDynamics(inputPath, prefix)
 			if dynamicsAnalysis == nil {
 				p.log(fmt.Sprintf("  Failed to analyze dynamics: %s", filepath.Base(inputPath)))
 				return false
@@ -742,36 +724,14 @@ func (p *CLIProcessor) processFile(inputPath string) bool {
 		}
 
 		if compressionFilter != "" {
-			compTempPath := filepath.Join(os.TempDir(), fmt.Sprintf("tnt_comp_%d.wav", time.Now().UnixNano()))
-			tempFiles = append(tempFiles, compTempPath)
-
 			p.log(fmt.Sprintf("  Applying %s compression: %s", dynPreset, filepath.Base(inputPath)))
-
-			compressionInput := workingPath
-			if dynPreset == "Broadcast" && attenuatedPath != workingPath {
-				compressionInput = attenuatedPath
-			}
-
-			cmd := ffmpeg.Command(
-				"-i", compressionInput,
-				"-af", compressionFilter,
-				"-ar", "192000",
-				"-acodec", "pcm_f64le",
-				"-y", compTempPath,
-			)
-
-			if err := cmd.Run(); err != nil {
-				p.log(fmt.Sprintf("  Failed to apply compression: %s - %v", filepath.Base(inputPath), err))
-				return false
-			}
-
-			workingPath = compTempPath
+			addFilter(compressionFilter)
 		}
 	}
 
-	// Stage 4: Measure loudness
+	// Stage 4: Measure loudness of the fully processed signal
 	if useLufs {
-		measured = p.measureLoudness(workingPath, target, targetTp)
+		measured = p.measureLoudness(inputPath, target, targetTp, prefix)
 		if measured == nil {
 			p.log(fmt.Sprintf("  Failed to measure loudness: %s", filepath.Base(inputPath)))
 			return false
@@ -779,7 +739,7 @@ func (p *CLIProcessor) processFile(inputPath string) bool {
 	}
 
 	if writeTags {
-		measured = p.measureLoudnessEbuR128(workingPath)
+		measured = p.measureLoudnessEbuR128(inputPath, prefix)
 		if measured == nil {
 			p.log(fmt.Sprintf("  Failed to measure EBU R128: %s", filepath.Base(inputPath)))
 			return false
@@ -804,13 +764,20 @@ func (p *CLIProcessor) processFile(inputPath string) bool {
 		}
 	}
 
-	// Build final filter chain
+	// Build the final filter chain: all accumulated processing, then loudnorm.
 	var finalFilterChain string
+	if prefix != "" {
+		finalFilterChain = prefix
+	}
 	if loudnormFilterChain != "" {
-		finalFilterChain = loudnormFilterChain
+		if finalFilterChain != "" {
+			finalFilterChain += "," + loudnormFilterChain
+		} else {
+			finalFilterChain = loudnormFilterChain
+		}
 	}
 
-	args[1] = workingPath
+	args[1] = inputPath
 
 	// Dithering for 16-bit PCM
 	if actualCodec == "PCM" && cfg.BitDepth == "16" {
@@ -879,8 +846,12 @@ func (p *CLIProcessor) processFile(inputPath string) bool {
 // These replicate the AudioNormalizer methods without GUI deps
 // ============================================================
 
-func (p *CLIProcessor) analyzeDynamics(inputPath string) *DynamicsAnalysis {
-	cmd := ffmpeg.Command("-i", inputPath, "-af", "astats=metadata=1:length=0.05", "-f", "null", "-")
+func (p *CLIProcessor) analyzeDynamics(inputPath, prefilter string) *DynamicsAnalysis {
+	af := "astats=metadata=1:length=0.05"
+	if prefilter != "" {
+		af = prefilter + "," + af
+	}
+	cmd := ffmpeg.Command("-i", inputPath, "-af", af, "-f", "null", "-")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		p.logQuiet(fmt.Sprintf("astats failed: %v", err))
@@ -936,7 +907,7 @@ func (p *CLIProcessor) parseAstatsOutput(output string) *DynamicsAnalysis {
 	return result
 }
 
-func (p *CLIProcessor) analyzeFrequencyBands(inputPath string) map[string]*FrequencyBandAnalysis {
+func (p *CLIProcessor) analyzeFrequencyBands(inputPath, prefilter string) map[string]*FrequencyBandAnalysis {
 	bands := map[string]string{
 		"sub":     "lowpass=f=80",
 		"bass":    "highpass=f=80,lowpass=f=250",
@@ -948,7 +919,11 @@ func (p *CLIProcessor) analyzeFrequencyBands(inputPath string) map[string]*Frequ
 	results := make(map[string]*FrequencyBandAnalysis)
 
 	for bandName, filter := range bands {
-		cmd := exec.Command(ffmpegPath, "-i", inputPath, "-af", fmt.Sprintf("%s,astats", filter), "-f", "null", "-")
+		af := fmt.Sprintf("%s,astats", filter)
+		if prefilter != "" {
+			af = prefilter + "," + af
+		}
+		cmd := exec.Command(ffmpegPath, "-i", inputPath, "-af", af, "-f", "null", "-")
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			continue
@@ -1301,12 +1276,14 @@ func (p *CLIProcessor) buildDynaudnormFilter(params *DynaudnormParams) string {
 	)
 }
 
-func (p *CLIProcessor) measureLoudness(inputPath string, target string, targetTp string) map[string]string {
+func (p *CLIProcessor) measureLoudness(inputPath string, target string, targetTp string, prefilter string) map[string]string {
 	p.log(fmt.Sprintf("  Measuring loudness: %s", filepath.Base(inputPath)))
 
-	cmd := exec.Command(ffmpegPath, "-i", inputPath,
-		"-af", fmt.Sprintf("loudnorm=linear=false:I=%s:TP=%s:LRA=5:print_format=json", target, targetTp),
-		"-f", "null", "-")
+	af := fmt.Sprintf("loudnorm=linear=false:I=%s:TP=%s:LRA=5:print_format=json", target, targetTp)
+	if prefilter != "" {
+		af = prefilter + "," + af
+	}
+	cmd := exec.Command(ffmpegPath, "-i", inputPath, "-af", af, "-f", "null", "-")
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -1316,10 +1293,12 @@ func (p *CLIProcessor) measureLoudness(inputPath string, target string, targetTp
 	return p.parseLoudnormJSON(string(output))
 }
 
-func (p *CLIProcessor) measureLoudnessEbuR128(inputPath string) map[string]string {
-	cmd := exec.Command(ffmpegPath, "-i", inputPath,
-		"-af", "ebur128=framelog=quiet:peak=true",
-		"-f", "null", "-")
+func (p *CLIProcessor) measureLoudnessEbuR128(inputPath, prefilter string) map[string]string {
+	af := "ebur128=framelog=quiet:peak=true"
+	if prefilter != "" {
+		af = prefilter + "," + af
+	}
+	cmd := exec.Command(ffmpegPath, "-i", inputPath, "-af", af, "-f", "null", "-")
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
