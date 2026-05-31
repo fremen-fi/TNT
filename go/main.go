@@ -1650,9 +1650,9 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 	case "USA ATSC A/85 (-24 LKFS)":
 		target = "-24"
 		targetTp = "-2"
-    case "AES77-2023 (-16/-18 LUFS)":
-        target = "-16" // not actually used, since overwritten below
-        targetTp = "-1" // as above
+	case "AES77-2023 (-16/-18 LUFS)":
+		target = "-16"  // not actually used, since overwritten below
+		targetTp = "-1" // as above
 	case "Custom":
 		// Only use input fields when Custom is selected
 		if n.normalizeTarget != "" {
@@ -1674,17 +1674,17 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 		targetTp = "-1"
 	}
 
-    // Check for speech-specific standards
-    // Overwrites the values set by case above
-    if n.normalizationStandard == "AES77-2023 (-16/-18 LUFS)" {
-        if cfg.IsSpeech {
-            target = "-18"
-            targetTp = "-1"
-        } else {
-            target = "-16"
-            targetTp ="-1"
-        }
-    }
+	// Check for speech-specific standards
+	// Overwrites the values set by case above
+	if n.normalizationStandard == "AES77-2023 (-16/-18 LUFS)" {
+		if cfg.IsSpeech {
+			target = "-18"
+			targetTp = "-1"
+		} else {
+			target = "-16"
+			targetTp = "-1"
+		}
+	}
 
 	// Single-pass pipeline: accumulate every stage's filter into `prefix` and
 	// render once at the end. No intermediate WAVs — each analysis pass applies

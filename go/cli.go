@@ -66,7 +66,7 @@ func usage(fs *flag.FlagSet) {
 	fmt.Fprintf(os.Stderr, "Options:\n")
 	fs.PrintDefaults()
 	fmt.Fprintf(os.Stderr, "\nThe EBU-flag (-ebu) is a shorthand for LUFS-I: -23 and TP: -1.\nThis always overrides any LUFS-I or TP value you input.\n")
-    fmt.Fprintf(os.Stderr, "\nThe AES77-flag (-aes77) is a shorthand for LUFS-I: -16 and TP: -1. \nThis always overrides any LUFS-I or TP value you input.\nEBU takes precedence of all other flags.\n")
+	fmt.Fprintf(os.Stderr, "\nThe AES77-flag (-aes77) is a shorthand for LUFS-I: -16 and TP: -1. \nThis always overrides any LUFS-I or TP value you input.\nEBU takes precedence of all other flags.\n")
 }
 
 func parseCLIFlags() (*CLIConfig, bool) {
@@ -113,10 +113,10 @@ func parseCLIFlags() (*CLIConfig, bool) {
 	workers := fs.Int("workers", 0, "Number of worker threads (0=auto: CPU cores - 1)")
 
 	// Shorthands
-    // EBU R128
+	// EBU R128
 	ebu := fs.Bool("ebu", false, "Normalize to EBU R128 (LUFS-I: -23, TP: -1)")
-    // AES77-2023
-    aes77 := fs.Bool("aes77", false, "Normalize to AES77-2023 (Music -16 LUFS, Speech -18 LUFS, both -1 dB TP")
+	// AES77-2023
+	aes77 := fs.Bool("aes77", false, "Normalize to AES77-2023 (Music -16 LUFS, Speech -18 LUFS, both -1 dB TP")
 
 	help := fs.Bool("h", false, "help")
 	helpLong := fs.Bool("help", false, "help")
@@ -136,20 +136,20 @@ func parseCLIFlags() (*CLIConfig, bool) {
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		fs.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nThe EBU-flag (-ebu) is a shorthand for LUFS-I: -23 and TP: -1.\nThis always overrides any LUFS-I or TP value you input.\n")
-        fmt.Fprintf(os.Stderr, "\nThe AES77-flag (-aes77) is a shorthand for LUFS-I: -16 and TP: -1. \nThis always overrides any LUFS-I or TP value you input.\nEBU takes precedence of all other flags.\n")
+		fmt.Fprintf(os.Stderr, "\nThe AES77-flag (-aes77) is a shorthand for LUFS-I: -16 and TP: -1. \nThis always overrides any LUFS-I or TP value you input.\nEBU takes precedence of all other flags.\n")
 	}
 
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		return nil, false
 	}
 
-    // Check for standards
-    if *aes77 {
-        cfg.LufsTargetI = "-16"
-        cfg.LufsTargetTP = "-1"
-    }
+	// Check for standards
+	if *aes77 {
+		cfg.LufsTargetI = "-16"
+		cfg.LufsTargetTP = "-1"
+	}
 
-    // Check for EBU last to always use EBU if multiple flags are passed.
+	// Check for EBU last to always use EBU if multiple flags are passed.
 	if *ebu {
 		cfg.LufsTargetI = "-23"
 		cfg.LufsTargetTP = "-1"
