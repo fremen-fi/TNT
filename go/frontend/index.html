@@ -1,355 +1,337 @@
 <!doctype html>
 <html lang="en">
+
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>TNT — Transcode · Normalize · Tag</title>
-<link rel="stylesheet" href="style.css" />
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TNT — Transcode · Normalize · Tag</title>
+    <link rel="stylesheet" href="style.css" />
 </head>
+
 <body>
-
-<div class="app">
-
-  <!-- ── Toolbar ── -->
-  <header class="toolbar">
-    <div class="toolbar-logo" title="TNT — Transcode · Normalize · Tag">
-      <img class="logo-img logo-for-light" src="assets/logo-for-light.png" alt="TNT — Transcode · Normalize · Tag">
-      <img class="logo-img logo-for-dark"  src="assets/logo-for-dark.png"  alt="TNT — Transcode · Normalize · Tag">
-    </div>
-    <div class="toolbar-spacer"></div>
-    <div class="theme-toggle">
-      <button id="theme-btn-light" onclick="setTheme('light')">L</button>
-      <button id="theme-btn-dark"  onclick="setTheme('dark')">D</button>
-    </div>
-    <div class="toolbar-sep"></div>
-    <button class="btn btn-sm" onclick="openDialog('help-dialog')">Help</button>
-    <button class="btn btn-sm" onclick="openDialog('prefs-dialog')">Preferences</button>
-  </header>
-
-  <!-- ── Workspace ── -->
-  <div class="workspace">
-
-    <!-- Left panel -->
-    <aside class="left-panel">
-
-      <!-- Watch mode warning — written by Go backend via Wails -->
-      <div id="watcher-warn"></div>
-
-      <div class="file-actions">
-        <button class="btn btn-sm" onclick="addMockFile('files')">+ Files</button>
-        <button class="btn btn-sm" onclick="addMockFile('folder')">+ Folder</button>
-      </div>
-
-      <div class="file-list-wrap" id="file-list"></div>
-
-      <div class="left-footer">
-        <div class="output-row">
-          <span class="output-label">Output</span>
-          <span class="output-path" id="output-path">~/Desktop/Exports</span>
-          <button class="btn btn-sm btn-fixed-sm" onclick="setOutput()">Set</button>
+    <div class="app">
+        <!-- ── Toolbar ── -->
+        <header class="toolbar">
+            <div class="toolbar-logo" title="TNT — Transcode · Normalize · Tag">
+                <img class="logo-img logo-for-light" src="assets/logo-for-light.png" alt="TNT — Transcode · Normalize · Tag">
+                <img class="logo-img logo-for-dark" src="assets/logo-for-dark.png" alt="TNT — Transcode · Normalize · Tag">
+            </div>
+            <div class="toolbar-spacer"></div>
+            <div class="theme-toggle">
+                <button id="theme-btn-light" onclick="setTheme('light')">L</button>
+                <button id="theme-btn-dark" onclick="setTheme('dark')">D</button>
+            </div>
+            <div class="toolbar-sep"></div>
+            <button class="btn btn-sm" onclick="openDialog('help-dialog')">Help</button>
+            <button class="btn btn-sm" onclick="openDialog('prefs-dialog')">Preferences</button>
+        </header>
+        <!-- ── Workspace ── -->
+        <div class="workspace">
+            <!-- Left panel -->
+            <aside class="left-panel">
+                <!-- Watch mode warning — written by Go backend via Wails -->
+                <div id="watcher-warn"></div>
+                <div class="file-actions">
+                    <button class="btn btn-sm" onclick="addMockFile('files')">+ Files</button>
+                    <button class="btn btn-sm" onclick="addMockFile('folder')">+ Folder</button>
+                </div>
+                <div class="file-list-wrap" id="file-list"></div>
+                <div class="left-footer">
+                    <div class="output-row">
+                        <span class="output-label">Output</span>
+                        <span class="output-path" id="output-path">~/Desktop/Exports</span>
+                        <button class="btn btn-sm btn-fixed-sm" onclick="setOutput()">Set</button>
+                    </div>
+                    <div class="progress-track" id="progress-track">
+                        <div class="progress-fill"></div>
+                    </div>
+                    <div class="action-row">
+                        <button class="btn btn-primary btn-process" id="btn-process" onclick="handleProcess()" disabled>Process</button>
+                        <button class="btn btn-sm" id="btn-clear" onclick="clearFiles()" disabled>Clear</button>
+                        <button class="btn btn-sm btn-fixed-sm" onclick="previewSize()">Size</button>
+                    </div>
+                    <div class="chain-indicator hidden" id="chain-indicator"></div>
+                    <div class="dither-indicator hidden" id="dither-indicator"></div>
+                </div>
+            </aside>
+            <!-- Right panel -->
+            <main class="right-panel">
+                <nav class="tab-bar">
+                    <button class="tab-btn active" data-tab="fast" onclick="switchTab('fast')">Fast</button>
+                    <div class="audio-chain-group" id="audio-chain-group">
+                        <div class="audio-chain-label">Audio Chain</div>
+                        <div class="audio-chain-tabs">
+                            <button class="tab-btn" data-tab="advanced" onclick="switchTab('advanced')">Advanced</button>
+                            <button class="tab-btn" data-tab="processing" onclick="switchTab('processing')">Processing</button>
+                        </div>
+                    </div>
+                    <button class="tab-btn" data-tab="metadata" onclick="switchTab('metadata')">Metadata</button>
+                </nav>
+                <div class="tab-content">
+                    <!-- Fast -->
+                    <section id="tab-fast" class="tab-pane active">
+                        <p class="hint">Pick a preset — files are processed in the background and appear in the output folder as they finish.</p>
+                        <div class="preset-grid">
+                            <label class="preset-card">
+                                <input type="radio" name="fast-preset" value="aac">
+                                <span class="preset-name">Small file</span>
+                                <span class="preset-sub">AAC · 256 kbps</span>
+                            </label>
+                            <label class="preset-card">
+                                <input type="radio" name="fast-preset" value="mp3">
+                                <span class="preset-name">Most compatible</span>
+                                <span class="preset-sub">MP3 · 320 kbps</span>
+                            </label>
+                            <label class="preset-card">
+                                <input type="radio" name="fast-preset" value="pcm" checked>
+                                <span class="preset-name">Production</span>
+                                <span class="preset-sub">PCM · 48 kHz / 24-bit</span>
+                            </label>
+                        </div>
+                        <label class="check-row">
+                            <input type="checkbox" id="fast-norm">
+                            <div class="check-text">
+                                <span class="check-label">Normalize</span>
+                                <span class="check-sub" id="fast-norm-sub">EBU R128 · −23 LUFS · −1 dBTP</span>
+                            </div>
+                        </label>
+                    </section>
+                    <!-- Advanced -->
+                    <section id="tab-advanced" class="tab-pane">
+                        <div class="section-label">Format &amp; Encoding</div>
+                        <div class="form-row">
+                            <label for="adv-format">Format</label>
+                            <select id="adv-format" onchange="updateAdvanced()"></select>
+                        </div>
+                        <div class="form-row" id="row-sr">
+                            <label for="adv-sr">Sample rate</label>
+                            <select id="adv-sr">
+                                <option>44 100 Hz</option>
+                                <option selected>48 000 Hz</option>
+                                <option>88 200 Hz</option>
+                                <option>96 000 Hz</option>
+                                <option>192 000 Hz</option>
+                            </select>
+                        </div>
+                        <div class="form-row" id="row-bd">
+                            <label for="adv-bd">Bit depth</label>
+                            <select id="adv-bd" onchange="updateDitherIndicator()">
+                                <option>16-bit</option>
+                                <option selected>24-bit</option>
+                                <option>32-bit float</option>
+                                <option>64-bit float</option>
+                            </select>
+                        </div>
+                        <div class="form-row hidden" id="row-br">
+                            <label for="adv-br">Bitrate (kbps)</label>
+                            <input type="number" id="adv-br" value="256" min="12" max="510">
+                        </div>
+                        <div class="form-row hidden" id="row-cl">
+                            <label for="adv-cl">Data compression<br />0 (off) – 10 (full)</label>
+                            <input type="range" id="adv-cl" min="0" max="10" step="1" value="0" oninput="document.getElementById('adv-cl-out').value = this.value">
+                            <output id="adv-cl-out">0</output>
+                        </div>
+                        <div class="section-label">Loudness</div>
+                        <label class="check-row">
+                            <input type="checkbox" id="adv-custom-loud" onchange="updateAdvanced()">
+                            <div class="check-text">
+                                <span class="check-label">Custom loudness targets</span>
+                            </div>
+                        </label>
+                        <div class="form-row hidden" id="row-lufs">
+                            <label for="adv-lufs">Target LUFS</label>
+                            <input type="number" id="adv-lufs" value="-23">
+                        </div>
+                        <div class="form-row hidden" id="row-tp">
+                            <label for="adv-tp">True peak limit (dBTP)</label>
+                            <input type="number" id="adv-tp" value="-1">
+                        </div>
+                        <div class="section-label">Options</div>
+                        <label class="check-row" id="row-norm">
+                            <input type="checkbox" id="adv-norm" checked onchange="updateAdvanced()">
+                            <div class="check-text">
+                                <span class="check-label">Normalize</span>
+                                <span class="check-sub" id="adv-norm-sub">EBU R128 · −23 LUFS — alters audio</span>
+                            </div>
+                        </label>
+                        <label class="check-row" id="row-rg">
+                            <input type="checkbox" id="adv-rg" onchange="updateAdvanced()">
+                            <div class="check-text">
+                                <span class="check-label">Write ReplayGain tags</span>
+                                <span class="check-sub">Metadata only — mutually exclusive with Normalize</span>
+                            </div>
+                        </label>
+                        <label class="check-row" id="row-transcode">
+                            <input type="checkbox" id="adv-no-transcode">
+                            <div class="check-text">
+                                <span class="check-label">Do not transcode</span>
+                                <span class="check-sub">Preserve original encoding; write tags only</span>
+                            </div>
+                        </label>
+                        <label class="check-row hidden" id="row-speech">
+                            <input type="checkbox" id="adv-speech">
+                            <div class="check-text">
+                                <span class="check-label">Content is speech</span>
+                                <span class="check-sub">
+                                    <ul style="list-style-type: none">
+                                        <li> When using <strong>Opus</strong>, optimizes codec for speech.</li>
+                                        <li>When <strong>normalizing and using AES77-2023</strong>, sets target loudness level to -18 LUFS.</li>
+                                        <li>Check this if processing podcasts or other speech content.</li>
+                                    </ul>
+                                </span>
+                                <span class="check-sub"></span>
+                            </div>
+                        </label>
+                    </section>
+                    <!-- Processing -->
+                    <section id="tab-processing" class="tab-pane">
+                        <div class="section-label">Dynamics</div>
+                        <div class="form-row" id="proc-row-dyn">
+                            <label for="proc-dyn">Dynamics processing</label>
+                            <select id="proc-dyn" onchange="updateChainIndicator()">
+                                <option value="Off" selected>Off</option>
+                                <option value="Light">Light</option>
+                                <option value="Moderate">Moderate</option>
+                                <option value="Broadcast">Broadcast (multi-band)</option>
+                            </select>
+                        </div>
+                        <div class="section-label">Equalization</div>
+                        <div class="form-row" id="proc-row-eq">
+                            <label for="proc-eq">EQ target curve</label>
+                            <select id="proc-eq" onchange="updateChainIndicator()">
+                                <option value="Off" selected>Off</option>
+                                <option value="Flat">Flat</option>
+                                <option value="Speech">Speech</option>
+                                <option value="Broadcast">Broadcast</option>
+                            </select>
+                        </div>
+                        <div class="section-label">Options</div>
+                        <label class="check-row" id="proc-row-dn">
+                            <input type="checkbox" id="proc-dn">
+                            <div class="check-text">
+                                <span class="check-label">Dynamic normalisation</span>
+                                <span class="check-sub">Level-dependent gain riding</span>
+                            </div>
+                        </label>
+                        <div class="form-divider"></div>
+                        <label class="check-row danger">
+                            <input type="checkbox" id="proc-bypass" onchange="updateBypass(this.checked)">
+                            <div class="check-text">
+                                <span class="check-label">Bypass all processing</span>
+                                <span class="check-sub">Disables Dynamics and EQ regardless of selection above</span>
+                            </div>
+                        </label>
+                    </section>
+                    <!-- Metadata -->
+                    <section id="tab-metadata" class="tab-pane">
+                        <p class="hint" id="meta-hint">Select a single file in the queue to edit its metadata.</p>
+                        <div style="display:flex; gap:7px; margin-bottom:14px;">
+                            <button class="btn btn-sm" id="meta-read" disabled onclick="addLog('Tags read from selected file','ok')">Read tags</button>
+                            <button class="btn btn-sm" id="meta-write" disabled onclick="addLog('Tags written to selected file','ok')">Write</button>
+                        </div>
+                        <div class="form-divider"></div>
+                        <div class="meta-grid disabled" id="meta-grid">
+                            <label for="mt-title">Title</label> <input type="text" id="mt-title" disabled>
+                            <label for="mt-artist">Artist</label> <input type="text" id="mt-artist" disabled>
+                            <label for="mt-album">Album</label> <input type="text" id="mt-album" disabled>
+                            <label for="mt-year">Year</label> <input type="text" id="mt-year" disabled>
+                            <label for="mt-comment">Comment</label> <input type="text" id="mt-comment" disabled>
+                            <label for="mt-track">Track #</label>
+                            <div class="track-pair">
+                                <input type="text" id="mt-track" disabled>
+                                <span class="track-sep" id="mt-track-sep">of</span>
+                                <input type="text" id="mt-track-total" disabled readonly>
+                            </div>
+                            <label for="mt-rg-gain" class="rg-row hidden">ReplayGain</label>
+                            <input type="text" id="mt-rg-gain" class="rg-row hidden" disabled readonly>
+                            <label for="mt-rg-target" class="rg-row hidden">RG target</label>
+                            <input type="text" id="mt-rg-target" class="rg-row hidden" disabled readonly>
+                        </div>
+                    </section>
+                </div><!-- /.tab-content -->
+            </main>
+        </div><!-- /.workspace -->
+        <!-- Log bar -->
+        <div class="log-bar" id="log-bar">
+            <span class="log-ready">Ready</span>
         </div>
-        <div class="progress-track" id="progress-track">
-          <div class="progress-fill"></div>
+    </div><!-- /.app -->
+    <!-- ── Preferences dialog ── -->
+    <dialog id="prefs-dialog">
+        <div class="dialog-header">
+            <h2>Preferences</h2>
+            <button class="dialog-close" onclick="closeDialog('prefs-dialog')">&times;</button>
         </div>
-        <div class="action-row">
-          <button class="btn btn-primary btn-process" id="btn-process" onclick="handleProcess()" disabled>Process</button>
-          <button class="btn btn-sm" id="btn-clear" onclick="clearFiles()" disabled>Clear</button>
-          <button class="btn btn-sm btn-fixed-sm" onclick="previewSize()">Size</button>
+        <div class="dialog-tab-nav" id="prefs-tabs">
+            <button class="dialog-tab-btn active" data-panel="prefs-norm" onclick="switchDialogTab(this,'prefs-tabs','prefs-panels')">Normalization</button>
+            <button class="dialog-tab-btn" data-panel="prefs-save" onclick="switchDialogTab(this,'prefs-tabs','prefs-panels')">Save Config</button>
+            <button class="dialog-tab-btn" data-panel="prefs-funcs" onclick="switchDialogTab(this,'prefs-tabs','prefs-panels')">Functions</button>
+            <button class="dialog-tab-btn" data-panel="prefs-watch" onclick="switchDialogTab(this,'prefs-tabs','prefs-panels')">Watch mode</button>
+            <button class="dialog-tab-btn" data-panel="prefs-version" onclick="switchDialogTab(this,'prefs-tabs','prefs-panels')">Version</button>
+            <button class="dialog-tab-btn" data-panel="prefs-report" onclick="switchDialogTab(this,'prefs-tabs','prefs-panels')">Error report</button>
+            <button class="dialog-tab-btn" data-panel="prefs-telemetry" onclick="switchDialogTab(this,'prefs-tabs','prefs-panels')">Telemetry</button>
         </div>
-        <div class="chain-indicator hidden"  id="chain-indicator"></div>
-        <div class="dither-indicator hidden" id="dither-indicator"></div>
-      </div>
-    </aside>
-
-    <!-- Right panel -->
-    <main class="right-panel">
-
-      <nav class="tab-bar">
-        <button class="tab-btn active" data-tab="fast" onclick="switchTab('fast')">Fast</button>
-        <div class="audio-chain-group" id="audio-chain-group">
-          <div class="audio-chain-label">Audio Chain</div>
-          <div class="audio-chain-tabs">
-            <button class="tab-btn" data-tab="advanced"   onclick="switchTab('advanced')">Advanced</button>
-            <button class="tab-btn" data-tab="processing" onclick="switchTab('processing')">Processing</button>
-          </div>
-        </div>
-        <button class="tab-btn" data-tab="metadata" onclick="switchTab('metadata')">Metadata</button>
-      </nav>
-
-      <div class="tab-content">
-
-        <!-- Fast -->
-        <section id="tab-fast" class="tab-pane active">
-          <p class="hint">Pick a preset — files are processed in the background and appear in the output folder as they finish.</p>
-          <div class="preset-grid">
-            <label class="preset-card">
-              <input type="radio" name="fast-preset" value="aac">
-              <span class="preset-name">Small file</span>
-              <span class="preset-sub">AAC · 256 kbps</span>
-            </label>
-            <label class="preset-card">
-              <input type="radio" name="fast-preset" value="mp3">
-              <span class="preset-name">Most compatible</span>
-              <span class="preset-sub">MP3 · 320 kbps</span>
-            </label>
-            <label class="preset-card">
-              <input type="radio" name="fast-preset" value="pcm" checked>
-              <span class="preset-name">Production</span>
-              <span class="preset-sub">PCM · 48 kHz / 24-bit</span>
-            </label>
-          </div>
-          <label class="check-row">
-            <input type="checkbox" id="fast-norm">
-            <div class="check-text">
-              <span class="check-label">Normalize</span>
-              <span class="check-sub" id="fast-norm-sub">EBU R128 · −23 LUFS · −1 dBTP</span>
+        <div class="dialog-body" id="prefs-panels">
+            <div class="dialog-pane active" id="prefs-norm">
+                <p>Default targets applied when Custom loudness is disabled. Values are always interpreted as negative.</p>
+                <label class="radio-row"><input type="radio" name="norm-std" value="ebu" checked> <span>EBU R128</span> <span class="radio-sub">−23 LUFS / −1 dBTP</span></label>
+                <label class="radio-row"><input type="radio" name="norm-std" value="atsc"> <span>USA ATSC A/85</span> <span class="radio-sub">−24 LUFS / −2 dBTP</span></label>
+                <label class="radio-row"><input type="radio" name="norm-std" value="aes77"><span>AES77-2023</span> <span class="radio-sub">-16/-18 LUFS / -1 dBTP</span></label>
+                <label class="radio-row"><input type="radio" name="norm-std" value="custom"> <span>Custom</span></label>
+                <div class="form-row" style="margin-top:10px;">
+                    <label for="prefs-lufs">Custom LUFS</label>
+                    <input type="number" id="prefs-lufs" value="-23">
+                </div>
+                <div class="form-row">
+                    <label for="prefs-tp">Custom TP (dBTP)</label>
+                    <input type="number" id="prefs-tp" value="-1">
+                </div>
             </div>
-          </label>
-        </section>
-
-        <!-- Advanced -->
-        <section id="tab-advanced" class="tab-pane">
-          <div class="section-label">Format &amp; Encoding</div>
-
-          <div class="form-row">
-            <label for="adv-format">Format</label>
-            <select id="adv-format" onchange="updateAdvanced()"></select>
-          </div>
-          <div class="form-row" id="row-sr">
-            <label for="adv-sr">Sample rate</label>
-            <select id="adv-sr">
-              <option>44 100 Hz</option>
-              <option selected>48 000 Hz</option>
-              <option>88 200 Hz</option>
-              <option>96 000 Hz</option>
-              <option>192 000 Hz</option>
-            </select>
-          </div>
-          <div class="form-row" id="row-bd">
-            <label for="adv-bd">Bit depth</label>
-            <select id="adv-bd" onchange="updateDitherIndicator()">
-              <option>16-bit</option>
-              <option selected>24-bit</option>
-              <option>32-bit float</option>
-              <option>64-bit float</option>
-            </select>
-          </div>
-          <div class="form-row hidden" id="row-br">
-            <label for="adv-br">Bitrate (kbps)</label>
-            <input type="number" id="adv-br" value="256" min="12" max="510">
-          </div>
-          <div class="form-row hidden" id="row-cl">
-            <label for="adv-cl">Data compression<br  />0 (off) – 10 (full)</label>
-            <input type="range" id="adv-cl" min="0" max="10" step="1" value="0"
-              oninput="document.getElementById('adv-cl-out').value = this.value">
-            <output id="adv-cl-out">0</output>
-          </div>
-
-          <div class="section-label">Loudness</div>
-          <label class="check-row">
-            <input type="checkbox" id="adv-custom-loud" onchange="updateAdvanced()">
-            <div class="check-text">
-              <span class="check-label">Custom loudness targets</span>
+            <div class="dialog-pane" id="prefs-save">
+                <p>Saves all current settings — mode, format, encoding, normalization defaults, and the last output directory. Loaded automatically on startup.</p>
+                <button class="btn btn-primary" style="margin-bottom:12px;" onclick="addLog('Configuration saved','ok')">Save current configuration</button>
+                <div class="form-divider"></div>
+                <button class="btn" onclick="addLog('Settings reset to defaults','info')">Reset to defaults</button>
             </div>
-          </label>
-          <div class="form-row hidden" id="row-lufs">
-            <label for="adv-lufs">Target LUFS</label>
-            <input type="number" id="adv-lufs" value="-23">
-          </div>
-          <div class="form-row hidden" id="row-tp">
-            <label for="adv-tp">True peak limit (dBTP)</label>
-            <input type="number" id="adv-tp" value="-1">
-          </div>
-
-          <div class="section-label">Options</div>
-          <label class="check-row" id="row-norm">
-          <input type="checkbox" id="adv-norm" checked onchange="updateAdvanced()">
-            <div class="check-text">
-              <span class="check-label">Normalize</span>
-              <span class="check-sub" id="adv-norm-sub">EBU R128 · −23 LUFS — alters audio</span>
+            <div class="dialog-pane" id="prefs-funcs">
+                <h3>Mono compatibility check</h3>
+                <p>Automatically check phase/mono compatibility before processing. If incompatible, you will be asked whether to continue or skip the file.</p>
+                <label class="check-row">
+                    <input type="checkbox" id="prefs-phase">
+                    <div class="check-text"><span class="check-label">Phase check</span></div>
+                </label>
             </div>
-          </label>
-          <label class="check-row" id="row-rg">
-            <input type="checkbox" id="adv-rg" onchange="updateAdvanced()">
-            <div class="check-text">
-              <span class="check-label">Write ReplayGain tags</span>
-              <span class="check-sub">Metadata only — mutually exclusive with Normalize</span>
+            <div class="dialog-pane" id="prefs-watch">
+                <p>Watch mode automatically processes files added to the input folder.</p>
+                <ul style="margin-top:0;">
+                    <li>Origin folder is set via "+ Folder"</li>
+                    <li>Output folder is set via "Set" above the "Processing" button</li>
+                </ul>
+                <p>Existing files are ignored — only new arrivals trigger processing.</p>
+                <label class="check-row">
+                    <input type="checkbox" id="prefs-watch-mode">
+                    <div class="check-text"><span class="check-label">Watch mode enabled</span></div>
+                </label>
             </div>
-          </label>
-          <label class="check-row" id="row-transcode">
-            <input type="checkbox" id="adv-no-transcode">
-            <div class="check-text">
-              <span class="check-label">Do not transcode</span>
-              <span class="check-sub">Preserve original encoding; write tags only</span>
+            <div class="dialog-pane" id="prefs-version">
+                <p id="prefs-version-text">Checking version…</p>
+                <button class="btn">Check for updates</button>
             </div>
-          </label>
-          <label class="check-row hidden" id="row-speech">
-            <input type="checkbox" id="adv-speech">
-            <div class="check-text">
-              <span class="check-label">Optimize for speech</span>
-              <span class="check-sub">Opus VoIP mode — do not use for music</span>
+            <div class="dialog-pane" id="prefs-report">
+                <p id="prefs-report-text">Send an error report.</p>
+                <button class="btn" onclick="addLog('Preparing error report…','info')">Send error report</button>
             </div>
-          </label>
-        </section>
-
-        <!-- Processing -->
-        <section id="tab-processing" class="tab-pane">
-          <div class="section-label">Dynamics</div>
-          <div class="form-row" id="proc-row-dyn">
-            <label for="proc-dyn">Dynamics processing</label>
-            <select id="proc-dyn" onchange="updateChainIndicator()">
-              <option value="Off" selected>Off</option>
-              <option value="Light">Light</option>
-              <option value="Moderate">Moderate</option>
-              <option value="Broadcast">Broadcast (multi-band)</option>
-            </select>
-          </div>
-
-          <div class="section-label">Equalization</div>
-          <div class="form-row" id="proc-row-eq">
-            <label for="proc-eq">EQ target curve</label>
-            <select id="proc-eq" onchange="updateChainIndicator()">
-              <option value="Off" selected>Off</option>
-              <option value="Flat">Flat</option>
-              <option value="Speech">Speech</option>
-              <option value="Broadcast">Broadcast</option>
-            </select>
-          </div>
-
-          <div class="section-label">Options</div>
-          <label class="check-row" id="proc-row-dn">
-            <input type="checkbox" id="proc-dn">
-            <div class="check-text">
-              <span class="check-label">Dynamic normalisation</span>
-              <span class="check-sub">Level-dependent gain riding</span>
-            </div>
-          </label>
-
-          <div class="form-divider"></div>
-          <label class="check-row danger">
-            <input type="checkbox" id="proc-bypass" onchange="updateBypass(this.checked)">
-            <div class="check-text">
-              <span class="check-label">Bypass all processing</span>
-              <span class="check-sub">Disables Dynamics and EQ regardless of selection above</span>
-            </div>
-          </label>
-        </section>
-
-        <!-- Metadata -->
-        <section id="tab-metadata" class="tab-pane">
-          <p class="hint" id="meta-hint">Select a single file in the queue to edit its metadata.</p>
-          <div style="display:flex; gap:7px; margin-bottom:14px;">
-            <button class="btn btn-sm" id="meta-read"  disabled onclick="addLog('Tags read from selected file','ok')">Read tags</button>
-            <button class="btn btn-sm" id="meta-write" disabled onclick="addLog('Tags written to selected file','ok')">Write</button>
-          </div>
-          <div class="form-divider"></div>
-          <div class="meta-grid disabled" id="meta-grid">
-            <label for="mt-title">Title</label>   <input type="text" id="mt-title"   disabled>
-            <label for="mt-artist">Artist</label>  <input type="text" id="mt-artist"  disabled>
-            <label for="mt-album">Album</label>   <input type="text" id="mt-album"   disabled>
-            <label for="mt-year">Year</label>    <input type="text" id="mt-year"    disabled>
-            <label for="mt-comment">Comment</label> <input type="text" id="mt-comment" disabled>
-            <label for="mt-track">Track #</label>
-            <div class="track-pair">
-              <input type="text" id="mt-track" disabled>
-              <span class="track-sep" id="mt-track-sep">of</span>
-              <input type="text" id="mt-track-total" disabled readonly>
-            </div>
-            <label for="mt-rg-gain"   class="rg-row hidden">ReplayGain</label>
-            <input type="text" id="mt-rg-gain"   class="rg-row hidden" disabled readonly>
-            <label for="mt-rg-target" class="rg-row hidden">RG target</label>
-            <input type="text" id="mt-rg-target" class="rg-row hidden" disabled readonly>
-          </div>
-        </section>
-
-      </div><!-- /.tab-content -->
-    </main>
-
-  </div><!-- /.workspace -->
-
-  <!-- Log bar -->
-  <div class="log-bar" id="log-bar">
-    <span class="log-ready">Ready</span>
-  </div>
-
-</div><!-- /.app -->
-
-
-<!-- ── Preferences dialog ── -->
-<dialog id="prefs-dialog">
-  <div class="dialog-header">
-    <h2>Preferences</h2>
-    <button class="dialog-close" onclick="closeDialog('prefs-dialog')">&times;</button>
-  </div>
-  <div class="dialog-tab-nav" id="prefs-tabs">
-    <button class="dialog-tab-btn active" data-panel="prefs-norm"    onclick="switchDialogTab(this,'prefs-tabs','prefs-panels')">Normalization</button>
-    <button class="dialog-tab-btn"        data-panel="prefs-save"    onclick="switchDialogTab(this,'prefs-tabs','prefs-panels')">Save Config</button>
-    <button class="dialog-tab-btn"        data-panel="prefs-funcs"   onclick="switchDialogTab(this,'prefs-tabs','prefs-panels')">Functions</button>
-    <button class="dialog-tab-btn"        data-panel="prefs-watch"   onclick="switchDialogTab(this,'prefs-tabs','prefs-panels')">Watch mode</button>
-    <button class="dialog-tab-btn"        data-panel="prefs-version" onclick="switchDialogTab(this,'prefs-tabs','prefs-panels')">Version</button>
-    <button class="dialog-tab-btn"        data-panel="prefs-report"  onclick="switchDialogTab(this,'prefs-tabs','prefs-panels')">Error report</button>
-    <button class="dialog-tab-btn"        data-panel="prefs-telemetry" onclick="switchDialogTab(this,'prefs-tabs','prefs-panels')">Telemetry</button>
-  </div>
-  <div class="dialog-body" id="prefs-panels">
-    <div class="dialog-pane active" id="prefs-norm">
-      <p>Default targets applied when Custom loudness is disabled. Values are always interpreted as negative.</p>
-      <label class="radio-row"><input type="radio" name="norm-std" value="ebu"    checked> <span>EBU R128</span>     <span class="radio-sub">−23 LUFS / −1 dBTP</span></label>
-      <label class="radio-row"><input type="radio" name="norm-std" value="atsc">          <span>USA ATSC A/85</span> <span class="radio-sub">−24 LUFS / −2 dBTP</span></label>
-      <label class="radio-row"><input type="radio" name="norm-std" value="custom">        <span>Custom</span></label>
-      <div class="form-row" style="margin-top:10px;">
-        <label for="prefs-lufs">Custom LUFS</label>
-        <input type="number" id="prefs-lufs" value="-23">
-      </div>
-      <div class="form-row">
-        <label for="prefs-tp">Custom TP (dBTP)</label>
-        <input type="number" id="prefs-tp" value="-1">
-      </div>
-    </div>
-    <div class="dialog-pane" id="prefs-save">
-      <p>Saves all current settings — mode, format, encoding, normalization defaults, and the last output directory. Loaded automatically on startup.</p>
-      <button class="btn btn-primary" style="margin-bottom:12px;" onclick="addLog('Configuration saved','ok')">Save current configuration</button>
-      <div class="form-divider"></div>
-      <button class="btn" onclick="addLog('Settings reset to defaults','info')">Reset to defaults</button>
-    </div>
-    <div class="dialog-pane" id="prefs-funcs">
-      <h3>Mono compatibility check</h3>
-      <p>Automatically check phase/mono compatibility before processing. If incompatible, you will be asked whether to continue or skip the file.</p>
-      <label class="check-row">
-        <input type="checkbox" id="prefs-phase">
-        <div class="check-text"><span class="check-label">Phase check</span></div>
-      </label>
-    </div>
-    <div class="dialog-pane" id="prefs-watch">
-      <p>Watch mode automatically processes files added to the input folder.</p>
-      <ul style="margin-top:0;">
-      <li>Origin folder is set via "+ Folder"</li>
-      <li>Output folder is set via "Set" above the "Processing" button</li>
-      </ul>
-      <p>Existing files are ignored — only new arrivals trigger processing.</p>
-      <label class="check-row">
-        <input type="checkbox" id="prefs-watch-mode">
-        <div class="check-text"><span class="check-label">Watch mode enabled</span></div>
-      </label>
-    </div>
-    <div class="dialog-pane" id="prefs-version">
-      <p id="prefs-version-text">Checking version…</p>
-      <button class="btn">Check for updates</button>
-    </div>
-    <div class="dialog-pane" id="prefs-report">
-      <p id="prefs-report-text">Send an error report.</p>
-      <button class="btn" onclick="addLog('Preparing error report…','info')">Send error report</button>
-    </div>
-    <div class="dialog-pane" id="prefs-telemetry">
-      <p>Help us make TNT better by sharing anonymous usage data. When enabled, TNT sends each ffmpeg command and its output to our server so we can see which formats and options the users pick. <strong>Off by default.</strong></p>
-      <p>Before transmission we strip:</p>
-      <ul style="margin-top:0;">
-        <li>File paths and filenames (only the file extension is kept)</li>
-        <li>Audio metadata (title, artist, album, comments, etc.)</li>
-      </ul>
-      <p>Sent: ffmpeg flags, codec settings, success/failure, error messages, app version, OS, and a random anonymous ID generated on this device. Never sent: your name, email, IP-derived location, or anything that identifies you.</p>
-      <details style="margin: 6px 0 12px;">
-        <summary style="cursor: pointer; color: var(--muted); font-size: 12px;">Example of what gets sent</summary>
-<pre style="margin: 8px 0 0; padding: 10px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 11px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; color: var(--muted);">{
+            <div class="dialog-pane" id="prefs-telemetry">
+                <p>Help us make TNT better by sharing anonymous usage data. When enabled, TNT sends each ffmpeg command and its output to our server so we can see which formats and options the users pick. <strong>Off by default.</strong></p>
+                <p>Before transmission we strip:</p>
+                <ul style="margin-top:0;">
+                    <li>File paths and filenames (only the file extension is kept)</li>
+                    <li>Audio metadata (title, artist, album, comments, etc.)</li>
+                </ul>
+                <p>Sent: ffmpeg flags, codec settings, success/failure, error messages, app version, OS, and a random anonymous ID generated on this device. Never sent: your name, email, IP-derived location, or anything that identifies you.</p>
+                <details style="margin: 6px 0 12px;">
+                    <summary style="cursor: pointer; color: var(--muted); font-size: 12px;">Example of what gets sent</summary>
+                    <pre style="margin: 8px 0 0; padding: 10px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 11px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; color: var(--muted);">{
   "event": "ffmpeg_run",
   "client_id": "9f3a1e72c4b8...",
   "app_version": "1.3.0",
@@ -366,111 +348,110 @@
   "duration_ms": 1842,
   "output_tail": "Input #0, wav, from '&lt;path&gt;':\n  Duration: 00:03:42.18, bitrate: 1411 kb/s\n  Stream #0:0: Audio: pcm_s24le, 48000 Hz, stereo\nOutput #0, flac, to '&lt;path&gt;':\nsize=4567kB time=00:03:42.18"
 }</pre>
-      </details>
-      <label class="check-row">
-        <input type="checkbox" id="prefs-telemetry-enabled" onchange="setTelemetryEnabled(this.checked)">
-        <div class="check-text">
-          <span class="check-label">Share anonymous usage data</span>
-          <span class="check-sub">Helps us prioritize fixes and new features</span>
+                </details>
+                <label class="check-row">
+                    <input type="checkbox" id="prefs-telemetry-enabled" onchange="setTelemetryEnabled(this.checked)">
+                    <div class="check-text">
+                        <span class="check-label">Share anonymous usage data</span>
+                        <span class="check-sub">Helps us prioritize fixes and new features</span>
+                    </div>
+                </label>
+                <div class="form-divider"></div>
+                <p>If you'd like to break linkability between past and future events, reset the anonymous ID, and a fresh random value is generated.</p>
+                <button class="btn" onclick="resetTelemetryID()">Reset anonymous ID</button>
+            </div>
         </div>
-      </label>
-      <div class="form-divider"></div>
-      <p>If you'd like to break linkability between past and future events, reset the anonymous ID, and a fresh random value is generated.</p>
-      <button class="btn" onclick="resetTelemetryID()">Reset anonymous ID</button>
-    </div>
-  </div>
-</dialog>
-
-<!-- ── Help dialog ── -->
-<dialog id="help-dialog">
-  <div class="dialog-header">
-    <h2>Help</h2>
-    <button class="dialog-close" onclick="closeDialog('help-dialog')">&times;</button>
-  </div>
-  <div class="dialog-tab-nav" id="help-tabs">
-    <button class="dialog-tab-btn active" data-panel="help-started"    onclick="switchDialogTab(this,'help-tabs','help-panels')">Getting started</button>
-    <button class="dialog-tab-btn"        data-panel="help-fast"       onclick="switchDialogTab(this,'help-tabs','help-panels')">Fast</button>
-    <button class="dialog-tab-btn"        data-panel="help-advanced"   onclick="switchDialogTab(this,'help-tabs','help-panels')">Advanced</button>
-    <button class="dialog-tab-btn"        data-panel="help-processing" onclick="switchDialogTab(this,'help-tabs','help-panels')">Processing</button>
-    <button class="dialog-tab-btn"        data-panel="help-watch"      onclick="switchDialogTab(this,'help-tabs','help-panels')">Watch mode</button>
-    <button class="dialog-tab-btn"        data-panel="help-formats"    onclick="switchDialogTab(this,'help-tabs','help-panels')">Audio formats</button>
-  </div>
-  <div class="dialog-body" id="help-panels">
-    <div class="dialog-pane active" id="help-started">
-      <p>TNT streamlines audio workflows for broadcast professionals: Transcode, Normalize, Tag.</p>
-      <h3>Workflow</h3>
-      <ol>
-        <li>Add files via "+ Files" or drag and drop onto the queue</li>
-        <li>Set an output folder</li>
-        <li>Configure in Fast, or use Advanced + Processing for fine control</li>
-        <li>Click Process — files appear in the output folder as they finish</li>
-      </ol>
-      <h3>Tabs</h3>
-      <ul>
-        <li><strong>Fast</strong> — three one-click presets for common use cases</li>
-        <li><strong>Advanced</strong> — full control over format and encoding parameters</li>
-        <li><strong>Processing</strong> — dynamics, EQ and loudness chain; active only when Advanced mode is selected</li>
-        <li><strong>Metadata</strong> — read and write ID3/Vorbis tags for a selected file</li>
-      </ul>
-    </div>
-    <div class="dialog-pane" id="help-fast">
-      <h3>Presets</h3>
-      <ul>
-        <li><strong>Small file (AAC 256 kbps)</strong> — compressed, balanced quality/size</li>
-        <li><strong>Most compatible (MP3 320 kbps)</strong> — universal playback</li>
-        <li><strong>Production (PCM 48 kHz/24-bit)</strong> — uncompressed broadcast quality</li>
-      </ul>
-      <p>Normalize applies EBU R128 (−23 LUFS, −1 dBTP) to all processed files.</p>
-    </div>
-    <div class="dialog-pane" id="help-advanced">
-      <h3>Format selection</h3>
-      <p>AAC, Opus, MP3, PCM (WAV), or FLAC. Sample rate and bit depth apply to PCM only; bitrate to AAC/Opus/MP3; compression level (0–10) to FLAC and Opus.</p>
-      <h3>Options</h3>
-      <ul>
-        <li><strong>Normalize</strong> — applies BS.1770-5 loudness correction, alters audio</li>
-        <li><strong>Write RG tags</strong> — writes ReplayGain metadata only; mutually exclusive with Normalize; not available for PCM</li>
-        <li><strong>Do not transcode</strong> — preserves the original encoding while writing tags</li>
-        <li><strong>Speech</strong> — Opus VoIP-optimized encoding; do not use for music</li>
-      </ul>
-    </div>
-    <div class="dialog-pane" id="help-processing">
-      <h3>Dynamics</h3>
-      <ul>
-        <li><strong>Off</strong> — no compression</li>
-        <li><strong>Light</strong> — gentle 2.5:1 for well-recorded content</li>
-        <li><strong>Moderate</strong> — broadcast-style 3.5:1 for podcasts and music</li>
-        <li><strong>Broadcast</strong> — five-band adaptive compression for radio/mobile</li>
-      </ul>
-      <h3>EQ target curves</h3>
-      <p>Off, Flat, Speech, Broadcast — attenuation-only adjustments capped at ±10 dB.</p>
-      <h3>Processing order</h3>
-      <ol>
-        <li>EQ</li>
-        <li>De-esser (with EQ)</li>
-        <li>Dynamic normalisation</li>
-        <li>Dynamics</li>
-        <li>Loudness normalisation</li>
-      </ol>
-    </div>
-    <div class="dialog-pane" id="help-watch">
-      <p>Watch mode monitors a folder and processes new files automatically. TNT must remain running. Watch ignores existing files — process them first via "+ Folder", then enable Watch for newcomers.</p>
-    </div>
-    <div class="dialog-pane" id="help-formats">
-      <h3>AAC</h3>
-      <p>High-quality lossy compression. ~1 MB per 30 s @ 256 kbps. Two encoders: Fraunhofer FDK (all platforms) and Apple AudioToolbox (macOS only).</p>
-      <h3>Opus</h3>
-      <p>Modern codec with strong low-bitrate performance and low delay. 12–510 kbps.</p>
-      <h3>MP3</h3>
-      <p>Universal compatibility. 320 kbps recommended; ~1.2 MB per 30 s.</p>
-      <h3>FLAC</h3>
-      <p>Lossless, ~40–60% of PCM size. Compression level 0–10.</p>
-      <h3>PCM (WAV)</h3>
-      <p>Uncompressed. Sample rate (44.1–192 kHz) × bit depth × channels = bitrate. ~8.6 MB per 30 s @ 48 kHz/24-bit stereo.</p>
-    </div>
-  </div>
-</dialog>
-
-<script src="ui.js"></script>
-<script src="app.js"></script>
+    </dialog>
+    <!-- ── Help dialog ── -->
+    <dialog id="help-dialog">
+        <div class="dialog-header">
+            <h2>Help</h2>
+            <button class="dialog-close" onclick="closeDialog('help-dialog')">&times;</button>
+        </div>
+        <div class="dialog-tab-nav" id="help-tabs">
+            <button class="dialog-tab-btn active" data-panel="help-started" onclick="switchDialogTab(this,'help-tabs','help-panels')">Getting started</button>
+            <button class="dialog-tab-btn" data-panel="help-fast" onclick="switchDialogTab(this,'help-tabs','help-panels')">Fast</button>
+            <button class="dialog-tab-btn" data-panel="help-advanced" onclick="switchDialogTab(this,'help-tabs','help-panels')">Advanced</button>
+            <button class="dialog-tab-btn" data-panel="help-processing" onclick="switchDialogTab(this,'help-tabs','help-panels')">Processing</button>
+            <button class="dialog-tab-btn" data-panel="help-watch" onclick="switchDialogTab(this,'help-tabs','help-panels')">Watch mode</button>
+            <button class="dialog-tab-btn" data-panel="help-formats" onclick="switchDialogTab(this,'help-tabs','help-panels')">Audio formats</button>
+        </div>
+        <div class="dialog-body" id="help-panels">
+            <div class="dialog-pane active" id="help-started">
+                <p>TNT streamlines audio workflows for broadcast professionals: Transcode, Normalize, Tag.</p>
+                <h3>Workflow</h3>
+                <ol>
+                    <li>Add files via "+ Files" or drag and drop onto the queue</li>
+                    <li>Set an output folder</li>
+                    <li>Configure in Fast, or use Advanced + Processing for fine control</li>
+                    <li>Click Process — files appear in the output folder as they finish</li>
+                </ol>
+                <h3>Tabs</h3>
+                <ul>
+                    <li><strong>Fast</strong> — three one-click presets for common use cases</li>
+                    <li><strong>Advanced</strong> — full control over format and encoding parameters</li>
+                    <li><strong>Processing</strong> — dynamics, EQ and loudness chain; active only when Advanced mode is selected</li>
+                    <li><strong>Metadata</strong> — read and write ID3/Vorbis tags for a selected file</li>
+                </ul>
+            </div>
+            <div class="dialog-pane" id="help-fast">
+                <h3>Presets</h3>
+                <ul>
+                    <li><strong>Small file (AAC 256 kbps)</strong> — compressed, balanced quality/size</li>
+                    <li><strong>Most compatible (MP3 320 kbps)</strong> — universal playback</li>
+                    <li><strong>Production (PCM 48 kHz/24-bit)</strong> — uncompressed broadcast quality</li>
+                </ul>
+                <p>Normalize applies EBU R128 (−23 LUFS, −1 dBTP) to all processed files.</p>
+            </div>
+            <div class="dialog-pane" id="help-advanced">
+                <h3>Format selection</h3>
+                <p>AAC, Opus, MP3, PCM (WAV), or FLAC. Sample rate and bit depth apply to PCM only; bitrate to AAC/Opus/MP3; compression level (0–10) to FLAC and Opus.</p>
+                <h3>Options</h3>
+                <ul>
+                    <li><strong>Normalize</strong> — applies BS.1770-5 loudness correction, alters audio</li>
+                    <li><strong>Write RG tags</strong> — writes ReplayGain metadata only; mutually exclusive with Normalize; not available for PCM</li>
+                    <li><strong>Do not transcode</strong> — preserves the original encoding while writing tags</li>
+                    <li><strong>Speech</strong> — Opus VoIP-optimized encoding; do not use for music</li>
+                </ul>
+            </div>
+            <div class="dialog-pane" id="help-processing">
+                <h3>Dynamics</h3>
+                <ul>
+                    <li><strong>Off</strong> — no compression</li>
+                    <li><strong>Light</strong> — gentle 2.5:1 for well-recorded content</li>
+                    <li><strong>Moderate</strong> — broadcast-style 3.5:1 for podcasts and music</li>
+                    <li><strong>Broadcast</strong> — five-band adaptive compression for radio/mobile</li>
+                </ul>
+                <h3>EQ target curves</h3>
+                <p>Off, Flat, Speech, Broadcast — attenuation-only adjustments capped at ±10 dB.</p>
+                <h3>Processing order</h3>
+                <ol>
+                    <li>EQ</li>
+                    <li>De-esser (with EQ)</li>
+                    <li>Dynamic normalisation</li>
+                    <li>Dynamics</li>
+                    <li>Loudness normalisation</li>
+                </ol>
+            </div>
+            <div class="dialog-pane" id="help-watch">
+                <p>Watch mode monitors a folder and processes new files automatically. TNT must remain running. Watch ignores existing files — process them first via "+ Folder", then enable Watch for newcomers.</p>
+            </div>
+            <div class="dialog-pane" id="help-formats">
+                <h3>AAC</h3>
+                <p>High-quality lossy compression. ~1 MB per 30 s @ 256 kbps. Two encoders: Fraunhofer FDK (all platforms) and Apple AudioToolbox (macOS only).</p>
+                <h3>Opus</h3>
+                <p>Modern codec with strong low-bitrate performance and low delay. 12–510 kbps.</p>
+                <h3>MP3</h3>
+                <p>Universal compatibility. 320 kbps recommended; ~1.2 MB per 30 s.</p>
+                <h3>FLAC</h3>
+                <p>Lossless, ~40–60% of PCM size. Compression level 0–10.</p>
+                <h3>PCM (WAV)</h3>
+                <p>Uncompressed. Sample rate (44.1–192 kHz) × bit depth × channels = bitrate. ~8.6 MB per 30 s @ 48 kHz/24-bit stereo.</p>
+            </div>
+        </div>
+    </dialog>
+    <script src="ui.js"></script>
+    <script src="app.js"></script>
 </body>
+
 </html>
