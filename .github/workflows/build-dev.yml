@@ -5,7 +5,7 @@ on:
       branches:
           - '*'
       paths:
-        - 'go'
+        - 'go/**'
 
 jobs:
   sanity:
