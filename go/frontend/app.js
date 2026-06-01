@@ -699,8 +699,10 @@ function bindRealHandlers() {
             checkBtn.addEventListener('click', async () => {
                 try {
                     const v = await window.go.main.AudioNormalizer.CheckForUpdates();
-                    if (v && /** @type {any} */ (v).version) addLog('Update available: ' + /** @type {any} */ (v).version, 'info');
-                    else addLog('You are up to date', 'ok');
+                    if (v && /** @type {any} */ (v).version) {
+                        addLog('Update available: ' + /** @type {any} */ (v).version, 'info');
+                        showUpdateDialog(v);
+                    } else addLog('You are up to date', 'ok');
                 } catch (err) { addLog('Update check failed: ' + err, 'err'); }
             });
         }
@@ -846,6 +848,35 @@ function updateNormSubText() {
     if (adv) adv.textContent = `${advLabel} · ${fmt(advLufs)} LUFS · ${fmt(advTp)} dBTP — alters audio`;
 }
 
+/* ── Update dialog ── */
+/** @param {any} info */
+function showUpdateDialog(info) {
+    if (!info || !info.version) return;
+    const body = $('update-dialog-body');
+    const notes = $('update-dialog-notes');
+    const btn = $('update-dialog-download');
+    if (!body || !notes || !btn) return;
+
+    body.textContent = 'Version ' + info.version + ' is available' +
+        (info.release_date ? ' (' + info.release_date + ')' : '') + '.';
+
+    if (info.release_notes) {
+        notes.textContent = info.release_notes;
+        notes.style.display = '';
+    } else {
+        notes.style.display = 'none';
+    }
+
+    btn.onclick = () => {
+        if (info.download_url && window.runtime && window.runtime.BrowserOpenURL) {
+            window.runtime.BrowserOpenURL(info.download_url);
+        }
+        closeDialog('update-dialog');
+    };
+
+    openDialog('update-dialog');
+}
+
 /* ── Wails runtime events ── */
 function setupRuntimeEvents() {
     if (!window.runtime || !window.runtime.EventsOn) return;
@@ -861,6 +892,7 @@ function setupRuntimeEvents() {
     window.runtime.EventsOn('file:added', (files) => renderFileList(files || []));
     window.runtime.EventsOn('update:available', (info) => {
         addLog('Update available: ' + (info && info.version ? info.version : 'see preferences'), 'info');
+        showUpdateDialog(info);
     });
     window.runtime.EventsOn('watch:file', (path) => addLog('Watch: ' + basename(String(path)), 'info'));
 }
