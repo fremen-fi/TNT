@@ -52,7 +52,7 @@ type DynaudnormParams struct {
 
 // FrequencyBand represents analyzed frequency response data for one band.
 type FrequencyBand struct {
-	Frequency   string  // e.g. "50Hz", "100Hz", "12.8kHz+"
+	Frequency   string  // e.g. "50Hz", "100Hz", "12.8kH>"
 	FilterType  string  // "lowpass", "bandpass", "highpass"
 	RMSLevel    float64 // Average level in dB
 	PeakLevel   float64 // Peak level in dB (for reference)
