@@ -626,13 +626,13 @@ func (p *CLIProcessor) processFile(inputPath string) bool {
 
 	// Stage 1: EQ
 	if eqTarget != "Off" {
-		eqBandAnalysis := p.analyzeFrequencyResponseBands(workingPath)
-		if eqBandAnalysis == nil || len(eqBandAnalysis) == 0 {
+		eqBandAnalysis, err := audio.AnalyzeFrequencyResponseBands(ffmpeg.Path, workingPath)
+		if err != nil || len(eqBandAnalysis) == 0 {
 			p.log(fmt.Sprintf("Failed to analyze frequency response: %s", filepath.Base(inputPath)))
 			return false
 		}
 
-		eqFilter := p.buildEqFilter(eqBandAnalysis, eqTarget)
+		eqFilter := audio.BuildEqFilter(eqBandAnalysis, eqTarget)
 		if eqFilter != "" {
 			eqTempPath := filepath.Join(os.TempDir(), fmt.Sprintf("tnt_eq_%d.wav", time.Now().UnixNano()))
 			tempFiles = append(tempFiles, eqTempPath)
@@ -661,11 +661,14 @@ func (p *CLIProcessor) processFile(inputPath string) bool {
 	// Dynamics Score (needed for compression stages)
 	var dsAnalysis *audio.DynamicsScoreAnalysis
 	if dynPreset != "Off" {
-		dsAnalysis = p.calculateDynamicsScore(inputPath)
-		if dsAnalysis == nil {
+		var err error
+		dsAnalysis, err = audio.CalculateDynamicsScore(ffmpeg.Path, inputPath)
+		if err != nil || dsAnalysis == nil {
 			p.log(fmt.Sprintf("  Failed to calculate Dynamics Score: %s", filepath.Base(inputPath)))
 			return false
 		}
+		p.logQuiet(fmt.Sprintf("DS: %.2f (RMS Peak: %.2f, RMS Level: %.2f, Crest: %.2f)",
+			dsAnalysis.DynamicsScore, dsAnalysis.RMSPeak, dsAnalysis.RMSLevel, dsAnalysis.CrestFactor))
 	}
 
 	// Stage 2: Dynamic normalization (dynaudnorm)
@@ -677,9 +680,9 @@ func (p *CLIProcessor) processFile(inputPath string) bool {
 			return false
 		}
 
-		dynParams := p.analyzeDynaudnormParams(dynamicsAnalysis)
+		dynParams := audio.AnalyzeDynaudnormParams(dynamicsAnalysis)
 		if dynParams != nil {
-			dynaudnormFilter := p.buildDynaudnormFilter(dynParams)
+			dynaudnormFilter := audio.BuildDynaudnormFilter(dynParams, p.cfg.Speech)
 			if dynaudnormFilter != "" {
 				dynTempPath := filepath.Join(os.TempDir(), fmt.Sprintf("tnt_dyn_%d.wav", time.Now().UnixNano()))
 				tempFiles = append(tempFiles, dynTempPath)
@@ -920,49 +923,7 @@ func (p *CLIProcessor) analyzeDynamics(inputPath string) *DynamicsAnalysis {
 		p.logQuiet(fmt.Sprintf("astats failed: %v", err))
 		return nil
 	}
-	return p.parseAstatsOutput(string(output))
-}
-
-func (p *CLIProcessor) parseAstatsOutput(output string) *DynamicsAnalysis {
-	result := &DynamicsAnalysis{}
-
-	overallStart := strings.Index(output, "Overall")
-	if overallStart == -1 {
-		return result
-	}
-	overallSection := output[overallStart:]
-
-	peakRe := regexp.MustCompile(`Peak level dB:\s+([-\d.]+)`)
-	if match := peakRe.FindStringSubmatch(overallSection); len(match) > 1 {
-		result.PeakLevel, _ = strconv.ParseFloat(match[1], 64)
-	}
-
-	rmsPeakRe := regexp.MustCompile(`RMS peak dB:\s+([-\d.]+)`)
-	if match := rmsPeakRe.FindStringSubmatch(overallSection); len(match) > 1 {
-		result.RMSPeak, _ = strconv.ParseFloat(match[1], 64)
-	}
-
-	rmsTroughRe := regexp.MustCompile(`RMS trough dB:\s+([-\d.]+)`)
-	if match := rmsTroughRe.FindStringSubmatch(overallSection); len(match) > 1 {
-		result.RMSTrough, _ = strconv.ParseFloat(match[1], 64)
-	}
-
-	rmsRe := regexp.MustCompile(`RMS level dB:\s+([-\d.]+)`)
-	if match := rmsRe.FindStringSubmatch(overallSection); len(match) > 1 {
-		result.RMSLevel, _ = strconv.ParseFloat(match[1], 64)
-	}
-
-	crestRe := regexp.MustCompile(`Crest factor:\s+([-\d.]+)`)
-	if match := crestRe.FindStringSubmatch(output); len(match) > 1 {
-		result.CrestFactor, _ = strconv.ParseFloat(match[1], 64)
-	}
-
-	noiseFloorRe := regexp.MustCompile(`Noise floor dB:\s+([-\d.]+)`)
-	if match := noiseFloorRe.FindStringSubmatch(output); len(match) > 1 {
-		result.NoiseFloor, _ = strconv.ParseFloat(match[1], 64)
-	}
-
-	return result
+	return audio.ParseAstatsOutput(string(output))
 }
 
 // analyzeFrequencyBands runs the 5 multiband (sub/bass/low_mid/mid/high)
@@ -1001,7 +962,7 @@ func (p *CLIProcessor) analyzeFrequencyBands(inputPath string) map[string]*Frequ
 				out <- result{bandName, nil}
 				return
 			}
-			out <- result{bandName, p.parseFrequencyBandOutput(string(output), bandName)}
+			out <- result{bandName, audio.ParseFrequencyBandOutput(string(output), bandName)}
 		}()
 	}
 	wg.Wait()
@@ -1014,33 +975,6 @@ func (p *CLIProcessor) analyzeFrequencyBands(inputPath string) map[string]*Frequ
 		}
 	}
 	return results
-}
-
-func (p *CLIProcessor) parseFrequencyBandOutput(output string, bandName string) *FrequencyBandAnalysis {
-	result := &FrequencyBandAnalysis{BandName: bandName}
-
-	overallStart := strings.Index(output, "Overall")
-	if overallStart == -1 {
-		return nil
-	}
-	overallSection := output[overallStart:]
-
-	peakRe := regexp.MustCompile(`Peak level dB:\s+([-\d.]+)`)
-	if match := peakRe.FindStringSubmatch(overallSection); len(match) > 1 {
-		result.PeakLevel, _ = strconv.ParseFloat(match[1], 64)
-	}
-
-	rmsRe := regexp.MustCompile(`RMS level dB:\s+([-\d.]+)`)
-	if match := rmsRe.FindStringSubmatch(overallSection); len(match) > 1 {
-		result.RMSLevel, _ = strconv.ParseFloat(match[1], 64)
-	}
-
-	crestRe := regexp.MustCompile(`Crest factor:\s+([-\d.]+)`)
-	if match := crestRe.FindStringSubmatch(output); len(match) > 1 {
-		result.CrestFactor, _ = strconv.ParseFloat(match[1], 64)
-	}
-
-	return result
 }
 
 func (p *CLIProcessor) buildMultibandCompression(bandAnalysis map[string]*FrequencyBandAnalysis, dsAnalysis *audio.DynamicsScoreAnalysis, preset string) string {
@@ -1273,86 +1207,6 @@ func (p *CLIProcessor) calculateAdaptiveCompression(analysis *DynamicsAnalysis, 
 	return filterChain
 }
 
-func (p *CLIProcessor) calculateDynamicsScore(inputPath string) *audio.DynamicsScoreAnalysis {
-	cmd := ffmpeg.Command("-i", inputPath, "-af", "astats", "-f", "null", "-")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil
-	}
-
-	result := &audio.DynamicsScoreAnalysis{}
-	lines := strings.Split(string(output), "\n")
-	inChannel1 := false
-
-	for _, line := range lines {
-		if strings.Contains(line, "Channel: 1") {
-			inChannel1 = true
-			continue
-		}
-		if strings.Contains(line, "Channel: 2") {
-			break
-		}
-		if inChannel1 {
-			if strings.Contains(line, "RMS peak dB:") {
-				re := regexp.MustCompile(`RMS peak dB:\s+([-\d.]+)`)
-				if match := re.FindStringSubmatch(line); len(match) > 1 {
-					result.RMSPeak, _ = strconv.ParseFloat(match[1], 64)
-				}
-			}
-			if strings.Contains(line, "RMS level dB:") && result.RMSLevel == 0 {
-				re := regexp.MustCompile(`RMS level dB:\s+([-\d.]+)`)
-				if match := re.FindStringSubmatch(line); len(match) > 1 {
-					result.RMSLevel, _ = strconv.ParseFloat(match[1], 64)
-				}
-			}
-			if strings.Contains(line, "Crest factor:") {
-				re := regexp.MustCompile(`Crest factor:\s+([-\d.]+)`)
-				if match := re.FindStringSubmatch(line); len(match) > 1 {
-					result.CrestFactor, _ = strconv.ParseFloat(match[1], 64)
-				}
-			}
-		}
-	}
-
-	result.DynamicsScore = math.Sqrt(result.CrestFactor) * (result.RMSPeak - result.RMSLevel)
-	p.logQuiet(fmt.Sprintf("DS: %.2f (RMS Peak: %.2f, RMS Level: %.2f, Crest: %.2f)",
-		result.DynamicsScore, result.RMSPeak, result.RMSLevel, result.CrestFactor))
-
-	return result
-}
-
-func (p *CLIProcessor) analyzeDynaudnormParams(analysis *DynamicsAnalysis) *DynaudnormParams {
-	if analysis == nil {
-		return nil
-	}
-
-	params := &DynaudnormParams{
-		RMSPeakDB:    analysis.RMSPeak,
-		NoiseFloorDB: analysis.NoiseFloor,
-	}
-
-	targetDB := params.RMSPeakDB - 6.0
-	params.TargetRMS = math.Pow(10, targetDB/20)
-
-	thresholdDB := params.NoiseFloorDB + 12.0
-	params.Threshold = math.Pow(10, thresholdDB/20)
-
-	params.TargetRMS = max(0.0, min(1.0, params.TargetRMS))
-	params.Threshold = max(0.0, min(1.0, params.Threshold))
-
-	return params
-}
-
-func (p *CLIProcessor) buildDynaudnormFilter(params *DynaudnormParams) string {
-	if params == nil {
-		return ""
-	}
-	return fmt.Sprintf(
-		"dynaudnorm=framelen=650:gausssize=36:targetrms=%.6f:threshold=%.6f:altboundary=true:overlap=0.95",
-		params.TargetRMS, params.Threshold,
-	)
-}
-
 func (p *CLIProcessor) measureLoudness(inputPath string, target string, targetTp string) map[string]string {
 	p.log(fmt.Sprintf("  Measuring loudness: %s", filepath.Base(inputPath)))
 
@@ -1428,294 +1282,3 @@ func (p *CLIProcessor) parseEBUR128Output(output string) map[string]string {
 	return result
 }
 
-// Frequency response analysis (mirrors AudioNormalizer methods)
-
-func (p *CLIProcessor) analyzeFrequencyResponseBands(inputPath string) []FrequencyBand {
-	bands := []FrequencyBand{
-		{Frequency: "50Hz", FilterType: "lowpass"},
-		{Frequency: "100Hz", FilterType: "bandpass"},
-		{Frequency: "200Hz", FilterType: "bandpass"},
-		{Frequency: "400Hz", FilterType: "bandpass"},
-		{Frequency: "800Hz", FilterType: "bandpass"},
-		{Frequency: "1.6kHz", FilterType: "bandpass"},
-		{Frequency: "3.2kHz", FilterType: "bandpass"},
-		{Frequency: "6.4kHz", FilterType: "bandpass"},
-		{Frequency: "12.8kHz", FilterType: "bandpass"},
-		{Frequency: "12.8kHz+", FilterType: "highpass"},
-	}
-
-	for i := range bands {
-		band := &bands[i]
-
-		var filterChain string
-		switch band.FilterType {
-		case "lowpass":
-			filterChain = "highpass=f=25:p=1:r=f64:p=2,lowpass=f=50,astats"
-		case "highpass":
-			filterChain = "highpass=f=12800,astats"
-		case "bandpass":
-			centerFreq, _ := getBandpassParamsCLI(band.Frequency)
-			filterChain = fmt.Sprintf("bandpass=f=%d:width_type=o:width=1,astats", centerFreq)
-		}
-
-		cmd := ffmpeg.Command("-i", inputPath, "-af", filterChain, "-f", "null", "-")
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			continue
-		}
-
-		stats := parseFrequencyBandStatsCLI(string(output))
-		band.RMSLevel = stats["rms"]
-		band.PeakLevel = stats["peak"]
-		band.CrestFactor = stats["crest"]
-	}
-
-	return bands
-}
-
-func getBandpassParamsCLI(freqStr string) (int, float64) {
-	freqMap := map[string]int{
-		"100Hz": 100, "200Hz": 200, "400Hz": 400, "800Hz": 800,
-		"1.6kHz": 1600, "3.2kHz": 3200, "6.4kHz": 6400, "12.8kHz": 12800,
-	}
-	centerFreq := freqMap[freqStr]
-	return centerFreq, float64(centerFreq)
-}
-
-func parseFrequencyBandStatsCLI(output string) map[string]float64 {
-	stats := make(map[string]float64)
-
-	rmsRe := regexp.MustCompile(`RMS level dB:\s+([-\d.]+)`)
-	if match := rmsRe.FindStringSubmatch(output); len(match) > 1 {
-		if val, err := strconv.ParseFloat(match[1], 64); err == nil {
-			stats["rms"] = val
-		}
-	}
-
-	peakRe := regexp.MustCompile(`Peak level dB:\s+([-\d.]+)`)
-	if match := peakRe.FindStringSubmatch(output); len(match) > 1 {
-		if val, err := strconv.ParseFloat(match[1], 64); err == nil {
-			stats["peak"] = val
-		}
-	}
-
-	crestRe := regexp.MustCompile(`Crest factor:\s+([-\d.]+)`)
-	if match := crestRe.FindStringSubmatch(output); len(match) > 1 {
-		if val, err := strconv.ParseFloat(match[1], 64); err == nil {
-			stats["crest"] = val
-		}
-	}
-
-	return stats
-}
-
-func (p *CLIProcessor) buildEqFilter(bands []FrequencyBand, eqTarget string) string {
-	if len(bands) == 0 || eqTarget == "Off" {
-		return ""
-	}
-
-	var highpassFilter, lowpassFilter string
-	switch eqTarget {
-	case "Flat":
-		highpassFilter = "highpass=f=25:p=2"
-	case "Speech":
-		highpassFilter = "highpass=f=80:p=2"
-		lowpassFilter = "lowpass=f=13000:p=1"
-	case "Broadcast":
-		highpassFilter = "highpass=f=70:p=2"
-		lowpassFilter = "lowpass=f=14000:p=2"
-	}
-
-	targetLevels := p.calculateTargetCurve(bands, eqTarget)
-
-	gains := make([]float64, len(bands))
-	for i, band := range bands {
-		gain := targetLevels[i] - band.RMSLevel
-		const maxGain = 10.0
-		gains[i] = max(-maxGain, min(maxGain, gain))
-	}
-
-	gains = clampExtremeEQCLI(gains)
-
-	var filterParts []string
-	for i, band := range bands {
-		gain := gains[i]
-		if gain > -0.5 && gain < 0.5 {
-			continue
-		}
-
-		switch band.FilterType {
-		case "lowpass":
-			filterParts = append(filterParts, fmt.Sprintf("highpass=f=25:p=1:r=f64:p=2,lowshelf=f=50:g=%.2f:width_type=q:width=0.7", gain))
-		case "highpass":
-			filterParts = append(filterParts, fmt.Sprintf("lowpass=f=17500:p=2:r=f64,highshelf=f=12800:g=%.2f:width_type=q:width=0.7", gain))
-		case "bandpass":
-			centerFreq, bandwidth := getBandpassParamsCLI(band.Frequency)
-			filterParts = append(filterParts, fmt.Sprintf("anequalizer=c0 f=%d w=%.0f g=%.2f t=0|c1 f=%d w=%.0f g=%.2f t=0",
-				centerFreq, bandwidth, gain, centerFreq, bandwidth, gain))
-		}
-	}
-
-	var finalParts []string
-	if highpassFilter != "" {
-		finalParts = append(finalParts, highpassFilter)
-	}
-	finalParts = append(finalParts, filterParts...)
-	if lowpassFilter != "" {
-		finalParts = append(finalParts, lowpassFilter)
-	}
-
-	if len(finalParts) == 0 {
-		return ""
-	}
-
-	return strings.Join(finalParts, ",")
-}
-
-func (p *CLIProcessor) calculateTargetCurve(bands []FrequencyBand, eqTarget string) []float64 {
-	targets := make([]float64, len(bands))
-
-	var overallRMS float64
-	for _, band := range bands {
-		overallRMS += band.RMSLevel
-	}
-	overallRMS /= float64(len(bands))
-
-	switch eqTarget {
-	case "Flat":
-		for i, band := range bands {
-			pinkNoiseRef := overallRMS
-			if band.RMSLevel > pinkNoiseRef {
-				excess := band.RMSLevel - pinkNoiseRef
-				attenuation := min(10.0, excess/2.0)
-				targets[i] = band.RMSLevel - attenuation
-			} else {
-				targets[i] = band.RMSLevel
-			}
-		}
-
-	case "Speech":
-		adjustments := map[string]float64{
-			"50Hz": -9.0, "100Hz": -3.5, "200Hz": -2.5, "400Hz": -3.0, "800Hz": +0.5,
-			"1.6kHz": +3.0, "3.2kHz": +1.0, "6.4kHz": +0.0, "12.8kHz": -2.0, "12.8kHz+": -2.0,
-		}
-		for i, band := range bands {
-			octaves := getOctavesFrom1kCLI(band.Frequency)
-			pinkNoiseRef := overallRMS - (octaves * 3.0)
-			adj := adjustments[band.Frequency]
-			targetLevel := pinkNoiseRef + adj
-			deviation := band.RMSLevel - targetLevel
-			correction := max(-10.0, min(10.0, deviation/2.0))
-			if correction > -0.5 && correction < 0.5 {
-				targets[i] = band.RMSLevel
-			} else {
-				targets[i] = band.RMSLevel - correction
-			}
-		}
-
-	case "Broadcast":
-		adjustments := map[string]float64{
-			"50Hz": -2.0, "100Hz": -1.0, "200Hz": -2.5, "400Hz": -4.5, "800Hz": +1.0,
-			"1.6kHz": +2.5, "3.2kHz": +3.5, "6.4kHz": +2.0, "12.8kHz": -0.5, "12.8kHz+": -2.5,
-		}
-		for i, band := range bands {
-			octaves := getOctavesFrom1kCLI(band.Frequency)
-			pinkNoiseRef := overallRMS - (octaves * 3.0)
-			adj := adjustments[band.Frequency]
-			targetLevel := pinkNoiseRef + adj
-			deviation := band.RMSLevel - targetLevel
-			correction := max(-10.0, min(10.0, deviation/2.0))
-			if correction > -0.5 && correction < 0.5 {
-				targets[i] = band.RMSLevel
-			} else {
-				targets[i] = band.RMSLevel - correction
-			}
-		}
-
-	default:
-		for i, band := range bands {
-			targets[i] = band.RMSLevel
-		}
-	}
-
-	return targets
-}
-
-func getOctavesFrom1kCLI(freqStr string) float64 {
-	m := map[string]float64{
-		"50Hz": -4.32, "100Hz": -3.32, "200Hz": -2.32, "400Hz": -1.32, "800Hz": -0.32,
-		"1.6kHz": 0.68, "3.2kHz": 1.68, "6.4kHz": 2.68, "12.8kHz": 3.68, "12.8kHz+": 5.0,
-	}
-	return m[freqStr]
-}
-
-func clampExtremeEQCLI(gains []float64) []float64 {
-	if len(gains) < 3 {
-		return gains
-	}
-
-	clamped := make([]float64, len(gains))
-	copy(clamped, gains)
-
-	lowShelf := gains[0]
-	highShelf := gains[len(gains)-1]
-
-	var sum float64
-	for i := 1; i < len(gains)-1; i++ {
-		sum += gains[i]
-	}
-	avgNonExtremes := sum / float64(len(gains)-2)
-
-	firstNeighbor := gains[1]
-	lastNeighbor := gains[len(gains)-2]
-
-	// Clamp low shelf
-	maxLowFromHigh := highShelf + 4.0
-	minLowFromHigh := highShelf - 4.0
-	maxLowFromNeighbor := firstNeighbor + 4.0
-	minLowFromNeighbor := firstNeighbor - 4.0
-
-	var maxLowFromAvg, minLowFromAvg float64
-	if avgNonExtremes >= 0 {
-		maxLowFromAvg = avgNonExtremes
-		minLowFromAvg = -999.0
-	} else {
-		maxLowFromAvg = 999.0
-		minLowFromAvg = avgNonExtremes
-	}
-
-	maxLow := math.Min(math.Min(maxLowFromHigh, maxLowFromNeighbor), maxLowFromAvg)
-	minLow := math.Max(math.Max(minLowFromHigh, minLowFromNeighbor), minLowFromAvg)
-
-	if lowShelf > maxLow {
-		clamped[0] = maxLow
-	} else if lowShelf < minLow {
-		clamped[0] = minLow
-	}
-
-	// Clamp high shelf
-	maxHighFromLow := clamped[0] + 4.0
-	minHighFromLow := clamped[0] - 4.0
-	maxHighFromNeighbor := lastNeighbor + 4.0
-	minHighFromNeighbor := lastNeighbor - 4.0
-
-	var maxHighFromAvg, minHighFromAvg float64
-	if avgNonExtremes >= 0 {
-		maxHighFromAvg = avgNonExtremes
-		minHighFromAvg = -999.0
-	} else {
-		maxHighFromAvg = 999.0
-		minHighFromAvg = avgNonExtremes
-	}
-
-	maxHigh := math.Min(math.Min(maxHighFromLow, maxHighFromNeighbor), maxHighFromAvg)
-	minHigh := math.Max(math.Max(minHighFromLow, minHighFromNeighbor), minHighFromAvg)
-
-	if highShelf > maxHigh {
-		clamped[len(clamped)-1] = maxHigh
-	} else if highShelf < minHigh {
-		clamped[len(clamped)-1] = minHigh
-	}
-
-	return clamped
-}

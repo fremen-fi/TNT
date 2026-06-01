@@ -26,18 +26,8 @@ func CalculateDynaudnormParams(analysis *DynamicsAnalysis) *DynaudnormParams {
 	params.Threshold = math.Pow(10, thresholdDB/20)
 
 	// Clamp to valid ranges (0.0-1.0)
-	if params.TargetRMS < 0.0 {
-		params.TargetRMS = 0.0
-	}
-	if params.TargetRMS > 1.0 {
-		params.TargetRMS = 1.0
-	}
-	if params.Threshold < 0.0 {
-		params.Threshold = 0.0
-	}
-	if params.Threshold > 1.0 {
-		params.Threshold = 1.0
-	}
+    params.TargetRMS = max(min(params.TargetRMS, 1.0), 0.0)
+    params.Threshold = max(min(params.Threshold, 1.0), 0.0)
 
 	return params
 }
@@ -51,8 +41,8 @@ func AnalyzeDynaudnormParams(analysis *DynamicsAnalysis) *DynaudnormParams {
 
 // BuildDynaudnormFilter creates the dynaudnorm filter string from params.
 // Returns an empty string if params is nil.
-func BuildDynaudnormFilter(params *DynaudnormParams) string {
-	if params == nil {
+func BuildDynaudnormFilter(params *DynaudnormParams, isSpeech bool) string {
+	if params == nil || isSpeech {
 		return ""
 	}
 

@@ -36,7 +36,7 @@ const versionCheckURL = "https://frm-sw-storage.s3.rbx.io.cloud.ovh.net/tnt-vers
 // currentVersion is the version of this build. It is injected at link time from
 // the git tag by the release workflow (-X main.currentVersion=...). A plain
 // `go build` leaves it as "dev", which makes un-stamped builds obvious.
-var currentVersion = "dev"
+var currentVersion = "1.2.0"
 
 // PlatformRelease is the per-platform release entry inside the manifest. Each
 // supported platform tracks its own version independently, so a platform-only
@@ -83,8 +83,13 @@ func platformKey() string {
 	}
 }
 
-// AudioNormalizer struct moved to app.go (Wails migration — Phase 1).
+// Global ASC values
+const (
+    globalAscOn = "true"
+    globalAscLevel = "0.5"
+)
 
+// AudioNormalizer struct moved to app.go (Wails migration — Phase 1).
 type ProcessConfig struct {
 	Format         string
 	SampleRate     string
@@ -343,20 +348,15 @@ func (n *AudioNormalizer) analyzeFrequencyBands(inputPath string) map[string]*Fr
 	var mu sync.Mutex
 
 	maxParallel := runtime.GOMAXPROCS(0)
-	if maxParallel < 1 {
-		maxParallel = 1
-	}
-	if maxParallel > len(bands) {
-		maxParallel = len(bands)
-	}
+    maxParallel = max(1, maxParallel)
+    maxParallel = min(maxParallel, len(bands))
 	sem := make(chan struct{}, maxParallel)
 	var wg sync.WaitGroup
 
 	for bandName, filter := range bands {
-		bandName, filter := bandName, filter
 		wg.Add(1)
 		sem <- struct{}{}
-		go func() {
+		wg.Go(func() {
 			defer wg.Done()
 			defer func() { <-sem }()
 			cmd := exec.Command(
@@ -376,7 +376,7 @@ func (n *AudioNormalizer) analyzeFrequencyBands(inputPath string) map[string]*Fr
 			mu.Lock()
 			results[bandName] = r
 			mu.Unlock()
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -483,9 +483,9 @@ func (n *AudioNormalizer) buildMultibandCompression(bandAnalysis map[string]*Fre
 		releaseMs = 200
 		baseRatio = 4.0
 	case "Broadcast":
-		attackMs = 10
-		releaseMs = 20
-		baseRatio = 6.0
+		attackMs = 40
+		releaseMs = 80
+		baseRatio = 5.0
 	}
 
 	// Build compression and limiting for each band
@@ -532,11 +532,9 @@ func (n *AudioNormalizer) buildBandAcompressor(band *FrequencyBandAnalysis, atta
 		makeup := math.Pow(10, 3.0/20) // 3dB makeup
 		limiterLin := math.Pow(10, -1.0/20)
 
-		if limiterLin > 1.0 {
-			limiterLin = 1.0
-		}
+        limiterLin = min(limiterLin, 1.0)
 
-		return fmt.Sprintf("acompressor=threshold=%.6f:ratio=%.1f:attack=%.1f:release=%.1f:makeup=1.0,alimiter=limit=%.6f:attack=5:release=50,volume=%.3f",
+		return fmt.Sprintf("acompressor=threshold=%.6f:ratio=%.1f:attack=%.1f:release=%.1f:makeup=1.0,alimiter=limit=%.6f:attack=15:release=50,volume=%.3f",
 			thresholdLin, ratio, attackMs, releaseMs, limiterLin, makeup)
 	}
 
@@ -606,66 +604,34 @@ func (n *AudioNormalizer) buildBandAcompressor(band *FrequencyBandAnalysis, atta
 
 	knee := 4.0
 
-	// Clamp ratio minimum
-	if ratio < 1.0 {
-		ratio = 1.0
-		knee = 1.0
-	} else if ratio < 2.0 {
-		knee = 2.0
-	} else if ratio < 4.0 {
-		knee = 3.0
-	} else if ratio < 8.0 {
-		knee = 4.0
-	} else if ratio < 12.0 {
-		knee = 6.0
-	} else if ratio > 12.0 {
-		knee = 7.5
-	}
+    switch {
+        case ratio < 1.0:
+            ratio = 1.0
+            knee = 1.0
+        case ratio < 2.0:
+            knee = 2.0
+        case ratio < 4.0:
+            knee = 3.0
+        case ratio < 8.0:
+            knee = 4.0
+        case ratio < 12.0:
+            knee = 6.0
+        case ratio < 16.0:
+            knee = 7.5
+        case ratio > 20.0:
+            ratio = 20.0
+            knee = 8.0
+        default:
+            knee = 1.4
+    }
 
-	if ratio > 20.0 {
-		ratio = 20.0
-		knee = 8.0
-	}
-
-	if thresholdLin < 0.00099 {
-		thresholdLin = 0.00099
-	}
-
-	if thresholdLin > 1.0 {
-		thresholdLin = 1.0
-	}
-
-	if attackMs < 0.01 {
-		attackMs = 0.01
-	}
-
-	if attackMs > 2000.0 {
-		attackMs = 2000.0
-	}
-
-	if releaseMs < 0.01 {
-		releaseMs = 0.01
-	}
-
-	if releaseMs > 9000.0 {
-		releaseMs = 9000.0
-	}
-
-	if makeupLin < 1.0 {
-		makeupLin = 1.0
-	}
-
-	if makeupLin > 64.0 {
-		makeupLin = 64.0
-	}
-
-	if limiterAttack > 80.0 {
-		limiterAttack = 80.0
-	}
-
-	if limiterRelease > 8000.0 {
-		limiterRelease = 8000.0
-	}
+    // clamps
+    thresholdLin = max(min(thresholdLin, 1.0), 0.00099)
+    attackMs = max(min(attackMs, 2000.0), 0.01)
+    releaseMs = max(min(releaseMs, 9000.0), 0.01)
+    makeupLin = max(min(makeupLin, 64.0), 1.0)
+    limiterAttack = max(min(limiterAttack, 80.0), 0.1)
+    limiterRelease = max(min(limiterRelease, 8000.0), 1.0)
 
 	if mods.RatioMultiplier < 0.3 {
 		limiterCeilingDb = 0.0
@@ -769,7 +735,7 @@ func (n *AudioNormalizer) calculateAdaptiveCompression(analysis *DynamicsAnalysi
 
 	case "Broadcast":
 		// Aggressive limiting and compression
-		threshold = analysis.RMSLevel + 4.0
+		threshold = analysis.RMSLevel + 5.0
 		ratio = audio.GetBaseRatioFromCrest(analysis.CrestFactor)
 		attack = 10
 		release = 30
@@ -792,56 +758,33 @@ func (n *AudioNormalizer) calculateAdaptiveCompression(analysis *DynamicsAnalysi
 
 	knee := 4.0
 
-	if thresholdLin > 1.0 {
-		thresholdLin = 1.0
-	}
+    thresholdLin = max(min(thresholdLin, 1.0), 0.00099)
 
-	if thresholdLin < 0.00099 {
-		thresholdLin = 0.00099
-	}
+    switch {
+        case ratio < 1.0:
+            ratio = 1.0
+            knee = 1.0
+        case ratio < 2.0:
+            knee = 2.0
+        case ratio < 4.0:
+            knee = 3.0
+        case ratio < 8.0:
+            knee = 4.0
+        case ratio < 12.0:
+            knee = 6.0
+        case ratio < 16.0:
+            knee = 7.5
+        case ratio > 20.0:
+            ratio = 20.0
+            knee = 8.0
+        default:
+            knee = 1.4
+    }
 
-	if ratio < 1.0 {
-		ratio = 1.0
-		knee = 1.0
-	} else if ratio < 2.0 {
-		knee = 2.0
-	} else if ratio < 4.0 {
-		knee = 3.0
-	} else if ratio < 8.0 {
-		knee = 4.0
-	} else if ratio < 12.0 {
-		knee = 6.0
-	} else if ratio > 12.0 {
-		knee = 7.5
-	}
-
-	if ratio > 20.0 {
-		ratio = 20.0
-	}
-
-	if attack > 2000.0 {
-		attack = 2000.0
-	}
-
-	if attack < 0.01 {
-		attack = 0.01
-	}
-
-	if release < 0.01 {
-		release = 0.01
-	}
-
-	if release > 9000.0 {
-		release = 9000.0
-	}
-
-	if makeupGain < 1.0 {
-		makeupGain = 1.0
-	}
-
-	if makeupGain > 64.0 {
-		makeupGain = 64.0
-	}
+    ratio = max(min(ratio, 20.0), 1.0)
+    attack = max(min(attack, 2000.0), 0.01)
+    release = max(min(release, 9000.0), 0.01)
+    makeupGain = max(min(makeupGain, 64.0), 1.0)
 
 	// Build filter chain
 	var filterChain string
@@ -862,7 +805,7 @@ func (n *AudioNormalizer) calculateAdaptiveCompression(analysis *DynamicsAnalysi
 		if limiterLinear > 1.0 {
 			limiterLinear = 1.0
 		}
-		filterChain += fmt.Sprintf(",alimiter=limit=%.6f:attack=5:release=50", limiterLinear)
+		filterChain += fmt.Sprintf(",alimiter=limit=%.6f:attack=5:release=50:asc=%s:asc_level=%s:level=false", limiterLinear, globalAscOn, globalAscLevel)
 	}
 
 	n.logToFile(n.logFile, fmt.Sprintf("Dynamics filter: %s", filterChain))

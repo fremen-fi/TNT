@@ -31,7 +31,7 @@ func (n *AudioNormalizer) analyzeDynaudnormParams(analysis *DynamicsAnalysis) *D
 
 // buildDynaudnormFilter creates the dynaudnorm filter string.
 func (n *AudioNormalizer) buildDynaudnormFilter(params *DynaudnormParams) string {
-	filter := audio.BuildDynaudnormFilter(params)
+	filter := audio.BuildDynaudnormFilter(params, n.isSpeech)
 	if filter != "" {
 		n.logToFile(n.logFile, fmt.Sprintf("Dynaudnorm filter: %s", filter))
 	}
