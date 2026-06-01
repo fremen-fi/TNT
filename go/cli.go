@@ -1281,4 +1281,3 @@ func (p *CLIProcessor) parseEBUR128Output(output string) map[string]string {
 
 	return result
 }
-

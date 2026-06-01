@@ -85,8 +85,8 @@ func platformKey() string {
 
 // Global ASC values
 const (
-    globalAscOn = "true"
-    globalAscLevel = "0.5"
+	globalAscOn    = "true"
+	globalAscLevel = "0.5"
 )
 
 // AudioNormalizer struct moved to app.go (Wails migration — Phase 1).
@@ -348,8 +348,8 @@ func (n *AudioNormalizer) analyzeFrequencyBands(inputPath string) map[string]*Fr
 	var mu sync.Mutex
 
 	maxParallel := runtime.GOMAXPROCS(0)
-    maxParallel = max(1, maxParallel)
-    maxParallel = min(maxParallel, len(bands))
+	maxParallel = max(1, maxParallel)
+	maxParallel = min(maxParallel, len(bands))
 	sem := make(chan struct{}, maxParallel)
 	var wg sync.WaitGroup
 
@@ -492,8 +492,8 @@ func (n *AudioNormalizer) buildMultibandCompression(bandAnalysis map[string]*Fre
 	subFilter := n.buildBandAcompressor(sub, attackMs, releaseMs, baseRatio, -18, mods)
 	bassFilter := n.buildBandAcompressor(bass, attackMs, releaseMs, baseRatio, -15, mods)
 	lowMidFilter := n.buildBandAcompressor(lowMid, attackMs*0.8, releaseMs*0.9, baseRatio*1.2, -12, mods)
-	midFilter := n.buildBandAcompressor(mid, attackMs*0.6, releaseMs*0.7, baseRatio*1.5, -10, mods)
-	highFilter := n.buildBandAcompressor(high, attackMs*0.5, releaseMs*0.6, baseRatio*2.0, -8, mods)
+	midFilter := n.buildBandAcompressor(mid, attackMs*1., releaseMs*0.8, baseRatio*1.5, -10, mods)
+	highFilter := n.buildBandAcompressor(high, attackMs*2., releaseMs*0.6, baseRatio*0.2, -8, mods)
 
 	// Build the complete filterchain:
 	// 1. Resample to 192kHz for intersample peak accuracy
@@ -532,7 +532,7 @@ func (n *AudioNormalizer) buildBandAcompressor(band *FrequencyBandAnalysis, atta
 		makeup := math.Pow(10, 3.0/20) // 3dB makeup
 		limiterLin := math.Pow(10, -1.0/20)
 
-        limiterLin = min(limiterLin, 1.0)
+		limiterLin = min(limiterLin, 1.0)
 
 		return fmt.Sprintf("acompressor=threshold=%.6f:ratio=%.1f:attack=%.1f:release=%.1f:makeup=1.0,alimiter=limit=%.6f:attack=15:release=50,volume=%.3f",
 			thresholdLin, ratio, attackMs, releaseMs, limiterLin, makeup)
@@ -604,34 +604,34 @@ func (n *AudioNormalizer) buildBandAcompressor(band *FrequencyBandAnalysis, atta
 
 	knee := 4.0
 
-    switch {
-        case ratio < 1.0:
-            ratio = 1.0
-            knee = 1.0
-        case ratio < 2.0:
-            knee = 2.0
-        case ratio < 4.0:
-            knee = 3.0
-        case ratio < 8.0:
-            knee = 4.0
-        case ratio < 12.0:
-            knee = 6.0
-        case ratio < 16.0:
-            knee = 7.5
-        case ratio > 20.0:
-            ratio = 20.0
-            knee = 8.0
-        default:
-            knee = 1.4
-    }
+	switch {
+	case ratio < 1.0:
+		ratio = 1.0
+		knee = 1.0
+	case ratio < 2.0:
+		knee = 2.0
+	case ratio < 4.0:
+		knee = 3.0
+	case ratio < 8.0:
+		knee = 4.0
+	case ratio < 12.0:
+		knee = 6.0
+	case ratio < 16.0:
+		knee = 7.5
+	case ratio > 20.0:
+		ratio = 20.0
+		knee = 8.0
+	default:
+		knee = 1.4
+	}
 
-    // clamps
-    thresholdLin = max(min(thresholdLin, 1.0), 0.00099)
-    attackMs = max(min(attackMs, 2000.0), 0.01)
-    releaseMs = max(min(releaseMs, 9000.0), 0.01)
-    makeupLin = max(min(makeupLin, 64.0), 1.0)
-    limiterAttack = max(min(limiterAttack, 80.0), 0.1)
-    limiterRelease = max(min(limiterRelease, 8000.0), 1.0)
+	// clamps
+	thresholdLin = max(min(thresholdLin, 1.0), 0.00099)
+	attackMs = max(min(attackMs, 2000.0), 0.01)
+	releaseMs = max(min(releaseMs, 9000.0), 0.01)
+	makeupLin = max(min(makeupLin, 64.0), 1.0)
+	limiterAttack = max(min(limiterAttack, 80.0), 0.1)
+	limiterRelease = max(min(limiterRelease, 8000.0), 1.0)
 
 	if mods.RatioMultiplier < 0.3 {
 		limiterCeilingDb = 0.0
@@ -758,33 +758,33 @@ func (n *AudioNormalizer) calculateAdaptiveCompression(analysis *DynamicsAnalysi
 
 	knee := 4.0
 
-    thresholdLin = max(min(thresholdLin, 1.0), 0.00099)
+	thresholdLin = max(min(thresholdLin, 1.0), 0.00099)
 
-    switch {
-        case ratio < 1.0:
-            ratio = 1.0
-            knee = 1.0
-        case ratio < 2.0:
-            knee = 2.0
-        case ratio < 4.0:
-            knee = 3.0
-        case ratio < 8.0:
-            knee = 4.0
-        case ratio < 12.0:
-            knee = 6.0
-        case ratio < 16.0:
-            knee = 7.5
-        case ratio > 20.0:
-            ratio = 20.0
-            knee = 8.0
-        default:
-            knee = 1.4
-    }
+	switch {
+	case ratio < 1.0:
+		ratio = 1.0
+		knee = 1.0
+	case ratio < 2.0:
+		knee = 2.0
+	case ratio < 4.0:
+		knee = 3.0
+	case ratio < 8.0:
+		knee = 4.0
+	case ratio < 12.0:
+		knee = 6.0
+	case ratio < 16.0:
+		knee = 7.5
+	case ratio > 20.0:
+		ratio = 20.0
+		knee = 8.0
+	default:
+		knee = 1.4
+	}
 
-    ratio = max(min(ratio, 20.0), 1.0)
-    attack = max(min(attack, 2000.0), 0.01)
-    release = max(min(release, 9000.0), 0.01)
-    makeupGain = max(min(makeupGain, 64.0), 1.0)
+	ratio = max(min(ratio, 20.0), 1.0)
+	attack = max(min(attack, 2000.0), 0.01)
+	release = max(min(release, 9000.0), 0.01)
+	makeupGain = max(min(makeupGain, 64.0), 1.0)
 
 	// Build filter chain
 	var filterChain string
@@ -1330,7 +1330,8 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 	actualCodec := cfg.Format
 	var workingPath string = inputPath
 	var tempFiles []string
-	defer func() { cleanupTempFiles(tempFiles) }()
+	// dev: don't delete temps for testing purposes
+	// defer func() { cleanupTempFiles(tempFiles) }()
 
 	if platformCodec := platformCodecMap[cfg.Format]; platformCodec != "" {
 		actualCodec = platformCodec
@@ -1803,6 +1804,52 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 		}
 	}
 
+	strength := 0
+
+	type bitrateTiers struct {
+		mild, mid, hard int
+	}
+
+	tiers := map[string]bitrateTiers{
+		"libmp3lame": {mild: 192, mid: 160, hard: 128},
+		"aac_at":     {mild: 128, mid: 96, hard: 64},
+		"libfdk_aac": {mild: 128, mid: 96, hard: 64},
+		"libopus":    {mild: 96, mid: 64, hard: 48},
+	}
+
+	if t, ok := tiers[actualCodec]; ok {
+		switch {
+		case bitrate <= t.hard:
+			strength = 3
+		case bitrate <= t.mid:
+			strength = 2
+		case bitrate <= t.mild:
+			strength = 1
+		}
+	}
+
+	preDynLimiter := n.buildPreDynSoftLimiter(strength)
+	// pre-dyn temp file
+	preDynTempPath := filepath.Join(os.TempDir(), fmt.Sprintf("tnt_pre_dyn%d.wav", time.Now().UnixNano()))
+	tempFiles = append(tempFiles, preDynTempPath)
+	n.logToFile(n.logFile, fmt.Sprintf("Added temp file: %s (total: %d", preDynTempPath, len(tempFiles)))
+	n.logStatus(fmt.Sprintf("Applying pre-LUFS soft limiter"))
+	preDyncmd := ffmpeg.Command(
+		"-i", workingPath,
+		"-af", preDynLimiter,
+		"-ar", "352800",
+		"-acodec", "pcm_f32le",
+		"-y", preDynTempPath,
+	)
+
+	if err := preDyncmd.Run(); err != nil {
+		n.logStatus("Failed pre-dyn limiter")
+		n.logToFile(n.logFile, fmt.Sprintf("Pre-dyn limiting failed: %v", err))
+		return false
+	}
+
+	workingPath = preDynTempPath
+
 	n.logToFile(n.logFile, "")
 	n.logToFile(n.logFile, fmt.Sprintf("args: %s", args))
 	n.logToFile(n.logFile, "")
@@ -1817,7 +1864,6 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 	}
 
 	n.logToFile(n.logFile, "")
-	n.logToFile(n.logFile, "")
 	n.logToFile(n.logFile, fmt.Sprintf("args: %s", args))
 	n.logToFile(n.logFile, "")
 
@@ -1831,6 +1877,12 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 	if len(filterStages) > 0 {
 		finalFilterChain = strings.Join(filterStages, ",")
 	}
+
+	// reduce brightness for lossy encoders
+
+	// build brightness reduction string
+	reduceBrightnessFilter := n.buildBrightnessReduceFilterForLossy(strength)
+	finalFilterChain = finalFilterChain + "," + reduceBrightnessFilter
 
 	args[1] = workingPath
 
@@ -1903,6 +1955,7 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 
 	cmd := ffmpeg.Command(args...)
 
+	// FINAL OUTPUT STEP
 	output, err := ffmpeg.RunCmd(cmd)
 	n.logToFile(n.logFile, fmt.Sprintf("FFmpeg output: %s", string(output)))
 

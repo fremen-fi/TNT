@@ -26,8 +26,8 @@ func CalculateDynaudnormParams(analysis *DynamicsAnalysis) *DynaudnormParams {
 	params.Threshold = math.Pow(10, thresholdDB/20)
 
 	// Clamp to valid ranges (0.0-1.0)
-    params.TargetRMS = max(min(params.TargetRMS, 1.0), 0.0)
-    params.Threshold = max(min(params.Threshold, 1.0), 0.0)
+	params.TargetRMS = max(min(params.TargetRMS, 1.0), 0.0)
+	params.Threshold = max(min(params.Threshold, 1.0), 0.0)
 
 	return params
 }
