@@ -24,6 +24,8 @@ export function LoadPreferences():Promise<main.Preferences>;
 
 export function MetadataFields():Promise<Array<string>>;
 
+export function PCMFileCoherence(arg1:string):Promise<number>;
+
 export function PreviewSize(arg1:main.ProcessConfig):Promise<void>;
 
 export function Process(arg1:main.ProcessConfig):Promise<void>;

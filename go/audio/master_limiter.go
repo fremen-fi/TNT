@@ -10,7 +10,13 @@ func BuildSoftLimiterPreDyn(strength int) string {
 	softLimiterAttack := 20      // in ms
 	softLimiterRel := 80         // in ms
 
-	// values calibrated for Apple AAC using bitrates 400 (no processing), 128 (case 1), 96 (case 2) and 64 kilobits per second (case 3). They all have a True Peak of -1.1...-1 dB TP. Other encoders and bitrates might result in different results.
+	// values calibrated for Apple AAC using bitrates
+	// 400 (no processing),
+	// 128 (case 1),
+	// 96 (case 2) and
+	// 64 kilobits per second (case 3).
+	// They all have a True Peak of -1.1...-1 dB TP.
+	// Other encoders and bitrates might result in different results.
 	switch strength {
 	case 1:
 		softLimiterThreshold = -3.2

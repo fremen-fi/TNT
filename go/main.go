@@ -647,7 +647,7 @@ func (n *AudioNormalizer) buildBandAcompressor(band *FrequencyBandAnalysis, atta
 
 	n.logToFile(n.logFile, logBandComp)
 
-	return fmt.Sprintf("acompressor=threshold=%.6f:ratio=%.1f:attack=%.1f:release=%.1f:makeup=1.0:knee=%1.f,alimiter=limit=%.6f:attack=%.0f:release=%.0f:level=false,volume=%.3f",
+	return fmt.Sprintf("acompressor=threshold=%.6f:ratio=%.1f:attack=%.1f:release=%.1f:makeup=1.0:knee=%.1f,alimiter=limit=%.6f:attack=%.0f:release=%.0f:level=false,volume=%.3f",
 		thresholdLin, ratio, attackMs, releaseMs, knee, limiterLin, limiterAttack, limiterRelease, makeupLin)
 
 	//return fmt.Sprintf("acompressor=threshold=%.6f:ratio=%.1f:attack=%.1f:release=%.1f:makeup=1.0:knee=6.8,volume=%.3f",
@@ -1804,8 +1804,6 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 		}
 	}
 
-	strength := 0
-
 	type bitrateTiers struct {
 		mild, mid, hard int
 	}
@@ -1816,6 +1814,9 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 		"libfdk_aac": {mild: 128, mid: 96, hard: 64},
 		"libopus":    {mild: 96, mid: 64, hard: 48},
 	}
+
+    // strength for brightness reduction
+    strength := 0
 
 	if t, ok := tiers[actualCodec]; ok {
 		switch {
@@ -1830,9 +1831,9 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 
 	preDynLimiter := n.buildPreDynSoftLimiter(strength)
 	// pre-dyn temp file
-	preDynTempPath := filepath.Join(os.TempDir(), fmt.Sprintf("tnt_pre_dyn%d.wav", time.Now().UnixNano()))
+	preDynTempPath := filepath.Join(os.TempDir(), fmt.Sprintf("tnt_pre_dyn_%d.wav", time.Now().UnixNano()))
 	tempFiles = append(tempFiles, preDynTempPath)
-	n.logToFile(n.logFile, fmt.Sprintf("Added temp file: %s (total: %d", preDynTempPath, len(tempFiles)))
+	n.logToFile(n.logFile, fmt.Sprintf("Added temp file: %s (total: %d)", preDynTempPath, len(tempFiles)))
 	n.logStatus(fmt.Sprintf("Applying pre-LUFS soft limiter"))
 	preDyncmd := ffmpeg.Command(
 		"-i", workingPath,
@@ -1868,37 +1869,34 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 	n.logToFile(n.logFile, "")
 
 	// Final render reads workingPath (the last intermediate WAV, or the
-	// original input if no stages ran) and applies only loudnorm.
-	var finalFilterChain string
+	// original input if no stages ran) and applies loudnorm, optional
+	// lossy-codec brightness reduction, and optional 16-bit dither — joined
+	// into a single -af graph.
 	var filterStages []string
 	if loudnormFilterChain != "" {
 		filterStages = append(filterStages, loudnormFilterChain)
 	}
-	if len(filterStages) > 0 {
-		finalFilterChain = strings.Join(filterStages, ",")
-	}
 
-	// reduce brightness for lossy encoders
-
-	// build brightness reduction string
-	reduceBrightnessFilter := n.buildBrightnessReduceFilterForLossy(strength)
-	finalFilterChain = finalFilterChain + "," + reduceBrightnessFilter
-
-	args[1] = workingPath
-
-	// Add dithering for 16-bit PCM output
-	if actualCodec == "PCM" && cfg.BitDepth == "16" {
-		if finalFilterChain != "" {
-			finalFilterChain = finalFilterChain + ",aresample=resampler=soxr:dither_method=high_shibata"
-		} else {
-			finalFilterChain = "aresample=resampler=soxr:dither_method=high_shibata"
+	// Brightness reduction is only meaningful for lossy encoders. Guard on
+	// codec membership in the brightness tiers rather than appending it
+	// unconditionally: the old code applied it to lossless PCM/FLAC too, and
+	// — when no loudnorm stage preceded it — prepended a stray comma, which
+	// makes ffmpeg reject the entire -af graph (so a lossy encode with
+	// normalization disabled failed outright).
+	if _, isLossy := tiers[actualCodec]; isLossy {
+		if bf := n.buildBrightnessReduceFilterForLossy(strength); bf != "" {
+			filterStages = append(filterStages, bf)
 		}
 	}
 
-	n.logToFile(n.logFile, "")
-	n.logToFile(n.logFile, "")
-	n.logToFile(n.logFile, fmt.Sprintf("args: %s", args))
-	n.logToFile(n.logFile, "")
+	// Add dithering for 16-bit PCM output.
+	if actualCodec == "PCM" && cfg.BitDepth == "16" {
+		filterStages = append(filterStages, "aresample=resampler=soxr:dither_method=high_shibata")
+	}
+
+	finalFilterChain := strings.Join(filterStages, ",")
+
+	args[1] = workingPath
 
 	if finalFilterChain != "" {
 		args = append(args, "-af", finalFilterChain)
@@ -1941,7 +1939,16 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 		)
 	}
 
-	n.logToFile(n.logFile, "")
+    rho, err := n.PCMFileCoherence(workingPath)
+    if err != nil {
+        print(fmt.Errorf("there was an error: %v", err))
+    }
+    if rho > 0.4 {
+        print(fmt.Sprintf("Channel coherence is probably fine, value: %.1f", rho))
+    } else {
+        print(fmt.Sprintf("Coherency might benefit from your attention: %.1f", rho))
+    }
+
 	n.logToFile(n.logFile, "")
 	n.logToFile(n.logFile, "")
 	n.logToFile(n.logFile, fmt.Sprintf("DEBUG args: %#v", args))
@@ -2141,8 +2148,6 @@ func isAudioFile(path string) bool {
 	return false
 }
 
-// appleTheme removed — Wails frontend handles styling via CSS.
-
 func cleanupTempFiles(files []string) {
 	for _, file := range files {
 		if err := os.Remove(file); err != nil {
@@ -2151,3 +2156,33 @@ func cleanupTempFiles(files []string) {
 		}
 	}
 }
+
+// callerName returns the name of the function skip frames up the call stack.
+func callerName(skip int) string {
+    const unknown = "unknown"
+    pcs := make([]uintptr, 1)
+    n := runtime.Callers(skip+2, pcs)
+    if n < 1 {
+        return unknown
+    }
+    frame, _ := runtime.CallersFrames(pcs).Next()
+    if frame.Function == "" {
+        return unknown
+    }
+    return frame.Function
+}
+
+// timer returns a function that records the elapsed time since timer was
+// called, written to the App Support log file (~/Library/Application
+// Support/TNT/tnt.log via n.logFile) — NOT the in-app status log, which is
+// fed separately by EventsEmit. Intended for use in a defer statement:
+//
+//   defer n.timer()()
+func (n *AudioNormalizer) timer() func() {
+    name := callerName(1)
+    start := time.Now()
+    return func() {
+        n.logToFile(n.logFile, fmt.Sprintf("%s took %v", name, time.Since(start)))
+    }
+}
+

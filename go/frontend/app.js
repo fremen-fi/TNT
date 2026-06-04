@@ -356,8 +356,18 @@ function buildConfig() {
         const presetEl = /** @type {HTMLInputElement|null} */ (document.querySelector('input[name="fast-preset"]:checked'));
         const preset = presetEl ? presetEl.value : 'pcm';
         const fastNorm = $input('fast-norm');
+        // Fast mode is transcode + (optional) normalization ONLY. The
+        // Processing-tab controls (Dynamics, EQ, dynamic-norm, phase check)
+        // must not leak in, so force every processing stage off rather than
+        // spreading ...proc — otherwise a preset left selected on the
+        // Advanced/Processing tab (or a persisted phase-check preference)
+        // would silently run EQ/compression/phase analysis on a Fast run.
         const cfg = {
-            ...proc,
+            DynamicsPreset: 'Off',
+            EqTarget: 'Off',
+            DynNorm: false,
+            BypassProc: false,
+            PhaseCheck: false,
             Format: '',
             SampleRate: '',
             BitDepth: '',

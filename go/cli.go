@@ -1127,7 +1127,7 @@ func (p *CLIProcessor) buildBandAcompressor(band *FrequencyBandAnalysis, attackM
 		limiterRelease = 2000.0
 	}
 
-	return fmt.Sprintf("acompressor=threshold=%.6f:ratio=%.1f:attack=%.1f:release=%.1f:makeup=1.0:knee=%1.f,alimiter=limit=%.6f:attack=%.0f:release=%.0f:level=false,volume=%.3f",
+	return fmt.Sprintf("acompressor=threshold=%.6f:ratio=%.1f:attack=%.1f:release=%.1f:makeup=1.0:knee=%.1f,alimiter=limit=%.6f:attack=%.0f:release=%.0f:level=false,volume=%.3f",
 		thresholdLin, ratio, attackMs, releaseMs, knee, limiterLin, limiterAttack, limiterRelease, makeupLin)
 }
 

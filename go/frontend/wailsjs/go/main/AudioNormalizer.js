@@ -46,6 +46,10 @@ export function MetadataFields() {
   return window['go']['main']['AudioNormalizer']['MetadataFields']();
 }
 
+export function PCMFileCoherence(arg1) {
+  return window['go']['main']['AudioNormalizer']['PCMFileCoherence'](arg1);
+}
+
 export function PreviewSize(arg1) {
   return window['go']['main']['AudioNormalizer']['PreviewSize'](arg1);
 }
