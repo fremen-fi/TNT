@@ -1877,12 +1877,6 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 		filterStages = append(filterStages, loudnormFilterChain)
 	}
 
-	// Brightness reduction is only meaningful for lossy encoders. Guard on
-	// codec membership in the brightness tiers rather than appending it
-	// unconditionally: the old code applied it to lossless PCM/FLAC too, and
-	// — when no loudnorm stage preceded it — prepended a stray comma, which
-	// makes ffmpeg reject the entire -af graph (so a lossy encode with
-	// normalization disabled failed outright).
 	if _, isLossy := tiers[actualCodec]; isLossy {
 		if bf := n.buildBrightnessReduceFilterForLossy(strength); bf != "" {
 			filterStages = append(filterStages, bf)
@@ -1941,7 +1935,7 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 
     rho, err := n.PCMFileCoherence(workingPath)
     if err != nil {
-        print(fmt.Errorf("there was an error: %v", err))
+        print(fmt.Errorf("there was an error in coherence check: %v", err))
     }
     if rho > 0.4 {
         print(fmt.Sprintf("Channel coherence is probably fine, value: %.1f", rho))
