@@ -103,15 +103,15 @@ type ProcessConfig struct {
 	NormalizeTarget   string
 	NormalizeTargetTp string
 	IsSpeech          bool
-	WriteTags      bool
-	NoTranscode    bool
-	OriginIsAAC    bool
-	DataCompLevel  int8
-	DynamicsPreset string
-	BypassProc     bool
-	EqTarget       string
-	DynNorm        bool
-	PhaseCheck     bool
+	WriteTags         bool
+	NoTranscode       bool
+	OriginIsAAC       bool
+	DataCompLevel     int8
+	DynamicsPreset    string
+	BypassProc        bool
+	EqTarget          string
+	DynNorm           bool
+	PhaseCheck        bool
 }
 
 // DynamicsAnalysis and FrequencyBandAnalysis are aliases for the public audio
@@ -1945,9 +1945,9 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 	// into a single -af graph.
 	var filterStages []string
 	/*
-	    if loudnormFilterChain != "" {
-			filterStages = append(filterStages, loudnormFilterChain)
-		}
+		    if loudnormFilterChain != "" {
+				filterStages = append(filterStages, loudnormFilterChain)
+			}
 	*/
 
 	if _, isLossy := tiers[actualCodec]; isLossy {
