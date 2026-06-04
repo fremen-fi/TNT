@@ -1,5 +1,21 @@
 export namespace main {
 	
+	export class Standard {
+	    Key: string;
+	    TargetI: number;
+	    TargetTP: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Standard(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.Key = source["Key"];
+	        this.TargetI = source["TargetI"];
+	        this.TargetTP = source["TargetTP"];
+	    }
+	}
 	export class Preferences {
 	    advanced_mode: boolean;
 	    last_output_dir: string;
@@ -12,7 +28,7 @@ export namespace main {
 	    custom_loudnorm: boolean;
 	    normalize_target: string;
 	    normalize_target_tp: string;
-	    normalization_standard: string;
+	    normalization_standard: Standard;
 	    data_comp_level: number;
 	    eq_preset: string;
 	    dyn_preset: string;
@@ -38,7 +54,7 @@ export namespace main {
 	        this.custom_loudnorm = source["custom_loudnorm"];
 	        this.normalize_target = source["normalize_target"];
 	        this.normalize_target_tp = source["normalize_target_tp"];
-	        this.normalization_standard = source["normalization_standard"];
+	        this.normalization_standard = this.convertValues(source["normalization_standard"], Standard);
 	        this.data_comp_level = source["data_comp_level"];
 	        this.eq_preset = source["eq_preset"];
 	        this.dyn_preset = source["dyn_preset"];
@@ -47,6 +63,24 @@ export namespace main {
 	        this.phase_check_auto = source["phase_check_auto"];
 	        this.telemetry_enabled = source["telemetry_enabled"];
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class ProcessConfig {
 	    Format: string;
@@ -55,6 +89,8 @@ export namespace main {
 	    Bitrate: string;
 	    UseLoudnorm: boolean;
 	    CustomLoudnorm: boolean;
+	    NormalizeTarget: string;
+	    NormalizeTargetTp: string;
 	    IsSpeech: boolean;
 	    WriteTags: boolean;
 	    NoTranscode: boolean;
@@ -78,6 +114,8 @@ export namespace main {
 	        this.Bitrate = source["Bitrate"];
 	        this.UseLoudnorm = source["UseLoudnorm"];
 	        this.CustomLoudnorm = source["CustomLoudnorm"];
+	        this.NormalizeTarget = source["NormalizeTarget"];
+	        this.NormalizeTargetTp = source["NormalizeTargetTp"];
 	        this.IsSpeech = source["IsSpeech"];
 	        this.WriteTags = source["WriteTags"];
 	        this.NoTranscode = source["NoTranscode"];
@@ -90,6 +128,7 @@ export namespace main {
 	        this.PhaseCheck = source["PhaseCheck"];
 	    }
 	}
+	
 	export class VersionInfo {
 	    platform: string;
 	    version: string;

@@ -12,17 +12,17 @@ import (
 // calculation lives in github.com/fremen-fi/tnt/go/audio; this is a thin
 // wrapper that adds app-level logging.
 func (n *AudioNormalizer) calculateDynamicsScore(inputPath string) *audio.DynamicsScoreAnalysis {
-	n.logStatus(fmt.Sprintf("→ Calculating Dynamics Score: %s", filepath.Base(inputPath)))
+	n.appLog.Write(fmt.Sprintf("→ Calculating Dynamics Score: %s", filepath.Base(inputPath)))
 
 	result, err := audio.CalculateDynamicsScore(ffmpeg.Path, inputPath)
 	if err != nil {
-		n.logToFile(n.logFile, fmt.Sprintf("DS calculation failed: %v", err))
+		n.logFile.Write(fmt.Sprintf("DS calculation failed: %v", err))
 		return nil
 	}
 
-	n.logToFile(n.logFile, fmt.Sprintf("DS Analysis - RMS Peak: %.2f dB, RMS Level: %.2f dB, Crest: %.2f",
+	n.logFile.Write(fmt.Sprintf("DS Analysis - RMS Peak: %.2f dB, RMS Level: %.2f dB, Crest: %.2f",
 		result.RMSPeak, result.RMSLevel, result.CrestFactor))
-	n.logToFile(n.logFile, fmt.Sprintf("Dynamics Score: %.2f", result.DynamicsScore))
+	n.logFile.Write(fmt.Sprintf("Dynamics Score: %.2f", result.DynamicsScore))
 
 	return result
 }

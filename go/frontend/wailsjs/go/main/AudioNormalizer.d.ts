@@ -4,9 +4,17 @@ import {main} from '../models';
 
 export function AddFiles(arg1:Array<string>):Promise<Array<string>>;
 
+export function CharacterLimit(arg1:string,arg2:number):Promise<void>;
+
 export function CheckForUpdates():Promise<main.VersionInfo>;
 
 export function ClearFiles():Promise<Array<string>>;
+
+export function Compress(arg1:string,arg2:number,arg3:number,arg4:number,arg5:number,arg6:number,arg7:number,arg8:number):Promise<void>;
+
+export function ConformityLimit(arg1:string,arg2:number):Promise<void>;
+
+export function Gain(arg1:string,arg2:number):Promise<void>;
 
 export function GetFiles():Promise<Array<string>>;
 
@@ -19,6 +27,8 @@ export function GetPlatformFormats():Promise<Array<string>>;
 export function GetTelemetryEnabled():Promise<boolean>;
 
 export function GetVersion():Promise<string>;
+
+export function LUFS(arg1:string):Promise<number>;
 
 export function LoadPreferences():Promise<main.Preferences>;
 

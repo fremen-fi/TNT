@@ -66,7 +66,7 @@ const state = {
     selectedIdx: null,
     processing: false,
     watching: false,
-    normalizationStandard: 'EBU R128 (-23 LUFS)',
+    normalizationStandard: 'ebu',
 };
 
 // Fast-tab radios use short keys; map to backend names. The advanced
@@ -114,20 +114,10 @@ async function populateFormatDropdown() {
     if (Array.from(sel.options).some((o) => o.value === 'PCM')) sel.value = 'PCM';
 }
 
-/** @type {Record<string, string>} */
-const NORM_STD_MAP = {
-    ebu: 'EBU R128 (-23 LUFS)',
-    atsc: 'USA ATSC A/85 (-24 LUFS)',
-    aes77: 'AES77-2023 (-16/-18 LUFS)',
-    custom: 'Custom',
-};
-/** @type {Record<string, string>} */
-const NORM_STD_REVERSE = {
-    'EBU R128 (-23 LUFS)': 'ebu',
-    'USA ATSC A/85 (-24 LUFS)': 'atsc',
-    'AES77-2023 (-16/-18 LUFS)': 'aes77',
-    'Custom': 'custom',
-};
+// The normalization standard is identified by a short key — 'ebu', 'atsc',
+// 'aes', 'custom' — which is the norm-std radio value, the value stored in
+// state.normalizationStandard, and the value sent to Go as
+// normalization_standard. Human-readable labels live in updateNormSubText.
 
 /** @type {Record<string, string>} */
 const META_MAP = {
@@ -409,6 +399,8 @@ function buildConfig() {
     const rg = $input('adv-rg');
     const noTr = $input('adv-no-transcode');
     const cl = $input('adv-cl');
+    const advLufs = $input('adv-lufs');
+    const advTp = $input('adv-tp');
 
     return {
         ...proc,
@@ -418,6 +410,8 @@ function buildConfig() {
         Bitrate: br ? br.value : '',
         UseLoudnorm: norm ? norm.checked : false,
         CustomLoudnorm: clud ? clud.checked : false,
+        NormalizeTarget: advLufs ? advLufs.value : '',
+        NormalizeTargetTp: advTp ? advTp.value : '',
         IsSpeech: sp ? sp.checked : false,
         WriteTags: rg ? rg.checked : false,
         NoTranscode: noTr ? noTr.checked : false,
@@ -516,7 +510,7 @@ async function writeMetadataFromForm() {
 /** @param {Prefs | null | undefined} prefs */
 function applyPrefsToUI(prefs) {
     if (!prefs) return;
-    state.normalizationStandard = prefs.normalization_standard || 'EBU R128 (-23 LUFS)';
+    state.normalizationStandard = prefs.normalization_standard || 'ebu';
 
     if (prefs.simple_mode_selection) {
         const r = /** @type {HTMLInputElement|null} */ (document.querySelector(`input[name="fast-preset"][value="${prefs.simple_mode_selection}"]`));
@@ -573,7 +567,7 @@ function applyPrefsToUI(prefs) {
         }
     }
 
-    const stdKey = NORM_STD_REVERSE[state.normalizationStandard];
+    const stdKey = state.normalizationStandard;
     if (stdKey) {
         const r = /** @type {HTMLInputElement|null} */ (document.querySelector(`input[name="norm-std"][value="${stdKey}"]`));
         if (r) r.checked = true;
@@ -594,7 +588,6 @@ function applyPrefsToUI(prefs) {
 function gatherPrefs() {
     const stdEl = /** @type {HTMLInputElement|null} */ (document.querySelector('input[name="norm-std"]:checked'));
     const stdKey = stdEl ? stdEl.value : 'ebu';
-    const std = NORM_STD_MAP[stdKey] || state.normalizationStandard;
     const simpleEl = /** @type {HTMLInputElement|null} */ (document.querySelector('input[name="fast-preset"]:checked'));
     const simple = simpleEl ? simpleEl.value : '';
     const tabEl = /** @type {HTMLElement|null} */ (document.querySelector('.tab-btn.active'));
@@ -629,7 +622,7 @@ function gatherPrefs() {
         custom_loudnorm: clu ? clu.checked : false,
         normalize_target: stdKey === 'custom' ? (prefsLufs ? prefsLufs.value : '-23') : (advLufs ? advLufs.value : '-23'),
         normalize_target_tp: stdKey === 'custom' ? (prefsTp ? prefsTp.value : '-1') : (advTp ? advTp.value : '-1'),
-        normalization_standard: std,
+        normalization_standard: stdKey,
         data_comp_level: parseInt(cl ? cl.value : '0', 10),
         eq_preset: eq ? eq.value : 'Off',
         dyn_preset: dyn ? dyn.value : 'Off',
@@ -763,10 +756,10 @@ function bindRealHandlers() {
         const r = /** @type {HTMLInputElement} */ (rEl);
         r.addEventListener('change', () => {
             const key = r.value;
-            state.normalizationStandard = NORM_STD_MAP[key] || state.normalizationStandard;
+            state.normalizationStandard = key;
             if (key === 'ebu') { setLT('-23', '-1'); }
             if (key === 'atsc') { setLT('-24', '-2'); }
-            if (key === 'aes77') { setLT('-16', '-1'); }
+            if (key === 'aes') { setLT('-16', '-1'); }
             // 'custom' uses whatever is in prefs-lufs/prefs-tp
             updateNormSubText();
             updateAdvanced();
@@ -826,7 +819,7 @@ function updateNormSubText() {
         label = 'USA ATSC A/85';
         lufs = '-24';
         tp = '-2';
-    } else if (stdKey === 'aes77') {
+    } else if (stdKey === 'aes') {
         label = 'AES77-2023';
         lufs = "-16";
         tp = '-1';

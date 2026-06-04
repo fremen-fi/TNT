@@ -151,7 +151,7 @@ func TestPreferencesJSONRoundTripUsesSnakeKeys(t *testing.T) {
 		CustomLoudnorm:        false,
 		NormalizeTarget:       "-23",
 		NormalizeTargetTp:     "-1",
-		NormalizationStandard: "EBU R128 (-23 LUFS)",
+		NormalizationStandard: EBU,
 		DataCompLevel:         5,
 		EqPreset:              "Off",
 		DynPreset:             "Light",

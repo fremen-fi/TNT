@@ -124,7 +124,7 @@ function updateAdvanced() {
     const speechRow = $('row-speech');
     const speechBox = $input('adv-speech');
     const stdEl = /** @type {HTMLInputElement|null} */ (document.querySelector('input[name="norm-std"]:checked'));
-    const isNormalizingAndAes = !!(normBox && normBox.checked) && !!stdEl && stdEl.value === 'aes77';
+    const isNormalizingAndAes = !!(normBox && normBox.checked) && !!stdEl && stdEl.value === 'aes';
 
     if (speechRow) speechRow.classList.toggle('hidden', (!isNormalizingAndAes));
     if (speechBox) {

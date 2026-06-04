@@ -20,9 +20,9 @@ func (n *AudioNormalizer) analyzeDynaudnormParams(analysis *DynamicsAnalysis) *D
 		return nil
 	}
 
-	n.logToFile(n.logFile, fmt.Sprintf("Dynaudnorm params - RMS Peak: %.2f dB, Noise Floor: %.2f dB",
+	n.logFile.Write(fmt.Sprintf("Dynaudnorm params - RMS Peak: %.2f dB, Noise Floor: %.2f dB",
 		params.RMSPeakDB, params.NoiseFloorDB))
-	n.logToFile(n.logFile, fmt.Sprintf("Calculated - Target RMS: %.6f (%.2f dB), Threshold: %.6f (%.2f dB)",
+	n.logFile.Write(fmt.Sprintf("Calculated - Target RMS: %.6f (%.2f dB), Threshold: %.6f (%.2f dB)",
 		params.TargetRMS, 20*math.Log10(params.TargetRMS),
 		params.Threshold, 20*math.Log10(params.Threshold)))
 
@@ -33,7 +33,7 @@ func (n *AudioNormalizer) analyzeDynaudnormParams(analysis *DynamicsAnalysis) *D
 func (n *AudioNormalizer) buildDynaudnormFilter(params *DynaudnormParams) string {
 	filter := audio.BuildDynaudnormFilter(params, n.isSpeech)
 	if filter != "" {
-		n.logToFile(n.logFile, fmt.Sprintf("Dynaudnorm filter: %s", filter))
+		n.logFile.Write(fmt.Sprintf("Dynaudnorm filter: %s", filter))
 	}
 	return filter
 }

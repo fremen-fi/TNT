@@ -40,8 +40,8 @@ func (n *AudioNormalizer) readMetadata(filePath string) (map[string]string, erro
 
 	err := cmd.Run()
 
-	n.logToFile(n.logFile, "metadata read stderr: "+stderr.String())
-	n.logToFile(n.logFile, "metadata read stdout: "+stdout.String())
+	n.logFile.Write("metadata read stderr: " + stderr.String())
+	n.logFile.Write("metadata read stdout: " + stdout.String())
 
 	if err != nil && stdout.Len() == 0 {
 		return nil, fmt.Errorf("failed to read metadata: %w\n%s", err, stderr.String())
@@ -65,7 +65,7 @@ func (n *AudioNormalizer) readMetadata(filePath string) (map[string]string, erro
 		}
 	}
 
-	n.logToFile(n.logFile, fmt.Sprintf("metadata read parsed %d tags: %v", len(tags), tags))
+	n.logFile.Write(fmt.Sprintf("metadata read parsed %d tags: %v", len(tags), tags))
 	return tags, nil
 }
 
@@ -90,10 +90,10 @@ func (n *AudioNormalizer) writeMetadataTags(filePath string, tags map[string]str
 
 	args = append(args, "-y", tmpFile)
 
-	n.logToFile(n.logFile, "metadata write cmd: ffmpeg "+strings.Join(args, " "))
+	n.logFile.Write("metadata write cmd: ffmpeg " + strings.Join(args, " "))
 
 	output, err := ffmpeg.Run(args...)
-	n.logToFile(n.logFile, "metadata write output: "+string(output))
+	n.logFile.Write("metadata write output: " + string(output))
 
 	if err != nil {
 		os.Remove(tmpFile)
@@ -105,6 +105,6 @@ func (n *AudioNormalizer) writeMetadataTags(filePath string, tags map[string]str
 		return fmt.Errorf("failed to replace file: %w", err)
 	}
 
-	n.logToFile(n.logFile, "metadata write: replaced original file successfully")
+	n.logFile.Write("metadata write: replaced original file successfully")
 	return nil
 }
