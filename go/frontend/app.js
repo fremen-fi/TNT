@@ -35,6 +35,8 @@
  * @property {string}  Bitrate
  * @property {boolean} UseLoudnorm
  * @property {boolean} CustomLoudnorm
+ * @property {string}  NormalizeTarget
+ * @property {string}  NormalizeTargetTp
  * @property {boolean} IsSpeech
  * @property {boolean} WriteTags
  * @property {boolean} NoTranscode
@@ -364,6 +366,8 @@ function buildConfig() {
             Bitrate: '',
             UseLoudnorm: fastNorm ? fastNorm.checked : false,
             CustomLoudnorm: false,
+            NormalizeTarget: '',
+            NormalizeTargetTp: '',
             IsSpeech: false,
             WriteTags: false,
             NoTranscode: false,
