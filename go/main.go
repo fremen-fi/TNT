@@ -139,7 +139,7 @@ func checkForUpdates(currentVersion string, logFile *LogIntoFile, notify func(Ve
 	var manifest VersionManifest
 	if err := json.NewDecoder(resp.Body).Decode(&manifest); err != nil {
 		logFile.Write(fmt.Sprintf("JSON decode error: %v", err))
-	return
+		return
 	}
 
 	key := platformKey()
