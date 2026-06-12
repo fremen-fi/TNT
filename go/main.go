@@ -146,7 +146,7 @@ return
 	release, ok := manifest.Platforms[key]
 	if !ok {
 		logFile.Write(fmt.Sprintf("No release entry for platform %q", key))
-	return
+		return
 	}
 
 	logFile.Write(fmt.Sprintf("Platform: %s, Current: %s, Remote: %s", key, currentVersion, release.Version))
