@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// ParseAstatsOutput parses FFmpeg astats filter output into DynamicsAnalysis
+// ParseAstatsOutput parses FFmpeg astats filter output into DynamicsAnalysis.
 func ParseAstatsOutput(output string) *DynamicsAnalysis {
 	result := &DynamicsAnalysis{}
 
@@ -48,12 +48,6 @@ func ParseAstatsOutput(output string) *DynamicsAnalysis {
 		result.CrestFactor, _ = strconv.ParseFloat(match[1], 64)
 	}
 
-	// Parse from Channel 1 section: Dynamic range: 51.779619
-	dynRe := regexp.MustCompile(`Dynamic range:\s+([-\d.]+)`)
-	if match := dynRe.FindStringSubmatch(output); len(match) > 1 {
-		result.DynamicRange, _ = strconv.ParseFloat(match[1], 64)
-	}
-
 	noiseFloorRe := regexp.MustCompile(`Noise floor dB:\s+([-\d.]+)`)
 	if match := noiseFloorRe.FindStringSubmatch(overallSection); len(match) > 1 {
 		result.NoiseFloor, _ = strconv.ParseFloat(match[1], 64)
@@ -62,7 +56,7 @@ func ParseAstatsOutput(output string) *DynamicsAnalysis {
 	return result
 }
 
-// ParseDynamicsScore parses astats output for Dynamics Score calculation
+// ParseDynamicsScore parses astats output for Dynamics Score calculation.
 func ParseDynamicsScore(output string) *DynamicsScoreAnalysis {
 	result := &DynamicsScoreAnalysis{}
 
@@ -107,7 +101,7 @@ func ParseDynamicsScore(output string) *DynamicsScoreAnalysis {
 	return result
 }
 
-// ParseFrequencyBandOutput parses astats output for a single frequency band
+// ParseFrequencyBandOutput parses astats output for a single frequency band.
 func ParseFrequencyBandOutput(output string, bandName string) *FrequencyBandAnalysis {
 	result := &FrequencyBandAnalysis{BandName: bandName}
 
@@ -136,16 +130,10 @@ func ParseFrequencyBandOutput(output string, bandName string) *FrequencyBandAnal
 		result.CrestFactor, _ = strconv.ParseFloat(match[1], 64)
 	}
 
-	// Parse: Dynamic range
-	dynRe := regexp.MustCompile(`Dynamic range:\s+([-\d.]+)`)
-	if match := dynRe.FindStringSubmatch(overallSection); len(match) > 1 {
-		result.DynamicRange, _ = strconv.ParseFloat(match[1], 64)
-	}
-
 	return result
 }
 
-// FrequencyBandFilters returns the filter strings for each frequency band
+// FrequencyBandFilters returns the ffmpeg filter strings for each frequency band.
 func FrequencyBandFilters() map[string]string {
 	return map[string]string{
 		"sub":     "lowpass=f=80",
@@ -154,4 +142,12 @@ func FrequencyBandFilters() map[string]string {
 		"mid":     "highpass=f=1000,lowpass=f=4000",
 		"high":    "highpass=f=4000",
 	}
+}
+
+// ParseFrequencyBandStats extracts RMS, peak, and crest from a single
+// astats invocation's combined output. Exposed (vs. the lower-case copies
+// inside parseAstats helpers) because the multiband analyzers parse
+// astats output the same way.
+func ParseFrequencyBandStats(output string) map[string]float64 {
+	return parseFrequencyBandStats(output)
 }

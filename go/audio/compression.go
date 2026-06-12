@@ -2,7 +2,8 @@ package audio
 
 import "math"
 
-// GetCompressionModifiers returns compression parameter multipliers based on Dynamics Score
+// GetCompressionModifiers returns compression parameter multipliers based on
+// the Dynamics Score.
 func GetCompressionModifiers(ds float64) CompressionModifiers {
 	mods := CompressionModifiers{
 		AttackMultiplier:  1.0,
@@ -40,7 +41,7 @@ func GetCompressionModifiers(ds float64) CompressionModifiers {
 	return mods
 }
 
-// GetBaseRatioFromCrest returns base compression ratio based on crest factor
+// GetBaseRatioFromCrest returns the base compression ratio based on crest factor.
 func GetBaseRatioFromCrest(crest float64) float64 {
 	if crest <= 3.0 {
 		return 1.4
@@ -56,7 +57,8 @@ func GetBaseRatioFromCrest(crest float64) float64 {
 	}
 }
 
-// CalculateMakeupGain computes makeup gain based on expected gain reduction
+// CalculateMakeupGain computes makeup gain (linear) based on expected gain
+// reduction for the given threshold (dB) and ratio.
 func CalculateMakeupGain(analysis *DynamicsAnalysis, thresholdDb float64, ratio float64) float64 {
 	if analysis == nil || ratio <= 1.0 {
 		return 1.0
@@ -76,12 +78,14 @@ func CalculateMakeupGain(analysis *DynamicsAnalysis, thresholdDb float64, ratio 
 	return 1.0
 }
 
-// Clamp returns the clamped value
+// clamp returns x constrained to the inclusive range [lo, hi].
 func clamp(x, lo, hi float64) float64 {
 	return max(lo, min(hi, x))
 }
 
-// ClampCompressorParams ensures all compressor parameters are within valid ranges
+// ClampCompressorParams ensures all compressor parameters are within valid
+// ranges, returning the clamped threshold (linear), ratio, attack (ms),
+// release (ms), and makeup gain (linear).
 func ClampCompressorParams(thresholdLin, ratio, attackMs, releaseMs, makeupLin float64) (float64, float64, float64, float64, float64) {
 
 	thresholdLin = clamp(thresholdLin, 0.00097563, 1.) // -60dB to 0dB
@@ -94,7 +98,8 @@ func ClampCompressorParams(thresholdLin, ratio, attackMs, releaseMs, makeupLin f
 
 }
 
-// GetKneeFromRatio returns appropriate knee value based on compression ratio
+// GetKneeFromRatio returns an appropriate knee value based on the compression
+// ratio.
 func GetKneeFromRatio(ratio float64) float64 {
 	switch {
 	case ratio < 1.:
@@ -114,12 +119,13 @@ func GetKneeFromRatio(ratio float64) float64 {
 	}
 }
 
-// DbToLinear converts decibels to linear amplitude
+// DbToLinear converts decibels to linear amplitude.
 func DbToLinear(db float64) float64 {
 	return math.Pow(10, db/20)
 }
 
-// LinearToDb converts linear amplitude to decibels
+// LinearToDb converts linear amplitude to decibels. Non-positive input returns
+// -100.0.
 func LinearToDb(linear float64) float64 {
 	if linear <= 0 {
 		return -100.0

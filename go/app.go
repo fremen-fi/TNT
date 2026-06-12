@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"os"
 	"runtime"
 	"sync"
 
@@ -19,7 +18,7 @@ type AudioNormalizer struct {
 	mutex     sync.Mutex
 
 	advancedMode          bool
-	normalizationStandard string
+	normalizationStandard Standard
 	format                string
 	sampleRate            string
 	bitDepth              string
@@ -45,7 +44,8 @@ type AudioNormalizer struct {
 	jobQueue     chan string
 	watcherMutex sync.Mutex
 
-	logFile *os.File
+	logFile *LogIntoFile
+	appLog  *LogApp
 
 	telemetry        *telemetry.Client
 	telemetryEnabled bool

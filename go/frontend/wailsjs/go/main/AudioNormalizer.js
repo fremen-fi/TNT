@@ -6,12 +6,28 @@ export function AddFiles(arg1) {
   return window['go']['main']['AudioNormalizer']['AddFiles'](arg1);
 }
 
+export function CharacterLimit(arg1, arg2) {
+  return window['go']['main']['AudioNormalizer']['CharacterLimit'](arg1, arg2);
+}
+
 export function CheckForUpdates() {
   return window['go']['main']['AudioNormalizer']['CheckForUpdates']();
 }
 
 export function ClearFiles() {
   return window['go']['main']['AudioNormalizer']['ClearFiles']();
+}
+
+export function Compress(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8) {
+  return window['go']['main']['AudioNormalizer']['Compress'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
+}
+
+export function ConformityLimit(arg1, arg2) {
+  return window['go']['main']['AudioNormalizer']['ConformityLimit'](arg1, arg2);
+}
+
+export function Gain(arg1, arg2) {
+  return window['go']['main']['AudioNormalizer']['Gain'](arg1, arg2);
 }
 
 export function GetFiles() {
@@ -38,12 +54,20 @@ export function GetVersion() {
   return window['go']['main']['AudioNormalizer']['GetVersion']();
 }
 
+export function LUFS(arg1) {
+  return window['go']['main']['AudioNormalizer']['LUFS'](arg1);
+}
+
 export function LoadPreferences() {
   return window['go']['main']['AudioNormalizer']['LoadPreferences']();
 }
 
 export function MetadataFields() {
   return window['go']['main']['AudioNormalizer']['MetadataFields']();
+}
+
+export function PCMFileCoherence(arg1) {
+  return window['go']['main']['AudioNormalizer']['PCMFileCoherence'](arg1);
 }
 
 export function PreviewSize(arg1) {

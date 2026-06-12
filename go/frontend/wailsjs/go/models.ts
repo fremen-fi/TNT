@@ -1,5 +1,21 @@
 export namespace main {
 	
+	export class Standard {
+	    Key: string;
+	    TargetI: number;
+	    TargetTP: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Standard(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.Key = source["Key"];
+	        this.TargetI = source["TargetI"];
+	        this.TargetTP = source["TargetTP"];
+	    }
+	}
 	export class Preferences {
 	    advanced_mode: boolean;
 	    last_output_dir: string;
@@ -55,6 +71,8 @@ export namespace main {
 	    Bitrate: string;
 	    UseLoudnorm: boolean;
 	    CustomLoudnorm: boolean;
+	    NormalizeTarget: string;
+	    NormalizeTargetTp: string;
 	    IsSpeech: boolean;
 	    WriteTags: boolean;
 	    NoTranscode: boolean;
@@ -78,6 +96,8 @@ export namespace main {
 	        this.Bitrate = source["Bitrate"];
 	        this.UseLoudnorm = source["UseLoudnorm"];
 	        this.CustomLoudnorm = source["CustomLoudnorm"];
+	        this.NormalizeTarget = source["NormalizeTarget"];
+	        this.NormalizeTargetTp = source["NormalizeTargetTp"];
 	        this.IsSpeech = source["IsSpeech"];
 	        this.WriteTags = source["WriteTags"];
 	        this.NoTranscode = source["NoTranscode"];
@@ -90,11 +110,14 @@ export namespace main {
 	        this.PhaseCheck = source["PhaseCheck"];
 	    }
 	}
+	
 	export class VersionInfo {
+	    platform: string;
 	    version: string;
-	    os: string[];
-	    download_url: any[];
+	    download_url: string;
+	    supported_platforms: string;
 	    release_notes: string;
+	    release_date: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new VersionInfo(source);
@@ -102,10 +125,12 @@ export namespace main {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.platform = source["platform"];
 	        this.version = source["version"];
-	        this.os = source["os"];
 	        this.download_url = source["download_url"];
+	        this.supported_platforms = source["supported_platforms"];
 	        this.release_notes = source["release_notes"];
+	        this.release_date = source["release_date"];
 	    }
 	}
 

@@ -2,7 +2,7 @@ name: Upload TNT JSON
 
 on:
   push:
-    branches: [ main ]
+    branches: ["*"]
     paths:
       - 'Distribution/tnt-version.json'
   workflow_dispatch:
@@ -15,9 +15,11 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Upload to BunnyCDN
+      - name: Upload to OVH
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.OVH_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.OVH_SECRET }}
         run: |
-          curl -X PUT \
-            -H "AccessKey: ${{ secrets.BUNNY_ACCESS_KEY }}" \
-            --data-binary "@Distribution/tnt-version.json" \
-            "https://se.storage.bunnycdn.com/sw-stor/tnt-version.json"
+          aws s3 cp "Distribution/tnt-version.json" "s3://${{ secrets.OVH_BUCKET }}/" \
+          --endpoint-url "${{ secrets.OVH_ENDPOINT }}" \
+          --acl public-read

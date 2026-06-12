@@ -32,7 +32,7 @@ func (n *AudioNormalizer) SelectFiles() []string {
 		},
 	})
 	if err != nil {
-		n.logStatus(fmt.Sprintf("Failed to open file dialog: %v", err))
+		n.appLog.Write(fmt.Sprintf("Failed to open file dialog: %v", err))
 		return n.GetFiles()
 	}
 
@@ -70,7 +70,7 @@ func (n *AudioNormalizer) SelectFolder() []string {
 		return nil
 	})
 	if walkErr != nil {
-		n.logStatus(fmt.Sprintf("Failed to scan folder: %v", walkErr))
+		n.appLog.Write(fmt.Sprintf("Failed to scan folder: %v", walkErr))
 	}
 
 	files := n.GetFiles()
@@ -134,6 +134,8 @@ func (n *AudioNormalizer) applyConfig(cfg ProcessConfig) {
 	n.bitrate = cfg.Bitrate
 	n.useLoudnorm = cfg.UseLoudnorm
 	n.customLoudnorm = cfg.CustomLoudnorm
+	n.normalizeTarget = cfg.NormalizeTarget
+	n.normalizeTargetTp = cfg.NormalizeTargetTp
 	n.isSpeech = cfg.IsSpeech
 	n.writeTags = cfg.WriteTags
 	n.noTranscode = cfg.NoTranscode
