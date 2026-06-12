@@ -1474,7 +1474,7 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 		}
 	}
 
-	if !noBitrateUsed {
+	if !noBitrateUsed && !n.noTranscode {
 		if needsFullNumber {
 			args = append(args, "-b:a", fmt.Sprintf("%d", bitrate))
 		} else {
@@ -1489,7 +1489,7 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 		args = append(args, "-application", "audio")
 	}
 
-	usesDataCompression := actualCodec == "flac" || actualCodec == "libopus"
+	usesDataCompression := (actualCodec == "flac" || actualCodec == "libopus") && !n.noTranscode
 
 	if usesDataCompression {
 		var level int
@@ -1594,8 +1594,11 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 		cfg.EqTarget != "Off",
 		!cfg.BypassProc))
 
-	// Stage 1: EQ analysis (measures the raw input spectrum)
-	if cfg.EqTarget != "" && cfg.EqTarget != "Off" && !cfg.BypassProc {
+	// Stage 1: EQ analysis (measures the raw input spectrum). Every audio
+	// stage is skipped in no-transcode (tag-only) mode: the final render is
+	// -c copy, so a rendered intermediate could never reach the output — it
+	// would only be wasted work and a broken stream-copy source.
+	if cfg.EqTarget != "" && cfg.EqTarget != "Off" && !cfg.BypassProc && !n.noTranscode {
 		eqBandAnalysis := n.analyzeFrequencyResponseBands(workingPath)
 		if eqBandAnalysis == nil || len(eqBandAnalysis) == 0 {
 			n.appLog.Write(fmt.Sprintf("✗ Failed to analyze frequency response: %s", filepath.Base(inputPath)))
@@ -1651,7 +1654,7 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 		!cfg.BypassProc))
 
 	var dsAnalysis *audio.DynamicsScoreAnalysis
-	if !cfg.BypassProc && (cfg.DynamicsPreset != "" && cfg.DynamicsPreset != "Off") {
+	if !cfg.BypassProc && !n.noTranscode && (cfg.DynamicsPreset != "" && cfg.DynamicsPreset != "Off") {
 		dsAnalysis = n.calculateDynamicsScore(inputPath)
 		if dsAnalysis == nil {
 			n.appLog.Write(fmt.Sprintf("✗ Failed to calculate Dynamics Score: %s", filepath.Base(inputPath)))
@@ -1660,7 +1663,7 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 	}
 
 	// Stage 2: Dynaudnorm (measures the post-EQ signal)
-	if cfg.DynNorm && !cfg.BypassProc {
+	if cfg.DynNorm && !cfg.BypassProc && !n.noTranscode {
 		var dynaudnormFilter string
 		dynamicsAnalysis := n.analyzeDynamics(workingPath)
 		if dynamicsAnalysis == nil {
@@ -1698,7 +1701,7 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 	}
 
 	// Stage 3: Compression (measures the post-EQ, post-dynaudnorm signal)
-	if cfg.DynamicsPreset != "" && cfg.DynamicsPreset != "Off" && !cfg.BypassProc {
+	if cfg.DynamicsPreset != "" && cfg.DynamicsPreset != "Off" && !cfg.BypassProc && !n.noTranscode {
 
 		// MBC attenuates hot peaks before compressing
 		var attenuatedPath string = workingPath
@@ -1843,30 +1846,14 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 		}
 	}
 
-	type bitrateTiers struct {
-		mild, mid, hard int
+	// strength for brightness reduction and the encoder pre-limiter. The
+	// tiers are in kbps, but for the needsFullNumber codecs `bitrate` was
+	// converted to full bps above — convert back before comparing.
+	bitrateKbps := bitrate
+	if needsFullNumber {
+		bitrateKbps = bitrate / 1000
 	}
-
-	tiers := map[string]bitrateTiers{
-		"libmp3lame": {mild: 192, mid: 160, hard: 128},
-		"aac_at":     {mild: 128, mid: 96, hard: 64},
-		"libfdk_aac": {mild: 128, mid: 96, hard: 64},
-		"libopus":    {mild: 96, mid: 64, hard: 48},
-	}
-
-	// strength for brightness reduction
-	strength := 0
-
-	if t, ok := tiers[actualCodec]; ok {
-		switch {
-		case bitrate <= t.hard:
-			strength = 3
-		case bitrate <= t.mid:
-			strength = 2
-		case bitrate <= t.mild:
-			strength = 1
-		}
-	}
+	strength := brightnessStrength(actualCodec, bitrateKbps)
 
 	n.logFile.Write("")
 	n.logFile.Write(fmt.Sprintf("args: %s", args))
@@ -1886,42 +1873,53 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 		cfg.IsSpeech, target, targetTp,
 	)
 
-	// LRA reduction toward the target range (self-gates if already under target).
-	const targetLRA = 7.0
-	n.reduceLRA(workingPath, targetLRA, 4)
+	// Native loudness chain — rewrites workingPath IN PLACE as 32-bit float
+	// WAV. It runs even when cfg.BypassProc is set, on purpose: "Bypass all
+	// processing" is scoped to the EQ/Dynamics stages above (GUI: "Disables
+	// Dynamics and EQ regardless of selection above"); normalization is the
+	// app's core function, not "processing". It must NOT run in no-transcode
+	// (tag-only) mode: the resample stage was skipped there, so workingPath is
+	// still the user's ORIGINAL input file — these calls would destroy it (or
+	// fail outright on non-WAV input). Tag-only gets its ReplayGain figures
+	// from the read-only ebur128 measurement above and never alters audio.
+	if !n.noTranscode {
+		// LRA reduction toward the target range (self-gates if already under target).
+		const targetLRA = 7.0
+		n.reduceLRA(workingPath, targetLRA, 4)
 
-	// Normalize: measure the LRA-reduced signal and apply the linear offset to hit
-	// the loudness target. True peak is the conformance limiter's job below, so the
-	// full offset goes on here regardless of where it lands the peaks.
-	n.logFile.Write(fmt.Sprintf("Measuring loudness for %s", workingPath))
-	lufs, _, lra, err := n.LUFS(workingPath)
-	if err != nil {
-		n.logFile.Write(fmt.Sprintf("error: %v", err))
-		return false
-	}
-	n.logFile.Write(fmt.Sprintf("lra: %.1f", lra))
-	lOffset := target - lufs
-	if err := n.Gain(workingPath, lOffset); err != nil {
-		n.appLog.Write(fmt.Sprintf("✗ Failed to apply gain: %s", filepath.Base(inputPath)))
-		n.logFile.Write(fmt.Sprintf("Gain application failed: %v", err))
-		return false
-	}
-
-	// Encoder-specific character pre-limiter — lossy only. It pre-conditions the
-	// peaks with the headroom each codec/bitrate needs (softLimiterCalibration via
-	// strength) so the encoder's overshoot doesn't blow past the ceiling. PCM/FLAC
-	// have no encoder to overshoot, so they skip it.
-	if actualCodec != "PCM" && actualCodec != "flac" {
-		if err := n.CharacterLimit(workingPath, strength); err != nil {
-			n.logFile.Write(fmt.Sprintf("error in the encoder pre-limiter: %v", err))
+		// Normalize: measure the LRA-reduced signal and apply the linear offset to hit
+		// the loudness target. True peak is the conformance limiter's job below, so the
+		// full offset goes on here regardless of where it lands the peaks.
+		n.logFile.Write(fmt.Sprintf("Measuring loudness for %s", workingPath))
+		lufs, _, lra, err := n.LUFS(workingPath)
+		if err != nil {
+			n.logFile.Write(fmt.Sprintf("error: %v", err))
 			return false
 		}
-	}
+		n.logFile.Write(fmt.Sprintf("lra: %.1f", lra))
+		lOffset := target - lufs
+		if err := n.Gain(workingPath, lOffset); err != nil {
+			n.appLog.Write(fmt.Sprintf("✗ Failed to apply gain: %s", filepath.Base(inputPath)))
+			n.logFile.Write(fmt.Sprintf("Gain application failed: %v", err))
+			return false
+		}
 
-	// Conformance limiter — ALWAYS, true-peak, at the target TP ceiling. The
-	// final guarantee the output stays under the ceiling.
-	if err := n.conformLimit(workingPath, targetTp); err != nil {
-		return false
+		// Encoder-specific character pre-limiter — lossy only. It pre-conditions the
+		// peaks with the headroom each codec/bitrate needs (softLimiterCalibration via
+		// strength) so the encoder's overshoot doesn't blow past the ceiling. PCM/FLAC
+		// have no encoder to overshoot, so they skip it.
+		if actualCodec != "PCM" && actualCodec != "flac" {
+			if err := n.CharacterLimit(workingPath, strength); err != nil {
+				n.logFile.Write(fmt.Sprintf("error in the encoder pre-limiter: %v", err))
+				return false
+			}
+		}
+
+		// Conformance limiter — true-peak, at the target TP ceiling. The
+		// final guarantee the output stays under the ceiling.
+		if err := n.conformLimit(workingPath, targetTp); err != nil {
+			return false
+		}
 	}
 
 	/*
@@ -1950,14 +1948,15 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 			}
 	*/
 
-	if _, isLossy := tiers[actualCodec]; isLossy {
+	// No filter stages in no-transcode mode: -af cannot combine with -c copy.
+	if _, isLossy := brightnessTiers[actualCodec]; isLossy && !n.noTranscode {
 		if bf := n.buildBrightnessReduceFilterForLossy(strength); bf != "" {
 			filterStages = append(filterStages, bf)
 		}
 	}
 
 	// Add dithering for 16-bit PCM output.
-	if actualCodec == "PCM" && cfg.BitDepth == "16" {
+	if actualCodec == "PCM" && cfg.BitDepth == "16" && !n.noTranscode {
 		filterStages = append(filterStages, "aresample=resampler=soxr:dither_method=high_shibata")
 	}
 
@@ -2006,14 +2005,18 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 		)
 	}
 
-	rho, err := n.PCMFileCoherence(workingPath)
-	if err != nil {
-		print(fmt.Errorf("there was an error in coherence check: %v", err))
-	}
-	if rho > 0.4 {
-		print(fmt.Sprintf("Channel coherence is probably fine, value: %.1f", rho))
-	} else {
-		print(fmt.Sprintf("Coherency might benefit from your attention: %.1f", rho))
+	// Coherence check reads workingPath as WAV — meaningless (and failing, for
+	// non-WAV originals) in no-transcode mode where nothing was processed.
+	if !n.noTranscode {
+		rho, err := n.PCMFileCoherence(workingPath)
+		if err != nil {
+			print(fmt.Errorf("there was an error in coherence check: %v", err))
+		}
+		if rho > 0.4 {
+			print(fmt.Sprintf("Channel coherence is probably fine, value: %.1f", rho))
+		} else {
+			print(fmt.Sprintf("Coherency might benefit from your attention: %.1f", rho))
+		}
 	}
 
 	n.logFile.Write("")

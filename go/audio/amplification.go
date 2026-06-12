@@ -15,50 +15,31 @@ import (
 // (pcm_f32le, audioFormat=3). The write is atomic: samples are written to a
 // temp file in the same directory and then renamed over the original.
 func Gain(path string, offsetDB float64) error {
-	f, err := os.Open(path)
+	left, right, sampleRate, err := readSamples(path)
 	if err != nil {
-		return fmt.Errorf("opening %s: %w", path, err)
+		return fmt.Errorf("gain: %w", err)
 	}
+	GainSamples(left, right, offsetDB)
+	return WriteFloat32WAV(path, sampleRate, left, right)
+}
 
-	h, err := readWAVHeader(f)
-	if err != nil {
-		f.Close()
-		return fmt.Errorf("reading WAV header: %w", err)
-	}
-
-	raw := make([]byte, h.dataSize)
-	if _, err := io.ReadFull(f, raw); err != nil {
-		f.Close()
-		return fmt.Errorf("reading PCM data: %w", err)
-	}
-	f.Close()
-
-	var left, right []float64
-	switch {
-	case h.audioFormat == 3 && h.bitsPerSample == 32:
-		left, right = SamplesFromFloat32(raw)
-	case h.audioFormat == 1 && h.bitsPerSample == 24:
-		left, right = SamplesFromInt24(raw)
-	case h.audioFormat == 1 && h.bitsPerSample == 32:
-		left, right = SamplesFromInt32(raw)
-	case h.audioFormat == 1 && h.bitsPerSample == 16:
-		left, right = SamplesFromInt16(raw)
-	default:
-		return fmt.Errorf("unsupported format: audioformat=%d bits=%d", h.audioFormat, h.bitsPerSample)
-	}
-
+// GainSamples applies a linear gain of offsetDB decibels to both channels in
+// place. It is the in-memory core of Gain.
+func GainSamples(left, right []float64, offsetDB float64) {
 	gain := math.Pow(10, offsetDB/20)
 	for i := range left {
 		left[i] *= gain
+	}
+	for i := range right {
 		right[i] *= gain
 	}
-
-	return writeFloat32WAV(path, h.sampleRate, left, right)
 }
 
-// writeFloat32WAV writes stereo float64 samples to a 32-bit float WAV at path,
-// atomically via a temp file in the same directory followed by a rename.
-func writeFloat32WAV(path string, sampleRate uint32, left, right []float64) error {
+// WriteFloat32WAV writes stereo float64 samples to a 32-bit float WAV at path,
+// atomically via a temp file in the same directory followed by a fsync and
+// rename — the sync matters on servers, where a crash mid-pipeline must not
+// leave a truncated file behind a completed rename.
+func WriteFloat32WAV(path string, sampleRate uint32, left, right []float64) error {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, ".gain-*.wav.tmp")
 	if err != nil {
@@ -70,6 +51,11 @@ func writeFloat32WAV(path string, sampleRate uint32, left, right []float64) erro
 		tmp.Close()
 		os.Remove(tmpName)
 		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return fmt.Errorf("syncing temp file: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
 		os.Remove(tmpName)
@@ -93,7 +79,15 @@ func writeFloat32WAVTo(w io.Writer, sampleRate uint32, left, right []float64) er
 
 	blockAlign := uint16(numChannels * bitsPerSample / 8)
 	byteRate := sampleRate * uint32(blockAlign)
-	dataSize := uint32(nFrames) * uint32(blockAlign)
+
+	// RIFF sizes are uint32: past 4 GiB the header silently wraps and every
+	// downstream reader sees a corrupt file. Refuse instead — callers with
+	// longer material must split or lower the intermediate sample rate.
+	dataSize64 := uint64(nFrames) * uint64(blockAlign)
+	if dataSize64+36 > math.MaxUint32 {
+		return fmt.Errorf("WAV data would be %d bytes — over the 4 GiB RIFF limit", dataSize64)
+	}
+	dataSize := uint32(dataSize64)
 	riffSize := 36 + dataSize
 
 	// Buffer the writer: every header field and sample is emitted through bw as a

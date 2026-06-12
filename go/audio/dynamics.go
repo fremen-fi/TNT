@@ -2,10 +2,10 @@ package audio
 
 import (
 	"fmt"
-	"io"
 	"math"
-	"os"
+	"runtime"
 	"sort"
+	"sync"
 )
 
 // This file holds three purely time-domain dynamics processors:
@@ -82,7 +82,7 @@ func LookaheadLimiter(path string, thresholdDb, lookaheadMs, releaseMs float64) 
 		return fmt.Errorf("lookahead limiter: %w", err)
 	}
 	LookaheadLimitSamples(left, right, float64(sampleRate), thresholdDb, lookaheadMs, releaseMs)
-	return writeFloat32WAV(path, sampleRate, left, right)
+	return WriteFloat32WAV(path, sampleRate, left, right)
 }
 
 // LookaheadLimitSamples is the in-place core of LookaheadLimiter.
@@ -114,18 +114,15 @@ func LookaheadLimitSamples(left, right []float64, sampleRate, thresholdDb, looka
 	// reconstructed waveform — the real peaks between samples — not just the
 	// discrete sample values. That is what makes this a genuine true-peak limiter:
 	// the output's true peak is guaranteed under the ceiling at the working rate,
-	// no oversampled pipeline required to fake it.
-	tpL := truePeakEnvelope(left[:n])
-	tpR := truePeakEnvelope(right[:n])
+	// no oversampled pipeline required to fake it. The per-channel envelopes are
+	// folded straight into required[] rather than materialized — on multi-hour
+	// files the two extra float64 arrays were gigabytes of transient memory —
+	// and the scan is chunk-parallel: each output depends only on the 12
+	// preceding (read-only) input samples and the writes are disjoint.
 	required := make([]float64, n)
-	for i := range n {
-		tp := math.Max(tpL[i], tpR[i])
-		if tp > thresh {
-			required[i] = thresh / tp
-		} else {
-			required[i] = 1
-		}
-	}
+	chunkedParallel(n, func(start, end int) {
+		requiredGainRange(left, right, required, thresh, start, end)
+	})
 
 	// winMin[i] = min(required[i .. i+look]); the gain therefore starts dropping
 	// as soon as a peak enters the lookahead window, never after it has passed.
@@ -152,33 +149,67 @@ func LookaheadLimitSamples(left, right []float64, sampleRate, thresholdDb, looka
 	}
 }
 
-// truePeakEnvelope returns, per sample, the inter-sample (true) peak magnitude at
-// that position — the max over the 4 BS.1770 polyphase sub-samples of the
-// reconstructed waveform. It is the per-sample form of channelTruePeakLinear (same
-// tpFIR), and it drives the true-peak limiter so it tames the peaks BETWEEN
-// samples, not only those landing on them.
-func truePeakEnvelope(samples []float64) []float64 {
-	n := len(samples)
-	env := make([]float64, n)
+// requiredGainRange fills required[start:end] with the gain that tames the
+// stereo-linked true peak at each position to thresh (1.0 where no reduction
+// is needed). The FIR reads input back to start-11; zero before index 0.
+func requiredGainRange(left, right, required []float64, thresh float64, start, end int) {
 	const taps = 12
-	for i := range samples {
+	for i := start; i < end; i++ {
 		var mx float64
 		for phase := range 4 {
-			var acc float64
+			var accL, accR float64
 			for k := range taps {
 				idx := i - k
 				if idx < 0 {
 					break
 				}
-				acc += tpFIR[phase][k] * samples[idx]
+				accL += tpFIR[phase][k] * left[idx]
+				accR += tpFIR[phase][k] * right[idx]
 			}
-			if a := math.Abs(acc); a > mx {
+			if a := math.Abs(accL); a > mx {
+				mx = a
+			}
+			if a := math.Abs(accR); a > mx {
 				mx = a
 			}
 		}
-		env[i] = mx
+		if mx > thresh {
+			required[i] = thresh / mx
+		} else {
+			required[i] = 1
+		}
 	}
-	return env
+}
+
+// chunkedParallel splits [0, n) into one contiguous range per worker and
+// runs fn over them concurrently. fn must be safe for disjoint ranges (the
+// envelope/peak scans here only read shared input and write disjoint output).
+// Small inputs run inline.
+func chunkedParallel(n int, fn func(start, end int)) {
+	workers := runtime.GOMAXPROCS(0)
+	if workers > 8 {
+		workers = 8
+	}
+	const minChunk = 1 << 16
+	if n < minChunk*2 || workers < 2 {
+		fn(0, n)
+		return
+	}
+	chunk := (n + workers - 1) / workers
+	var wg sync.WaitGroup
+	for w := range workers {
+		start := w * chunk
+		if start >= n {
+			break
+		}
+		end := min(start+chunk, n)
+		wg.Add(1)
+		go func(start, end int) {
+			defer wg.Done()
+			fn(start, end)
+		}(start, end)
+	}
+	wg.Wait()
 }
 
 // slidingMin returns, for every index i, the minimum of x over the forward
@@ -223,6 +254,13 @@ func MeasureDynamicsScore(path string) (*DynamicsScoreAnalysis, error) {
 		return nil, fmt.Errorf("dynamics score: %w", err)
 	}
 	return dynamicsScore(left, float64(sampleRate)), nil
+}
+
+// MeasureDynamicsScoreSamples computes the Dynamics Score from in-memory
+// channel-1 (left) samples — the buffer-level form of MeasureDynamicsScore for
+// callers that keep the whole file resident across processing stages.
+func MeasureDynamicsScoreSamples(left []float64, sampleRate float64) *DynamicsScoreAnalysis {
+	return dynamicsScore(left, sampleRate)
 }
 
 // dynamicsScore is the in-memory core of MeasureDynamicsScore, operating on the
@@ -336,7 +374,7 @@ func LimitConforming(path string, strength int) error {
 		return fmt.Errorf("conformity limiter: %w", err)
 	}
 	LookaheadLimitSamples(left, right, float64(sampleRate), c.thresholdDb, c.attackMs, c.releaseMs)
-	return writeFloat32WAV(path, sampleRate, left, right)
+	return WriteFloat32WAV(path, sampleRate, left, right)
 }
 
 // LimitCharacter applies the soft-knee character limiter at the calibrated
@@ -348,7 +386,7 @@ func LimitCharacter(path string, strength int) error {
 		return fmt.Errorf("character limiter: %w", err)
 	}
 	CharacterLimitSamples(left, right, float64(sampleRate), c.thresholdDb, characterLimiterKnee, c.attackMs, c.releaseMs)
-	return writeFloat32WAV(path, sampleRate, left, right)
+	return WriteFloat32WAV(path, sampleRate, left, right)
 }
 
 // CharacterLimiter applies a soft-knee limiter at path in place, rewriting it as
@@ -363,7 +401,7 @@ func CharacterLimiter(path string, thresholdDb, kneeDb, attackMs, releaseMs floa
 		return fmt.Errorf("character limiter: %w", err)
 	}
 	CharacterLimitSamples(left, right, float64(sampleRate), thresholdDb, kneeDb, attackMs, releaseMs)
-	return writeFloat32WAV(path, sampleRate, left, right)
+	return WriteFloat32WAV(path, sampleRate, left, right)
 }
 
 // CharacterLimitSamples is the in-place core of CharacterLimiter: a feed-forward
@@ -383,7 +421,7 @@ func Compress(path string, thresholdDb, ratio, kneeDb, attackMs, releaseMs, make
 		return fmt.Errorf("compressor: %w", err)
 	}
 	CompressSamples(left, right, float64(sampleRate), thresholdDb, ratio, kneeDb, attackMs, releaseMs, makeupDb, rmsMs)
-	return writeFloat32WAV(path, sampleRate, left, right)
+	return WriteFloat32WAV(path, sampleRate, left, right)
 }
 
 // CompressSamples is the in-place core of Compress.
@@ -432,7 +470,7 @@ func UpwardCompress(path string, thresholdDb, ratio, kneeDb, attackMs, releaseMs
 		return fmt.Errorf("upward compressor: %w", err)
 	}
 	UpwardCompressSamples(left, right, float64(sampleRate), thresholdDb, ratio, kneeDb, attackMs, releaseMs, maxBoostDb, rmsMs)
-	return writeFloat32WAV(path, sampleRate, left, right)
+	return WriteFloat32WAV(path, sampleRate, left, right)
 }
 
 // UpwardCompressSamples is the in-place core of UpwardCompress.
@@ -519,37 +557,9 @@ func processDynamics(left, right []float64, sampleRate, thresholdDb, ratio, knee
 }
 
 // readStereo reads a WAV at path into stereo float64 buffers and also returns
-// its sample rate, decoding the same formats ReadWAV supports. ReadWAV itself
-// does not surface the sample rate, which the time-based processors here need to
-// turn millisecond time factors into per-sample coefficients.
+// its sample rate. It is a thin alias for the package-central readSamples,
+// kept for the time-based processors here that turn millisecond time factors
+// into per-sample coefficients.
 func readStereo(path string) (left, right []float64, sampleRate uint32, err error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, nil, 0, err
-	}
-	defer f.Close()
-
-	h, err := readWAVHeader(f)
-	if err != nil {
-		return nil, nil, 0, err
-	}
-
-	raw := make([]byte, h.dataSize)
-	if _, err := io.ReadFull(f, raw); err != nil {
-		return nil, nil, 0, err
-	}
-
-	switch {
-	case h.audioFormat == 3 && h.bitsPerSample == 32:
-		left, right = SamplesFromFloat32(raw)
-	case h.audioFormat == 1 && h.bitsPerSample == 24:
-		left, right = SamplesFromInt24(raw)
-	case h.audioFormat == 1 && h.bitsPerSample == 32:
-		left, right = SamplesFromInt32(raw)
-	case h.audioFormat == 1 && h.bitsPerSample == 16:
-		left, right = SamplesFromInt16(raw)
-	default:
-		return nil, nil, 0, fmt.Errorf("format not supported: audioformat: %d, bits per sample: %d", h.audioFormat, h.bitsPerSample)
-	}
-	return left, right, h.sampleRate, nil
+	return readSamples(path)
 }

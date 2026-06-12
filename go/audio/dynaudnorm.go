@@ -46,8 +46,10 @@ func BuildDynaudnormFilter(params *DynaudnormParams, isSpeech bool) string {
 		return ""
 	}
 
+	// gausssize must be odd — ffmpeg coerced the old 36 to 37 with a warning,
+	// so 37 is spelled out to keep the effective behaviour and lose the warning.
 	return fmt.Sprintf(
-		"dynaudnorm=framelen=650:gausssize=36:targetrms=%.6f:threshold=%.6f:altboundary=true:overlap=0.95",
+		"dynaudnorm=framelen=650:gausssize=37:targetrms=%.6f:threshold=%.6f:altboundary=true:overlap=0.95",
 		params.TargetRMS,
 		params.Threshold,
 	)
