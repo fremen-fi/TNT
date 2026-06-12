@@ -2,10 +2,10 @@ package audio
 
 import (
 	"fmt"
-	"io"
 	"math"
-	"os"
+	"runtime"
 	"sort"
+	"sync"
 )
 
 // biquadFilter is a single Direct-Form-I biquad IIR section.
@@ -91,6 +91,22 @@ func kWeightChannel(samples []float64, sampleRate float64) []float64 {
 	return out
 }
 
+// kWeightStereo K-weights both channels concurrently. The biquads are
+// IIR (serial per channel), so two goroutines — one per channel — is the
+// available parallelism; on multi-hour files it halves the dominant cost of
+// every loudness measurement.
+func kWeightStereo(left, right []float64, sampleRate float64) (wL, wR []float64) {
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		wR = kWeightChannel(right, sampleRate)
+	}()
+	wL = kWeightChannel(left, sampleRate)
+	wg.Wait()
+	return wL, wR
+}
+
 // LUFSResult holds integrated loudness, true-peak and loudness-range,
 // per ITU-R BS.1770-5 and EBU Tech 3342.
 type LUFSResult struct {
@@ -112,41 +128,22 @@ const (
 
 // MeasureLUFS reads a WAV file and returns integrated loudness in LUFS.
 func MeasureLUFS(path string) (*LUFSResult, error) {
-	f, err := os.Open(path)
+	left, right, sampleRate, err := readSamples(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("measure LUFS: %w", err)
 	}
-	defer f.Close()
+	return MeasureLUFSSamples(left, right, float64(sampleRate)), nil
+}
 
-	h, err := readWAVHeader(f)
-	if err != nil {
-		return nil, fmt.Errorf("reading WAV header: %w", err)
+// MeasureLUFSSamples measures integrated loudness, true peak and LRA from
+// in-memory stereo buffers — the buffer-level form of MeasureLUFS for callers
+// that keep the whole file resident across processing stages.
+func MeasureLUFSSamples(left, right []float64, sampleRate float64) *LUFSResult {
+	return &LUFSResult{
+		Integrated: integratedLUFS(left, right, sampleRate),
+		TruePeak:   truePeak(left, right),
+		LRA:        loudnessRange(left, right, sampleRate),
 	}
-
-	raw := make([]byte, h.dataSize)
-	if _, err := io.ReadFull(f, raw); err != nil {
-		return nil, fmt.Errorf("reading PCM data: %w", err)
-	}
-
-	var left, right []float64
-	switch {
-	case h.audioFormat == 3 && h.bitsPerSample == 32:
-		left, right = SamplesFromFloat32(raw)
-	case h.audioFormat == 1 && h.bitsPerSample == 24:
-		left, right = SamplesFromInt24(raw)
-	case h.audioFormat == 1 && h.bitsPerSample == 32:
-		left, right = SamplesFromInt32(raw)
-	case h.audioFormat == 1 && h.bitsPerSample == 16:
-		left, right = SamplesFromInt16(raw)
-	default:
-		return nil, fmt.Errorf("unsupported format: audioformat=%d bits=%d", h.audioFormat, h.bitsPerSample)
-	}
-
-	sr := float64(h.sampleRate)
-	lufs := integratedLUFS(left, right, sr)
-	tp := truePeak(left, right)
-	lra := loudnessRange(left, right, sr)
-	return &LUFSResult{Integrated: lufs, TruePeak: tp, LRA: lra}, nil
 }
 
 // integratedLUFS implements the BS.1770-4 integrated loudness algorithm on
@@ -157,8 +154,7 @@ func integratedLUFS(left, right []float64, sampleRate float64) float64 {
 	}
 
 	// Step 1: K-weight both channels.
-	wL := kWeightChannel(left, sampleRate)
-	wR := kWeightChannel(right, sampleRate)
+	wL, wR := kWeightStereo(left, right, sampleRate)
 
 	// Step 2: Slice into 400 ms blocks with 100 ms hops and collect the
 	// per-block power (sum of channel mean-squares, as BS.1770 specifies).
@@ -271,9 +267,19 @@ var tpFIR = [4][12]float64{
 
 // truePeak returns the inter-sample true-peak level in dBTP, taking the
 // highest across the left and right channels (ITU-R BS.1770-5 Annex 2).
-// Returns math.Inf(-1) for a fully silent signal.
+// Returns math.Inf(-1) for a fully silent signal. The two channels are
+// scanned concurrently.
 func truePeak(left, right []float64) float64 {
-	pk := math.Max(channelTruePeakLinear(left), channelTruePeakLinear(right))
+	var pkL, pkR float64
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		pkR = channelTruePeakLinear(right)
+	}()
+	pkL = channelTruePeakLinear(left)
+	wg.Wait()
+	pk := math.Max(pkL, pkR)
 	if pk <= 0 {
 		return math.Inf(-1)
 	}
@@ -284,14 +290,57 @@ func truePeak(left, right []float64) float64 {
 
 // channelTruePeakLinear 4× over-samples one channel through the BS.1770-5
 // polyphase FIR and returns the maximum absolute interpolated value (linear).
+//
+// The scan is chunk-parallel: each output sample depends only on the 12
+// preceding input samples, and the input is read-only, so workers can take
+// disjoint index ranges with no coordination beyond the final max-reduce.
+// This is the hottest loop in the package (96 multiply-adds per frame) —
+// on a long file the speedup is essentially linear in cores.
 func channelTruePeakLinear(samples []float64) float64 {
 	n := len(samples)
 	if n == 0 {
 		return 0
 	}
+	workers := runtime.GOMAXPROCS(0)
+	if workers > 8 {
+		workers = 8
+	}
+	const minChunk = 1 << 16
+	if n < minChunk*2 || workers < 2 {
+		return truePeakRange(samples, 0, n)
+	}
+
+	chunk := (n + workers - 1) / workers
+	maxes := make([]float64, workers)
+	var wg sync.WaitGroup
+	for w := range workers {
+		start := w * chunk
+		if start >= n {
+			break
+		}
+		end := min(start+chunk, n)
+		wg.Add(1)
+		go func(w, start, end int) {
+			defer wg.Done()
+			maxes[w] = truePeakRange(samples, start, end)
+		}(w, start, end)
+	}
+	wg.Wait()
+	var maxAbs float64
+	for _, m := range maxes {
+		if m > maxAbs {
+			maxAbs = m
+		}
+	}
+	return maxAbs
+}
+
+// truePeakRange runs the polyphase FIR over output indices [start, end),
+// reading input samples back to start-11 (zero before index 0).
+func truePeakRange(samples []float64, start, end int) float64 {
 	const taps = 12
 	var maxAbs float64
-	for i := range samples {
+	for i := start; i < end; i++ {
 		for phase := range 4 {
 			var acc float64
 			for k := range taps {
@@ -318,8 +367,7 @@ func loudnessRange(left, right []float64, sampleRate float64) float64 {
 		return 0
 	}
 
-	wL := kWeightChannel(left, sampleRate)
-	wR := kWeightChannel(right, sampleRate)
+	wL, wR := kWeightStereo(left, right, sampleRate)
 
 	blockSize := int(math.Round(lraBlockSizeSec * sampleRate))
 	hopSize := int(math.Round(lraHopSizeSec * sampleRate))

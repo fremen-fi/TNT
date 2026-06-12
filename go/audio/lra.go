@@ -10,44 +10,48 @@ package audio
 // This is the shared implementation used by both the app pipeline and the
 // audition CLI, so they can never drift.
 func ReduceLRA(path string, targetLRA float64, maxPasses int) (float64, error) {
-	r, err := MeasureLUFS(path)
+	left, right, sampleRate, err := readSamples(path)
 	if err != nil {
 		return 0, err
 	}
-	lra := r.LRA
-	for pass := 0; pass < maxPasses && lra > targetLRA; pass++ {
-		before := lra
-		if err := reduceLRAPass(path, targetLRA); err != nil {
-			return lra, err
-		}
-		if r, err = MeasureLUFS(path); err != nil {
-			return lra, err
-		}
-		lra = r.LRA
-		if before-lra < 0.3 {
-			break // diminishing returns
-		}
+	lra := ReduceLRASamples(left, right, float64(sampleRate), targetLRA, maxPasses)
+	if err := WriteFloat32WAV(path, sampleRate, left, right); err != nil {
+		return lra, err
 	}
 	return lra, nil
 }
 
-// reduceLRAPass applies one gentle pass of the LRA chain, sized to the current
-// overshoot. Thresholds come from the RMS statistics; all time constants are
-// DS-driven via GetCompressionModifiers.
-func reduceLRAPass(path string, targetLRA float64) error {
-	m, err := MeasureLUFS(path)
-	if err != nil {
-		return err
+// ReduceLRASamples is the in-memory core of ReduceLRA: it runs the same
+// converging multipass directly on resident stereo buffers, so multi-pass
+// processing costs one read and one write instead of ~ten file round-trips
+// per pass. Returns the final LRA.
+//
+// The loop measures with loudnessRange directly — LRA is all it steers on,
+// and skipping the integrated-loudness and true-peak legs of a full
+// measurement saves most of each iteration's metering cost on long files.
+func ReduceLRASamples(left, right []float64, sampleRate, targetLRA float64, maxPasses int) float64 {
+	lra := loudnessRange(left, right, sampleRate)
+	for pass := 0; pass < maxPasses && lra > targetLRA; pass++ {
+		before := lra
+		reduceLRAPass(left, right, sampleRate, lra-targetLRA)
+		lra = loudnessRange(left, right, sampleRate)
+		if before-lra < 0.3 {
+			break // diminishing returns
+		}
 	}
-	over := m.LRA - targetLRA
+	return lra
+}
+
+// reduceLRAPass applies one gentle pass of the LRA chain, sized to the
+// current overshoot (over = current LRA − target, measured by the caller so
+// it isn't re-measured here). Thresholds come from the RMS statistics; all
+// time constants are DS-driven via GetCompressionModifiers.
+func reduceLRAPass(left, right []float64, sampleRate, over float64) {
 	if over <= 0 {
-		return nil
+		return
 	}
 
-	ds, err := MeasureDynamicsScore(path)
-	if err != nil {
-		return err
-	}
+	ds := MeasureDynamicsScoreSamples(left, sampleRate)
 
 	const wideKnee = 12.0
 	const rmsWindowMs = 300.0 // RMS detection — track sustained loudness, not peaks
@@ -57,29 +61,22 @@ func reduceLRAPass(path string, targetLRA float64) error {
 	interp := clamp(0.6-over*0.05, 0.1, 0.6)
 	thresh := ds.RMSLevel + interp*(ds.RMSPeak-ds.RMSLevel)
 	ratio := clamp(1+over*0.15, 1, 6)
-	if err := Compress(path, thresh, ratio, wideKnee,
-		100*mods.AttackMultiplier, 1500*mods.ReleaseMultiplier, 0, rmsWindowMs); err != nil {
-		return err
-	}
+	CompressSamples(left, right, sampleRate, thresh, ratio, wideKnee,
+		100*mods.AttackMultiplier, 1500*mods.ReleaseMultiplier, 0, rmsWindowMs)
 
 	// Upward comp — lift passages below RMS level toward it.
 	upRatio := clamp(1+over*0.1, 1, 4)
 	const upMaxBoost = 5.0
-	if err := UpwardCompress(path, ds.RMSLevel, upRatio, wideKnee,
-		300*mods.AttackMultiplier, 600*mods.ReleaseMultiplier, upMaxBoost, rmsWindowMs); err != nil {
-		return err
-	}
+	UpwardCompressSamples(left, right, sampleRate, ds.RMSLevel, upRatio, wideKnee,
+		300*mods.AttackMultiplier, 600*mods.ReleaseMultiplier, upMaxBoost, rmsWindowMs)
 
 	// Slow character limiter — threshold from the post-comp DS, placed inside the
 	// RMS-to-RMSpeak span and pushed down the more dynamic the material is.
-	ds2, err := MeasureDynamicsScore(path)
-	if err != nil {
-		return err
-	}
+	ds2 := MeasureDynamicsScoreSamples(left, sampleRate)
 	span := ds2.RMSPeak - ds2.RMSLevel
 	dyn := clamp((ds2.DynamicsScore-9)/12, 0, 1)
 	charThresh := ds2.RMSPeak - (0.2+0.3*dyn)*span
 	mods2 := GetCompressionModifiers(ds2.DynamicsScore)
-	return CharacterLimiter(path, charThresh, 6,
+	CharacterLimitSamples(left, right, sampleRate, charThresh, 6,
 		150*mods2.AttackMultiplier, 1200*mods2.ReleaseMultiplier)
 }
