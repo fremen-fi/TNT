@@ -1,0 +1,53 @@
+name: Publish release notes
+
+# Deliberately separate from the release build: shipping a version never waits
+# on copy being written. Run this whenever the notes for an already-published
+# version are ready — minutes or weeks after the build.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to annotate, e.g. 1.4.2 (must already be published)'
+        required: true
+        type: string
+      notes:
+        description: 'Release notes shown in the in-app update dialog'
+        required: true
+        type: string
+
+jobs:
+  publish-notes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set notes on tnt-version.json
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.OVH_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.OVH_SECRET }}
+          OVH_BUCKET: ${{ secrets.OVH_BUCKET }}
+          OVH_ENDPOINT: ${{ secrets.OVH_ENDPOINT }}
+          VERSION: ${{ inputs.version }}
+          NOTES: ${{ inputs.notes }}
+        run: |
+          set -euo pipefail
+
+          aws s3 cp "s3://${OVH_BUCKET}/tnt-version.json" live.json \
+            --endpoint-url "${OVH_ENDPOINT}"
+
+          # Fails loudly if the version was never published, so a typo cannot
+          # silently write notes nobody will ever see.
+          python3 .github/scripts/manifest.py set-notes \
+            --file live.json --out out.json \
+            --version "$VERSION" --notes "$NOTES"
+
+          cat out.json
+
+          aws s3 cp out.json "s3://${OVH_BUCKET}/tnt-version.json" \
+            --endpoint-url "${OVH_ENDPOINT}" \
+            --content-type "application/json" \
+            --acl public-read
+
+          echo "Notes published for $VERSION" >> "$GITHUB_STEP_SUMMARY"

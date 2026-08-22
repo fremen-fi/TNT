@@ -35,7 +35,7 @@ const versionCheckURL = "https://frm-sw-storage.s3.rbx.io.cloud.ovh.net/tnt-vers
 
 // currentVersion is the version of this build. It is injected at link time from
 // the git tag by the release workflow (-X main.currentVersion=...). A plain
-// `go build` leaves it as "dev", which makes un-stamped builds obvious.
+// `go build` leaves it as "devil", which makes un-stamped builds obvious.
 var currentVersion = "devil"
 
 // PlatformRelease is the per-platform release entry inside the manifest. Each
@@ -1236,10 +1236,16 @@ func (n *AudioNormalizer) getProcessConfig() ProcessConfig {
 		DynNorm:        n.dynNorm,
 		PhaseCheck:     n.phaseCheck,
 		CustomLoudnorm: n.customLoudnorm,
-		Format:         n.format,
-		SampleRate:     n.sampleRate,
-		BitDepth:       n.bitDepth,
-		Bitrate:        n.bitrate,
+		// Carried so the config handed to processFile matches the one the
+		// frontend sent; processFile reads n.normalizeTarget* directly today,
+		// but a cfg that silently blanked these is how the custom target went
+		// missing before.
+		NormalizeTarget:   n.normalizeTarget,
+		NormalizeTargetTp: n.normalizeTargetTp,
+		Format:            n.format,
+		SampleRate:        n.sampleRate,
+		BitDepth:          n.bitDepth,
+		Bitrate:           n.bitrate,
 	}
 
 	return config

@@ -14,7 +14,8 @@
     "productName": "TNT",
     "copyright": "© Collins Group oy",
     "comments": "Transcode, Normalize, Tag",
-    "companyName": "Collins Group oy"
+    "companyName": "Collins Group oy",
+    "productVersion": "0.0.0"
   },
   "mac": {
     "bundleId": "com.collinsgroup.tnt"

@@ -38,6 +38,9 @@ jobs:
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"; VERSION="${VERSION%%-*}"
           cd go
+          # Stamp the bundle/exe version too — Info.plist and the Windows
+          # VERSIONINFO resource read info.productVersion, not the ldflag.
+          jq --arg v "$VERSION" '.info.productVersion = $v' wails.json > wails.tmp && mv wails.tmp wails.json
           wails build -platform darwin/arm64 -ldflags "-s -w -X main.currentVersion=${VERSION}"
 
       - name: Add FFmpeg to bundle
@@ -159,6 +162,9 @@ jobs:
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"; VERSION="${VERSION%%-*}"
           cd go
+          # Stamp the bundle/exe version too — Info.plist and the Windows
+          # VERSIONINFO resource read info.productVersion, not the ldflag.
+          jq --arg v "$VERSION" '.info.productVersion = $v' wails.json > wails.tmp && mv wails.tmp wails.json
           wails build -platform darwin/amd64 -ldflags "-s -w -X main.currentVersion=${VERSION}"
 
       - name: Add FFmpeg to bundle
@@ -279,6 +285,14 @@ jobs:
           $TAG = $env:GITHUB_REF -replace "refs/tags/v", ""
           $VERSION = $TAG.Split("-")[0]
           cd go
+          # Stamp the exe VERSIONINFO resource too - it reads info.productVersion,
+          # not the ldflag.
+          $j = Get-Content wails.json -Raw | ConvertFrom-Json
+          $j.info.productVersion = $VERSION
+          # WriteAllText, not Set-Content -Encoding utf8: Windows PowerShell 5.1
+          # emits a UTF-8 BOM, and Go's json decoder rejects a leading BOM, so
+          # wails would fail to read its own config.
+          [System.IO.File]::WriteAllText("$pwd\wails.json", ($j | ConvertTo-Json -Depth 10))
           wails build -platform windows/amd64 -ldflags "-s -w -X main.currentVersion=$VERSION"
         shell: powershell
 
@@ -359,6 +373,9 @@ jobs:
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"; VERSION="${VERSION%%-*}"
           cd go
+          # Stamp the bundle/exe version too — Info.plist and the Windows
+          # VERSIONINFO resource read info.productVersion, not the ldflag.
+          jq --arg v "$VERSION" '.info.productVersion = $v' wails.json > wails.tmp && mv wails.tmp wails.json
           wails build -platform linux/amd64 -ldflags "-s -w -X main.currentVersion=${VERSION}" -tags webkit2_41
           cp build/bin/TNT ../tnt-linux-amd64
           chmod +x ../tnt-linux-amd64
@@ -577,6 +594,9 @@ jobs:
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"; VERSION="${VERSION%%-*}"
           cd go
+          # Stamp the bundle/exe version too — Info.plist and the Windows
+          # VERSIONINFO resource read info.productVersion, not the ldflag.
+          jq --arg v "$VERSION" '.info.productVersion = $v' wails.json > wails.tmp && mv wails.tmp wails.json
           wails build -platform linux/arm64 -ldflags "-s -w -X main.currentVersion=${VERSION}" -tags webkit2_41
           cp build/bin/TNT ../tnt-linux-arm64
           chmod +x ../tnt-linux-arm64
@@ -750,33 +770,30 @@ jobs:
           VERSION="${TAG%%-*}"
           TODAY="$(date +'%-d %B, %Y')"
 
-          # Structure (download URLs, release notes, history) is taken from the
-          # repo template. Per-platform versions for platforms NOT built in this
-          # run are preserved from the live bucket manifest.
-          cp Distribution/tnt-version.json out.json
+          # The bucket is the source of truth for what is currently published;
+          # the repo copy only supplies download URLs and platform labels.
           aws s3 cp "s3://${OVH_BUCKET}/tnt-version.json" live.json \
             --endpoint-url "${OVH_ENDPOINT}" 2>/dev/null || echo '{}' > live.json
 
-          set_platform() {
-            key="$1"; result="$2"
-            if [ "$result" = "success" ]; then
-              ver="$VERSION"
-              date="$TODAY"
-            else
-              ver="$(jq -r --arg k "$key" '.platforms[$k].version // empty' live.json)"
-              date="$(jq -r --arg k "$key" '.platforms[$k].release_date // empty' live.json)"
-              [ -n "$ver" ]  || ver="$(jq -r  --arg k "$key" '.platforms[$k].version' out.json)"
-              [ -n "$date" ] || date="$(jq -r --arg k "$key" '.platforms[$k].release_date' out.json)"
-            fi
-            jq --arg k "$key" --arg v "$ver" --arg d "$date" \
-              '.platforms[$k].version = $v | .platforms[$k].release_date = $d' \
-              out.json > out.tmp && mv out.tmp out.json
-          }
+          # Only bump the platforms that actually built and uploaded in this run.
+          ARGS=""
+          [ "$MAC_ARM64_RESULT" = "success" ] && ARGS="$ARGS --platform darwin-arm64"
+          [ "$MAC_INTEL_RESULT" = "success" ] && ARGS="$ARGS --platform darwin-amd64"
+          [ "$WINDOWS_RESULT"   = "success" ] && ARGS="$ARGS --platform windows"
+          [ "$LINUX_RESULT"     = "success" ] && ARGS="$ARGS --platform linux"
 
-          set_platform darwin-arm64 "$MAC_ARM64_RESULT"
-          set_platform darwin-amd64 "$MAC_INTEL_RESULT"
-          set_platform windows      "$WINDOWS_RESULT"
-          set_platform linux        "$LINUX_RESULT"
+          if [ -z "$ARGS" ]; then
+            echo "No platform published in this run — leaving the manifest alone."
+            exit 0
+          fi
+
+          # Release notes are a separate, manual step (release-notes.yml); a
+          # version with none published yet ships with an empty string and the
+          # app simply hides the notes block.
+          python3 .github/scripts/manifest.py bump \
+            --file live.json --out out.json \
+            --template Distribution/tnt-version.json \
+            --version "$VERSION" --date "$TODAY" $ARGS
 
           cat out.json
 
@@ -784,6 +801,10 @@ jobs:
             --endpoint-url "${OVH_ENDPOINT}" \
             --content-type "application/json" \
             --acl public-read
+
+          echo "Published $VERSION for:$ARGS" >> "$GITHUB_STEP_SUMMARY"
+          echo "Release notes are not set by this job — run the \"Publish release notes\"" >> "$GITHUB_STEP_SUMMARY"
+          echo "workflow when the copy is ready." >> "$GITHUB_STEP_SUMMARY"
 
   release:
     needs:

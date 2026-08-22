@@ -110,7 +110,7 @@ jobs:
       - name: Build
         run: |
           cd go
-          wails build -platform darwin/arm64 -devtools -ldflags "-s -w -X main.version=pr-${{ github.event.pull_request.number }}"
+          wails build -platform darwin/arm64 -devtools -ldflags "-s -w -X main.currentVersion=pr-${{ github.event.pull_request.number }}"
 
       - name: Add FFmpeg to bundle
         run: |
@@ -188,7 +188,7 @@ jobs:
         shell: powershell
         run: |
           cd go
-          wails build -platform windows/amd64 -devtools -ldflags "-s -w -X main.version=pr-${{ github.event.pull_request.number }}"
+          wails build -platform windows/amd64 -devtools -ldflags "-s -w -X main.currentVersion=pr-${{ github.event.pull_request.number }}"
 
       - name: Bundle FFmpeg next to exe
         shell: powershell

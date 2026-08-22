@@ -46,8 +46,9 @@ jobs:
 
       - name: Build
         run: |
+          BRANCH="${GITHUB_REF#refs/heads/}"; BRANCH="${BRANCH//\//-}"
           cd go
-          wails build -platform darwin/arm64 -ldflags "-s -w"
+          wails build -platform darwin/arm64 -ldflags "-s -w -X main.currentVersion=dev-${BRANCH}"
 
       - name: Add FFmpeg to bundle
         run: |
@@ -153,7 +154,7 @@ jobs:
         run: |
           $TAG = ($env:GITHUB_REF -replace 'refs/heads/', '') -replace '/', '-'
           cd go
-          wails build -platform windows/amd64 -ldflags "-s -w -X main.version=dev-$TAG"
+          wails build -platform windows/amd64 -ldflags "-s -w -X main.currentVersion=dev-$TAG"
 
       - name: Bundle FFmpeg next to exe
         shell: powershell

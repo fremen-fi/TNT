@@ -69,3 +69,27 @@ func TestApplyConfigThreadsCustomTarget(t *testing.T) {
 		t.Error("customLoudnorm = false, want true")
 	}
 }
+
+// TestGetProcessConfigCarriesCustomTarget locks the other half of the round
+// trip: process(), previewSize() and the watch queue all rebuild a
+// ProcessConfig from the normalizer's fields, and that rebuilt config must
+// still carry the custom targets the Process request supplied.
+func TestGetProcessConfigCarriesCustomTarget(t *testing.T) {
+	n := &AudioNormalizer{}
+	n.applyConfig(ProcessConfig{
+		CustomLoudnorm:    true,
+		NormalizeTarget:   "-16",
+		NormalizeTargetTp: "-2",
+	})
+
+	got := n.getProcessConfig()
+	if !got.CustomLoudnorm {
+		t.Error("CustomLoudnorm = false, want true")
+	}
+	if got.NormalizeTarget != "-16" {
+		t.Errorf("NormalizeTarget = %q, want %q", got.NormalizeTarget, "-16")
+	}
+	if got.NormalizeTargetTp != "-2" {
+		t.Errorf("NormalizeTargetTp = %q, want %q", got.NormalizeTargetTp, "-2")
+	}
+}
