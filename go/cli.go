@@ -44,6 +44,7 @@ type CLIConfig struct {
 	DataComp     int
 	PhaseCheck   bool
 	Workers      int
+	VideoAction  string // "drop" or "remux"
 }
 
 // CLIProcessor handles CLI-mode processing without any GUI dependencies
@@ -111,6 +112,7 @@ func parseCLIFlags() (*CLIConfig, bool) {
 	dataComp := fs.Int("comp", 0, "Data compression level 0-10 (FLAC/Opus)")
 	phaseCheck := fs.Int("phase-check", 0, "Phase check before processing: 1=on, 0=off")
 	workers := fs.Int("workers", 0, "Number of worker threads (0=auto: CPU cores - 1)")
+	videoAction := fs.String("video-action", "drop", "Video input handling: drop (audio only) or remux (keep video, replace audio)")
 
 	// Shorthands
 	// EBU R128
@@ -198,6 +200,14 @@ func parseCLIFlags() (*CLIConfig, bool) {
 	cfg.DataComp = *dataComp
 	cfg.PhaseCheck = *phaseCheck == 1
 	cfg.Workers = *workers
+
+	switch strings.ToLower(*videoAction) {
+	case "drop", "remux":
+		cfg.VideoAction = strings.ToLower(*videoAction)
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown -video-action: %s (must be drop or remux)\n", *videoAction)
+		os.Exit(1)
+	}
 
 	// Map bit depth for display
 	switch cfg.BitDepth {
@@ -334,7 +344,7 @@ func (p *CLIProcessor) processExistingFiles() {
 
 	var files []string
 	for _, e := range entries {
-		if !e.IsDir() && isAudioFile(e.Name()) {
+		if !e.IsDir() && isMediaFile(e.Name()) {
 			files = append(files, filepath.Join(p.cfg.InputDir, e.Name()))
 		}
 	}
@@ -453,7 +463,7 @@ func (p *CLIProcessor) watchAndProcess() {
 	for {
 		select {
 		case event := <-watcher.Events:
-			if event.Op&fsnotify.Create == fsnotify.Create && isAudioFile(event.Name) {
+			if event.Op&fsnotify.Create == fsnotify.Create && isMediaFile(event.Name) {
 				p.log(fmt.Sprintf("New file detected: %s", filepath.Base(event.Name)))
 				jobQueue <- event.Name
 			}
@@ -521,6 +531,21 @@ func (p *CLIProcessor) processFile(inputPath string) bool {
 		outputPath = filepath.Join(cfg.OutputDir, fmt.Sprintf("%s.tagged%s", baseName, ext))
 	} else {
 		outputPath = filepath.Join(cfg.OutputDir, fmt.Sprintf("%s%s", baseName, ext))
+	}
+
+	// Video input with remux requested: keep the original container
+	// extension for the deliverable; encode audio to a temp file first, then
+	// remux it with the source video below.
+	isVideo := isVideoFile(inputPath)
+	videoRemux := isVideo && cfg.VideoAction == "remux"
+	var finalOutputPath string
+	if videoRemux {
+		finalOutputPath = strings.TrimSuffix(outputPath, filepath.Ext(outputPath)) + originalExt
+		remuxAudioTempPath := filepath.Join(os.TempDir(), fmt.Sprintf("tnt_remux_audio_%d%s", time.Now().UnixNano(), ext))
+		tempFiles = append(tempFiles, remuxAudioTempPath)
+		outputPath = remuxAudioTempPath
+	} else {
+		finalOutputPath = outputPath
 	}
 
 	p.logQuiet(fmt.Sprintf("Config: EqTarget='%s', DynamicsPreset='%s', Format=%s, Codec=%s",
@@ -712,7 +737,7 @@ func (p *CLIProcessor) processFile(inputPath string) bool {
 
 		if dynPreset == "Broadcast" {
 			// Quick peak check for hot peaks
-			cmd := ffmpeg.Command("-i", workingPath, "-af", "astats", "-f", "null", "-")
+			cmd := ffmpeg.Command("-i", workingPath, "-vn", "-af", "astats", "-f", "null", "-")
 			output, _ := cmd.CombinedOutput()
 
 			peakRe := regexp.MustCompile(`Peak level dB:\s+([-\d.]+)`)
@@ -907,7 +932,30 @@ func (p *CLIProcessor) processFile(inputPath string) bool {
 		return false
 	}
 
-	p.log(fmt.Sprintf("  OK: %s -> %s", filepath.Base(inputPath), filepath.Base(outputPath)))
+	if videoRemux {
+		// finalOutputPath can be identical to inputPath (output dir == source
+		// dir, no .normalized/.tagged suffix applied). Muxing straight into
+		// finalOutputPath would then truncate the file ffmpeg is still
+		// reading as input 1. Mux to a same-directory temp file and rename
+		// it into place once ffmpeg is done reading, instead.
+		remuxTempPath := strings.TrimSuffix(finalOutputPath, originalExt) + ".tnttmp" + originalExt
+		remuxArgs := []string{"-i", outputPath, "-i", inputPath, "-map", "0:a", "-map", "1:v", "-c", "copy", "-y", remuxTempPath}
+		p.logQuiet(fmt.Sprintf("Remux command: ffmpeg %s", strings.Join(remuxArgs, " ")))
+		remuxOutput, remuxErr := ffmpeg.RunCmd(ffmpeg.Command(remuxArgs...))
+		p.logQuiet(fmt.Sprintf("FFmpeg remux output: %s", string(remuxOutput)))
+		if remuxErr != nil {
+			p.log(fmt.Sprintf("  REMUX FAILED: %s - %v", filepath.Base(inputPath), remuxErr))
+			os.Remove(remuxTempPath)
+			return false
+		}
+		if err := os.Rename(remuxTempPath, finalOutputPath); err != nil {
+			p.log(fmt.Sprintf("  REMUX FAILED: %s - could not finalize output: %v", filepath.Base(inputPath), err))
+			os.Remove(remuxTempPath)
+			return false
+		}
+	}
+
+	p.log(fmt.Sprintf("  OK: %s -> %s", filepath.Base(inputPath), filepath.Base(finalOutputPath)))
 	return true
 }
 
@@ -917,7 +965,7 @@ func (p *CLIProcessor) processFile(inputPath string) bool {
 // ============================================================
 
 func (p *CLIProcessor) analyzeDynamics(inputPath string) *DynamicsAnalysis {
-	cmd := ffmpeg.Command("-i", inputPath, "-af", "astats=metadata=1:length=0.05", "-f", "null", "-")
+	cmd := ffmpeg.Command("-i", inputPath, "-vn", "-af", "astats=metadata=1:length=0.05", "-f", "null", "-")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		p.logQuiet(fmt.Sprintf("astats failed: %v", err))
@@ -956,7 +1004,7 @@ func (p *CLIProcessor) analyzeFrequencyBands(inputPath string) map[string]*Frequ
 			defer wg.Done()
 			defer func() { <-sem }()
 			af := fmt.Sprintf("%s,astats", filter)
-			cmd := exec.Command(ffmpegPath, "-i", inputPath, "-af", af, "-f", "null", "-")
+			cmd := exec.Command(ffmpegPath, "-i", inputPath, "-vn", "-af", af, "-f", "null", "-")
 			output, err := cmd.CombinedOutput()
 			if err != nil {
 				out <- result{bandName, nil}
@@ -1210,7 +1258,7 @@ func (p *CLIProcessor) calculateAdaptiveCompression(analysis *DynamicsAnalysis, 
 func (p *CLIProcessor) measureLoudness(inputPath string, target string, targetTp string) map[string]string {
 	p.log(fmt.Sprintf("  Measuring loudness: %s", filepath.Base(inputPath)))
 
-	cmd := exec.Command(ffmpegPath, "-i", inputPath,
+	cmd := exec.Command(ffmpegPath, "-i", inputPath, "-vn",
 		"-af", fmt.Sprintf("loudnorm=linear=false:I=%s:TP=%s:LRA=5:print_format=json", target, targetTp),
 		"-f", "null", "-")
 
@@ -1223,7 +1271,7 @@ func (p *CLIProcessor) measureLoudness(inputPath string, target string, targetTp
 }
 
 func (p *CLIProcessor) measureLoudnessEbuR128(inputPath string) map[string]string {
-	cmd := exec.Command(ffmpegPath, "-i", inputPath,
+	cmd := exec.Command(ffmpegPath, "-i", inputPath, "-vn",
 		"-af", "ebur128=framelog=quiet:peak=true",
 		"-f", "null", "-")
 

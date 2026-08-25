@@ -12,6 +12,7 @@ func CalculateDynamicsScore(ffmpegPath, inputPath string) (*DynamicsScoreAnalysi
 	cmd := exec.Command(
 		ffmpegPath,
 		"-i", inputPath,
+		"-vn",
 		"-af", "astats",
 		"-f", "null",
 		"-",

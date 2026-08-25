@@ -47,6 +47,7 @@
  * @property {string}  EqTarget
  * @property {boolean} DynNorm
  * @property {boolean} PhaseCheck
+ * @property {string}  VideoAction
  */
 
 /** @typedef {Record<string, string>} MetadataTags */
@@ -60,6 +61,7 @@
  * @property {boolean} watching
  * @property {string} normalizationStandard
  * @property {string[]} [metadataFields]
+ * @property {string} videoAction
  */
 
 /** @type {AppState} */
@@ -69,7 +71,11 @@ const state = {
     processing: false,
     watching: false,
     normalizationStandard: 'ebu',
+    videoAction: 'drop',
 };
+
+// Mirrors isVideoFile()'s extension list in go/main.go.
+const VIDEO_EXTS = ['MP4', 'MOV', 'MKV', 'AVI', 'WEBM', 'M4V', 'MPG', 'MPEG', 'WMV', 'FLV', 'TS', '3GP'];
 
 // Fast-tab radios use short keys; map to backend names. The advanced
 // dropdown is populated from GetPlatformFormats() and stores backend
@@ -143,6 +149,8 @@ function ext(path) {
     const m = /\.([^./\\]+)$/.exec(String(path));
     return m ? m[1].toUpperCase() : '';
 }
+/** @param {string} path @returns {boolean} */
+function isVideoPath(path) { return VIDEO_EXTS.includes(ext(path)); }
 /** @param {string} s @returns {string} */
 function parseSR(s) { return (s || '').replace(/\D/g, ''); }
 /** @param {string} s @returns {string} */
@@ -167,7 +175,7 @@ function renderFileList(paths) {
         state.selectedIdx = null;
         const empty = document.createElement('div');
         empty.className = 'file-empty';
-        empty.textContent = 'Drop audio files here\nor use the buttons above';
+        empty.textContent = 'Drop audio or video files here\nor use the buttons above';
         list.appendChild(empty);
     } else {
         if (state.selectedIdx == null || state.selectedIdx >= state.files.length) {
@@ -231,7 +239,15 @@ function renderFileList(paths) {
     const clr = $button('btn-clear');
     if (proc) proc.disabled = !has || state.processing;
     if (clr) clr.disabled = !has;
+    $('video-action-row')?.classList.toggle('hidden', !state.files.some(isVideoPath));
     updateMetaTab();
+}
+
+/** @param {'drop'|'remux'} action */
+function setVideoAction(action) {
+    state.videoAction = action;
+    $('video-action-drop')?.classList.toggle('active', action === 'drop');
+    $('video-action-remux')?.classList.toggle('active', action === 'remux');
 }
 
 function updateMetaTab() {
@@ -298,6 +314,41 @@ async function setOutput() {
     } catch (err) {
         addLog('Output folder failed: ' + err, 'err');
     }
+}
+
+/* ── Output folder confirmation ── */
+async function confirmAndProcess() {
+    if (!state.files.length || state.processing) return;
+
+    let dir = '';
+    try {
+        dir = await window.go.main.AudioNormalizer.GetOutputFolder();
+    } catch (_) { /* ignore */ }
+
+    const body = $('confirm-output-body');
+    const goBtn = $button('confirm-output-go');
+    const chooseBtn = $button('confirm-output-choose');
+    if (!body || !goBtn || !chooseBtn) { handleProcess(); return; }
+
+    if (dir) {
+        body.textContent = `Output files to ${dir}?`;
+        goBtn.style.display = '';
+    } else {
+        body.textContent = 'No output folder has been set yet. Choose one to continue.';
+        goBtn.style.display = 'none';
+    }
+
+    goBtn.onclick = () => { closeDialog('confirm-output-dialog'); handleProcess(); };
+    chooseBtn.onclick = async () => {
+        await setOutput();
+        const newDir = await window.go.main.AudioNormalizer.GetOutputFolder();
+        if (newDir) {
+            closeDialog('confirm-output-dialog');
+            handleProcess();
+        }
+    };
+
+    openDialog('confirm-output-dialog');
 }
 
 async function handleProcess() {
@@ -373,6 +424,7 @@ function buildConfig() {
             NoTranscode: false,
             OriginIsAAC: false,
             DataCompLevel: 0,
+            VideoAction: state.videoAction,
         };
         switch (preset) {
             case 'aac':
@@ -421,6 +473,7 @@ function buildConfig() {
         NoTranscode: noTr ? noTr.checked : false,
         OriginIsAAC: false,
         DataCompLevel: parseInt(cl ? cl.value : '0', 10),
+        VideoAction: state.videoAction,
     };
 }
 
@@ -736,7 +789,12 @@ function bindRealHandlers() {
             const t = /** @type {HTMLInputElement} */ (e.target);
             try {
                 if (t.checked) {
-                    await window.go.main.AudioNormalizer.StartWatching();
+                    const started = await window.go.main.AudioNormalizer.StartWatching();
+                    if (!started) {
+                        t.checked = false;
+                        addLog('Watch mode failed to start: no output folder is set', 'err');
+                        return;
+                    }
                     state.watching = true;
                     const warn = $('watcher-warn');
                     if (warn) warn.textContent = 'WATCHING';

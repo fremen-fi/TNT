@@ -23,11 +23,15 @@ func (n *AudioNormalizer) GetFiles() []string {
 
 func (n *AudioNormalizer) SelectFiles() []string {
 	paths, err := wailsruntime.OpenMultipleFilesDialog(n.ctx, wailsruntime.OpenDialogOptions{
-		Title: "Select Audio Files",
+		Title: "Select Audio or Video Files",
 		Filters: []wailsruntime.FileFilter{
 			{
 				DisplayName: "Audio Files",
 				Pattern:     "*.mp3;*.wav;*.flac;*.m4a;*.aac;*.ogg;*.opus;*.aiff;*.aif;*.ape",
+			},
+			{
+				DisplayName: "Video Files",
+				Pattern:     "*.mp4;*.mov;*.mkv;*.avi;*.webm;*.m4v;*.mpg;*.mpeg;*.wmv;*.flv;*.ts;*.3gp",
 			},
 		},
 	})
@@ -64,7 +68,7 @@ func (n *AudioNormalizer) SelectFolder() []string {
 		if info.IsDir() {
 			return nil
 		}
-		if isAudioFile(path) {
+		if isMediaFile(path) {
 			n.addFile(path)
 		}
 		return nil
@@ -116,7 +120,7 @@ func (n *AudioNormalizer) ClearFiles() []string {
 
 func (n *AudioNormalizer) AddFiles(paths []string) []string {
 	for _, p := range paths {
-		if isAudioFile(p) {
+		if isMediaFile(p) {
 			n.addFile(p)
 		}
 	}
@@ -145,6 +149,7 @@ func (n *AudioNormalizer) applyConfig(cfg ProcessConfig) {
 	n.bypassProc = cfg.BypassProc
 	n.dynNorm = cfg.DynNorm
 	n.phaseCheck = cfg.PhaseCheck
+	n.videoAction = cfg.VideoAction
 }
 
 func (n *AudioNormalizer) Process(cfg ProcessConfig) {
@@ -159,8 +164,8 @@ func (n *AudioNormalizer) PreviewSize(cfg ProcessConfig) {
 
 // ----- Watch mode -----
 
-func (n *AudioNormalizer) StartWatching() {
-	n.startWatching()
+func (n *AudioNormalizer) StartWatching() bool {
+	return n.startWatching()
 }
 
 func (n *AudioNormalizer) StopWatching() {

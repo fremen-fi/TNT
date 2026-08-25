@@ -70,6 +70,7 @@ func AnalyzeFrequencyResponseBands(ffmpegPath, inputPath string) ([]FrequencyBan
 			cmd := exec.Command(
 				ffmpegPath,
 				"-i", inputPath,
+				"-vn",
 				"-af", filterChain,
 				"-f", "null",
 				"-",

@@ -29,7 +29,7 @@ func PhaseCheck(ffmpegPath, inputPath string) (inverted bool, offset float64, er
 }
 
 func runPhaseCheck(ffmpegPath, inputPath string) (string, error) {
-	cmd := exec.Command(ffmpegPath, "-i", inputPath, "-t", "30", "-af", "astats", "-f", "null", "-")
+	cmd := exec.Command(ffmpegPath, "-i", inputPath, "-vn", "-t", "30", "-af", "astats", "-f", "null", "-")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("ffmpeg astats failed: %w", err)

@@ -38,6 +38,7 @@ type AudioNormalizer struct {
 	phaseCheck            bool
 	simplePreset          string
 	multibandFilter       string
+	videoAction           string
 
 	watching     bool
 	watcherStop  chan bool
