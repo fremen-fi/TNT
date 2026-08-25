@@ -83,7 +83,8 @@ export namespace main {
 	    EqTarget: string;
 	    DynNorm: boolean;
 	    PhaseCheck: boolean;
-	
+	    VideoAction: string;
+
 	    static createFrom(source: any = {}) {
 	        return new ProcessConfig(source);
 	    }
@@ -108,6 +109,7 @@ export namespace main {
 	        this.EqTarget = source["EqTarget"];
 	        this.DynNorm = source["DynNorm"];
 	        this.PhaseCheck = source["PhaseCheck"];
+	        this.VideoAction = source["VideoAction"];
 	    }
 	}
 	
