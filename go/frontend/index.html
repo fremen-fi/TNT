@@ -307,6 +307,12 @@
                     <input type="checkbox" id="prefs-phase">
                     <div class="check-text"><span class="check-label">Phase check</span></div>
                 </label>
+                <h3>Video remux container check</h3>
+                <p>When "Keep video" is on, blocks combinations ffmpeg is likely to reject — e.g. PCM audio muxed into an MP4. Enable this to mux any format into any container anyway.</p>
+                <label class="check-row">
+                    <input type="checkbox" id="prefs-allow-illegal-remux">
+                    <div class="check-text"><span class="check-label">Allow any format into any container</span></div>
+                </label>
             </div>
             <div class="dialog-pane" id="prefs-watch">
                 <p>Watch mode automatically processes files added to the input folder.</p>

@@ -39,6 +39,7 @@ type AudioNormalizer struct {
 	simplePreset          string
 	multibandFilter       string
 	videoAction           string
+	allowIllegalRemux     bool
 
 	watching     bool
 	watcherStop  chan bool

@@ -45,6 +45,10 @@ type CLIConfig struct {
 	PhaseCheck   bool
 	Workers      int
 	VideoAction  string // "drop" or "remux"
+	// AllowIllegalRemux skips the container-compatibility check when
+	// VideoAction is "remux", letting ffmpeg attempt any format/container
+	// combination even ones it's likely to reject (e.g. FLAC into .m4v).
+	AllowIllegalRemux bool
 }
 
 // CLIProcessor handles CLI-mode processing without any GUI dependencies
@@ -113,6 +117,7 @@ func parseCLIFlags() (*CLIConfig, bool) {
 	phaseCheck := fs.Int("phase-check", 0, "Phase check before processing: 1=on, 0=off")
 	workers := fs.Int("workers", 0, "Number of worker threads (0=auto: CPU cores - 1)")
 	videoAction := fs.String("video-action", "drop", "Video input handling: drop (audio only) or remux (keep video, replace audio)")
+	allowIllegalRemux := fs.Int("allow-illegal-remux", 0, "Skip the remux container-compatibility check and mux any format into any container: 1=on, 0=off")
 
 	// Shorthands
 	// EBU R128
@@ -208,6 +213,7 @@ func parseCLIFlags() (*CLIConfig, bool) {
 		fmt.Fprintf(os.Stderr, "Unknown -video-action: %s (must be drop or remux)\n", *videoAction)
 		os.Exit(1)
 	}
+	cfg.AllowIllegalRemux = *allowIllegalRemux == 1
 
 	// Map bit depth for display
 	switch cfg.BitDepth {
@@ -538,6 +544,10 @@ func (p *CLIProcessor) processFile(inputPath string) bool {
 	// remux it with the source video below.
 	isVideo := isVideoFile(inputPath)
 	videoRemux := isVideo && cfg.VideoAction == "remux"
+	if videoRemux && !cfg.AllowIllegalRemux && !remuxCompatible(actualCodec, originalExt) {
+		p.log(fmt.Sprintf("  FAILED: %s - %s audio can't be muxed into a %s container; pick a different format, use \"drop\" video action, or pass -allow-illegal-remux 1", filepath.Base(inputPath), cfg.Format, originalExt))
+		return false
+	}
 	var finalOutputPath string
 	if videoRemux {
 		finalOutputPath = strings.TrimSuffix(outputPath, filepath.Ext(outputPath)) + originalExt

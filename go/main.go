@@ -113,6 +113,10 @@ type ProcessConfig struct {
 	DynNorm           bool
 	PhaseCheck        bool
 	VideoAction       string
+	// AllowIllegalRemux skips the container-compatibility check when
+	// VideoAction is "remux", letting ffmpeg attempt any format/container
+	// combination even ones it's likely to reject (e.g. FLAC into .m4v).
+	AllowIllegalRemux bool
 }
 
 // DynamicsAnalysis and FrequencyBandAnalysis are aliases for the public audio
@@ -989,6 +993,7 @@ type Preferences struct {
 	SelectedTab           string   `json:"selected_tab"`
 	PhaseCheck            bool     `json:"phase_check_auto"`
 	TelemetryEnabled      bool     `json:"telemetry_enabled"`
+	AllowIllegalRemux     bool     `json:"allow_illegal_remux"`
 }
 
 func (n *AudioNormalizer) loadPreferences() {
@@ -1021,6 +1026,7 @@ func (n *AudioNormalizer) loadPreferences() {
 	n.dynNorm = prefs.DynNorm
 	n.phaseCheck = prefs.PhaseCheck
 	n.telemetryEnabled = prefs.TelemetryEnabled
+	n.allowIllegalRemux = prefs.AllowIllegalRemux
 }
 
 func (n *AudioNormalizer) savePreferences() {
@@ -1043,6 +1049,7 @@ func (n *AudioNormalizer) savePreferences() {
 		DynNorm:               n.dynNorm,
 		PhaseCheck:            n.phaseCheck,
 		TelemetryEnabled:      n.telemetryEnabled,
+		AllowIllegalRemux:     n.allowIllegalRemux,
 	}
 
 	configDir, _ := os.UserConfigDir()
@@ -1257,6 +1264,7 @@ func (n *AudioNormalizer) getProcessConfig() ProcessConfig {
 		BitDepth:          n.bitDepth,
 		Bitrate:           n.bitrate,
 		VideoAction:       n.videoAction,
+		AllowIllegalRemux: n.allowIllegalRemux,
 	}
 
 	return config
@@ -1432,6 +1440,11 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 	// temp file), then remuxed with the source video into finalOutputPath.
 	isVideo := isVideoFile(inputPath)
 	videoRemux := isVideo && cfg.VideoAction == "remux"
+	if videoRemux && !cfg.AllowIllegalRemux && !remuxCompatible(actualCodec, originalExt) {
+		n.appLog.Write(fmt.Sprintf("✗ Failed: %s - %s audio can't be muxed into a %s container; pick a different format, use \"drop\" video action, or enable \"Allow any format into any container\" in Preferences", filepath.Base(inputPath), cfg.Format, originalExt))
+		n.logFile.Write(fmt.Sprintf("Remux precheck failed %s - incompatible format %s for container %s", inputPath, cfg.Format, originalExt))
+		return false
+	}
 	var finalOutputPath string
 	if videoRemux {
 		finalOutputPath = strings.TrimSuffix(outputPath, filepath.Ext(outputPath)) + originalExt

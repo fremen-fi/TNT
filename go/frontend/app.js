@@ -25,6 +25,7 @@
  * @property {string}  selected_tab
  * @property {boolean} phase_check_auto
  * @property {boolean} telemetry_enabled
+ * @property {boolean} allow_illegal_remux
  */
 
 /**
@@ -48,6 +49,7 @@
  * @property {boolean} DynNorm
  * @property {boolean} PhaseCheck
  * @property {string}  VideoAction
+ * @property {boolean} AllowIllegalRemux
  */
 
 /** @typedef {Record<string, string>} MetadataTags */
@@ -386,6 +388,12 @@ function buildConfig() {
     const dn = $input('proc-dn');
     const byp = $input('proc-bypass');
     const phs = $input('prefs-phase');
+    const ar = $input('prefs-allow-illegal-remux');
+    // Not a processing-stage control like the rest of `proc` — it's a
+    // remux safety override that applies the same way in Fast and
+    // Advanced mode, so it's read once here and included in both cfg
+    // branches below rather than zeroed out for Fast.
+    const allowIllegalRemux = ar ? ar.checked : false;
 
     const proc = {
         DynamicsPreset: dyn ? dyn.value : 'Off',
@@ -425,6 +433,7 @@ function buildConfig() {
             OriginIsAAC: false,
             DataCompLevel: 0,
             VideoAction: state.videoAction,
+            AllowIllegalRemux: allowIllegalRemux,
         };
         switch (preset) {
             case 'aac':
@@ -474,6 +483,7 @@ function buildConfig() {
         OriginIsAAC: false,
         DataCompLevel: parseInt(cl ? cl.value : '0', 10),
         VideoAction: state.videoAction,
+        AllowIllegalRemux: allowIllegalRemux,
     };
 }
 
@@ -616,6 +626,7 @@ function applyPrefsToUI(prefs) {
     if (typeof prefs.dyn_norm_enabled === 'boolean') { const dn = $input('proc-dn'); if (dn) dn.checked = prefs.dyn_norm_enabled; }
     if (typeof prefs.phase_check_auto === 'boolean') { const ph = $input('prefs-phase'); if (ph) ph.checked = prefs.phase_check_auto; }
     if (typeof prefs.telemetry_enabled === 'boolean') { const t = $input('prefs-telemetry-enabled'); if (t) t.checked = prefs.telemetry_enabled; }
+    if (typeof prefs.allow_illegal_remux === 'boolean') { const ar = $input('prefs-allow-illegal-remux'); if (ar) ar.checked = prefs.allow_illegal_remux; }
     if (prefs.last_output_dir) {
         const out = $('output-path');
         if (out) {
@@ -666,6 +677,7 @@ function gatherPrefs() {
     const advTp = $input('adv-tp');
     const prefsLufs = $input('prefs-lufs');
     const prefsTp = $input('prefs-tp');
+    const ar = $input('prefs-allow-illegal-remux');
 
     return {
         advanced_mode: tab === 'advanced' || tab === 'processing',
@@ -687,6 +699,7 @@ function gatherPrefs() {
         selected_tab: tab,
         phase_check_auto: ph ? ph.checked : false,
         telemetry_enabled: (function() { const t = $input('prefs-telemetry-enabled'); return t ? t.checked : false; })(),
+        allow_illegal_remux: ar ? ar.checked : false,
     };
 }
 

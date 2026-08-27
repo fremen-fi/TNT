@@ -150,6 +150,7 @@ func (n *AudioNormalizer) applyConfig(cfg ProcessConfig) {
 	n.dynNorm = cfg.DynNorm
 	n.phaseCheck = cfg.PhaseCheck
 	n.videoAction = cfg.VideoAction
+	n.allowIllegalRemux = cfg.AllowIllegalRemux
 }
 
 func (n *AudioNormalizer) Process(cfg ProcessConfig) {
@@ -214,6 +215,7 @@ func (n *AudioNormalizer) LoadPreferences() Preferences {
 		DynNorm:               n.dynNorm,
 		PhaseCheck:            n.phaseCheck,
 		TelemetryEnabled:      n.telemetryEnabled,
+		AllowIllegalRemux:     n.allowIllegalRemux,
 	}
 }
 
@@ -236,6 +238,7 @@ func (n *AudioNormalizer) SavePreferences(prefs Preferences) {
 	n.dynNorm = prefs.DynNorm
 	n.phaseCheck = prefs.PhaseCheck
 	n.telemetryEnabled = prefs.TelemetryEnabled
+	n.allowIllegalRemux = prefs.AllowIllegalRemux
 	if n.telemetry != nil {
 		n.telemetry.SetEnabled(prefs.TelemetryEnabled)
 	}
