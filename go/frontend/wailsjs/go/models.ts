@@ -36,7 +36,8 @@ export namespace main {
 	    selected_tab: string;
 	    phase_check_auto: boolean;
 	    telemetry_enabled: boolean;
-	
+	    allow_illegal_remux: boolean;
+
 	    static createFrom(source: any = {}) {
 	        return new Preferences(source);
 	    }
@@ -62,6 +63,7 @@ export namespace main {
 	        this.selected_tab = source["selected_tab"];
 	        this.phase_check_auto = source["phase_check_auto"];
 	        this.telemetry_enabled = source["telemetry_enabled"];
+	        this.allow_illegal_remux = source["allow_illegal_remux"];
 	    }
 	}
 	export class ProcessConfig {
@@ -84,6 +86,7 @@ export namespace main {
 	    DynNorm: boolean;
 	    PhaseCheck: boolean;
 	    VideoAction: string;
+	    AllowIllegalRemux: boolean;
 
 	    static createFrom(source: any = {}) {
 	        return new ProcessConfig(source);
@@ -110,9 +113,10 @@ export namespace main {
 	        this.DynNorm = source["DynNorm"];
 	        this.PhaseCheck = source["PhaseCheck"];
 	        this.VideoAction = source["VideoAction"];
+	        this.AllowIllegalRemux = source["AllowIllegalRemux"];
 	    }
 	}
-	
+
 	export class VersionInfo {
 	    platform: string;
 	    version: string;
