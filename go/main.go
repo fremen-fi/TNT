@@ -1882,13 +1882,14 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 	// Native loudness chain — rewrites workingPath IN PLACE as 32-bit float
 	// WAV. It runs even when cfg.BypassProc is set, on purpose: "Bypass all
 	// processing" is scoped to the EQ/Dynamics stages above (GUI: "Disables
-	// Dynamics and EQ regardless of selection above"); normalization is the
-	// app's core function, not "processing". It must NOT run in no-transcode
-	// (tag-only) mode: the resample stage was skipped there, so workingPath is
-	// still the user's ORIGINAL input file — these calls would destroy it (or
-	// fail outright on non-WAV input). Tag-only gets its ReplayGain figures
-	// from the read-only ebur128 measurement above and never alters audio.
-	if !n.noTranscode {
+	// Dynamics and EQ regardless of selection above"); normalization is its
+	// own toggle (cfg.UseLoudnorm, GUI: "Normalize"), gated separately. It
+	// must NOT run in no-transcode (tag-only) mode: the resample stage was
+	// skipped there, so workingPath is still the user's ORIGINAL input file —
+	// these calls would destroy it (or fail outright on non-WAV input).
+	// Tag-only gets its ReplayGain figures from the read-only ebur128
+	// measurement above and never alters audio.
+	if cfg.UseLoudnorm && !n.noTranscode {
 		// LRA reduction toward the target range (self-gates if already under target).
 		const targetLRA = 7.0
 		n.reduceLRA(workingPath, targetLRA, 4)
