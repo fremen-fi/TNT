@@ -62,7 +62,7 @@ export function SetOutputFolder():Promise<string>;
 
 export function SetTelemetryEnabled(arg1:boolean):Promise<void>;
 
-export function StartWatching():Promise<void>;
+export function StartWatching():Promise<boolean>;
 
 export function StopWatching():Promise<void>;
 

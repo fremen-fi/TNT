@@ -13,6 +13,9 @@ Normalization alters audio data. Tagging writes metadata only. Choose one.
 
 See [advanced mode in manuals](https://www.fremen.fi/tnt-manual/advanced-mode) for more information.
 
+### Video input
+TNT also accepts video files (MP4, MOV, MKV, and others). When a video file is queued, choose whether to drop the video and process the audio only, or keep the video and remux the processed audio back into the original container. In CLI mode, use the `-video-action` flag.
+
 ### Encoders
 TNT ships with five encoders (six for macOS). The encoders are:
 
@@ -28,6 +31,11 @@ For more information about the encoders, see the [manual entry](https://www.frem
 
 ## Processing
 Configure dynamics processing and EQ to shape your audio for different broadcast scenarios. TNT uses a [proprietary equation](https://www.fremen.fi/guru/dynamic-score) to find the best processing values for each audio file. For more information, see [processing in the manual](https://www.fremen.fi/tnt-manual/processing).
+
+### Dynamics processing and FFmpeg
+Loudness and dynamics (compression, upward compression, lookahead/conformity limiting, LRA reduction) run in an **in-house, time-domain DSP engine written in Go** — they are not FFmpeg filters. FFmpeg is used only to decode the source to raw PCM, encode the processed result, resample, and apply Shibata dithering on 16-bit output. Keeping the DSP native lets the encoder pre-limiter be calibrated per encoder (e.g. Apple AAC's overshoot at a given bitrate) and keeps processing behavior fully within TNT's control rather than an external filter graph's.
+
+An optional FFmpeg `dynaudnorm` pass (`-dyn-norm`) is still available alongside the native engine for cases that want frame-based dynamic normalization instead.
 
 ## CLI Mode
 
@@ -85,6 +93,7 @@ tnt -i ./inbox -o ./out -format opus -br 128 -speech 1 -lufs 1 -lufs-target-i -1
 | `-comp` | Data compression level `0`–`10` (FLAC/Opus only) | `0` |
 | `-phase-check` | Check for phase inversion before processing: `1`=on, `0`=off | `0` |
 | `-workers` | Number of parallel worker threads (`0`=auto: CPU cores − 1) | `0` |
+| `-video-action` | Video input handling: `drop` (audio only) or `remux` (keep video, replace audio) | `drop` |
 | `-ebu` | Use EBU R128 -defined values for loudness (-23 LUFS-I, -1 dBTP) | `0`/false |
 | `-h`/`--help` | Print help and defaults | |
 | `-v`/`--version` | Print version | |
@@ -100,6 +109,10 @@ Range is from 0 (no data compression) to 10 (as much data compression as the enc
 - When `-rg 1` is set, files are measured and tagged with `REPLAYGAIN_TRACK_GAIN`, `REPLAYGAIN_TRACK_PEAK`, and `REPLAYGAIN_REFERENCE_LOUDNESS` but audio data is not normalized.
 - Logs are written to `~/.config/TNT/tnt-cli.log`.
 - Running the binary without any flags launches the GUI as usual.
+
+## Streaming module
+
+[`normalizer/`](normalizer/) is a self-contained, stdlib-only Go module holding a **streaming** port of the loudness/dynamics engine — `io.Reader → io.Writer`, with bounded, O(lookahead) memory instead of holding the whole file resident. This is what lets TNT's processing run on **low-memory systems**, such as constrained server/cloud instances, where loading an entire multi-GiB PCM buffer into RAM isn't viable. It mirrors the math in `go/audio` (used by the desktop app, which needs random access for its editor/preview) rather than depending on it directly — see [`normalizer/README.md`](normalizer/README.md) for the two-implementations tradeoff and how they're kept in sync.
 
 ## License
 [LICENSE.md](https://github.com/fremen-fi/TNT/blob/main/LICENSE.md), or view the most up-to-date [General License](https://www.fremen.fi/terms-of-use) on our website.

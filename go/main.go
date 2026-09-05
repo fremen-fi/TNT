@@ -112,6 +112,11 @@ type ProcessConfig struct {
 	EqTarget          string
 	DynNorm           bool
 	PhaseCheck        bool
+	VideoAction       string
+	// AllowIllegalRemux skips the container-compatibility check when
+	// VideoAction is "remux", letting ffmpeg attempt any format/container
+	// combination even ones it's likely to reject (e.g. FLAC into .m4v).
+	AllowIllegalRemux bool
 }
 
 // DynamicsAnalysis and FrequencyBandAnalysis are aliases for the public audio
@@ -329,6 +334,7 @@ func (n *AudioNormalizer) sendLogReport() {
 func (n *AudioNormalizer) analyzeDynamics(inputPath string) *DynamicsAnalysis {
 	cmd := ffmpeg.Command(
 		"-i", inputPath,
+		"-vn",
 		"-af", "astats=metadata=1:length=0.05",
 		"-f", "null",
 		"-",
@@ -380,6 +386,7 @@ func (n *AudioNormalizer) analyzeFrequencyBands(inputPath string) map[string]*Fr
 			cmd := exec.Command(
 				ffmpegPath,
 				"-i", inputPath,
+				"-vn",
 				"-af", fmt.Sprintf("%s,astats", filter),
 				"-f", "null",
 				"-",
@@ -869,7 +876,7 @@ func calculateMakeupGain(analysis *DynamicsAnalysis, threshold, ratio float64) f
 }
 
 func (n *AudioNormalizer) getDuration(inputPath string) (float64, error) {
-	cmd := ffmpeg.Command("-i", inputPath, "-f", "null", "-")
+	cmd := ffmpeg.Command("-i", inputPath, "-vn", "-f", "null", "-")
 
 	output, _ := cmd.CombinedOutput()
 	outputStr := string(output)
@@ -986,6 +993,7 @@ type Preferences struct {
 	SelectedTab           string   `json:"selected_tab"`
 	PhaseCheck            bool     `json:"phase_check_auto"`
 	TelemetryEnabled      bool     `json:"telemetry_enabled"`
+	AllowIllegalRemux     bool     `json:"allow_illegal_remux"`
 }
 
 func (n *AudioNormalizer) loadPreferences() {
@@ -1018,6 +1026,7 @@ func (n *AudioNormalizer) loadPreferences() {
 	n.dynNorm = prefs.DynNorm
 	n.phaseCheck = prefs.PhaseCheck
 	n.telemetryEnabled = prefs.TelemetryEnabled
+	n.allowIllegalRemux = prefs.AllowIllegalRemux
 }
 
 func (n *AudioNormalizer) savePreferences() {
@@ -1040,6 +1049,7 @@ func (n *AudioNormalizer) savePreferences() {
 		DynNorm:               n.dynNorm,
 		PhaseCheck:            n.phaseCheck,
 		TelemetryEnabled:      n.telemetryEnabled,
+		AllowIllegalRemux:     n.allowIllegalRemux,
 	}
 
 	configDir, _ := os.UserConfigDir()
@@ -1059,11 +1069,17 @@ func (n *AudioNormalizer) resetPreferences() {
 	n.appLog.Write("Preferences have been reset. Restart TNT to apply defaults.")
 }
 
-func (n *AudioNormalizer) startWatching() {
+func (n *AudioNormalizer) startWatching() bool {
+	if n.outputDir == "" {
+		n.appLog.Write("✗ No output folder is set — pick one before starting watch mode.")
+		n.logFile.Write("startWatching() aborted: outputDir is empty")
+		return false
+	}
+
 	n.watcherMutex.Lock()
 	if n.watching {
 		n.watcherMutex.Unlock()
-		return
+		return true
 	}
 	n.watching = true
 	n.watcherStop = make(chan bool)
@@ -1074,6 +1090,7 @@ func (n *AudioNormalizer) startWatching() {
 	n.logFile.Write("started watching")
 	go n.watchDirectory()
 	go n.processWatchQueue()
+	return true
 }
 
 func (n *AudioNormalizer) stopWatching() {
@@ -1110,7 +1127,7 @@ func (n *AudioNormalizer) watchDirectory() {
 	for {
 		select {
 		case event := <-watcher.Events:
-			if event.Op&fsnotify.Create == fsnotify.Create && isAudioFile(event.Name) {
+			if event.Op&fsnotify.Create == fsnotify.Create && isMediaFile(event.Name) {
 				select {
 				case n.jobQueue <- event.Name:
 				case <-n.watcherStop:
@@ -1246,6 +1263,8 @@ func (n *AudioNormalizer) getProcessConfig() ProcessConfig {
 		SampleRate:        n.sampleRate,
 		BitDepth:          n.bitDepth,
 		Bitrate:           n.bitrate,
+		VideoAction:       n.videoAction,
+		AllowIllegalRemux: n.allowIllegalRemux,
 	}
 
 	return config
@@ -1253,6 +1272,13 @@ func (n *AudioNormalizer) getProcessConfig() ProcessConfig {
 
 func (n *AudioNormalizer) process() {
 	n.emitProgress(0)
+
+	if n.outputDir == "" {
+		n.appLog.Write("✗ No output folder is set — pick one before processing.")
+		n.logFile.Write("process() aborted: outputDir is empty")
+		n.emitDone()
+		return
+	}
 
 	config := n.getProcessConfig()
 
@@ -1408,7 +1434,28 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 		outputPath = filepath.Join(outputDir, fmt.Sprintf("%s%s", baseName, ext))
 	}
 
-	n.appLog.Write(fmt.Sprintf("Processing: %s, outputting to %s", filepath.Base(inputPath), outputPath))
+	// Video input with remux requested: the video track is kept, so the real
+	// deliverable takes the original container extension, not the audio
+	// codec's. The audio codec still gets encoded to outputPath first (now a
+	// temp file), then remuxed with the source video into finalOutputPath.
+	isVideo := isVideoFile(inputPath)
+	videoRemux := isVideo && cfg.VideoAction == "remux"
+	if videoRemux && !cfg.AllowIllegalRemux && !remuxCompatible(actualCodec, originalExt) {
+		n.appLog.Write(fmt.Sprintf("✗ Failed: %s - %s audio can't be muxed into a %s container; pick a different format, use \"drop\" video action, or enable \"Allow any format into any container\" in Preferences", filepath.Base(inputPath), cfg.Format, originalExt))
+		n.logFile.Write(fmt.Sprintf("Remux precheck failed %s - incompatible format %s for container %s", inputPath, cfg.Format, originalExt))
+		return false
+	}
+	var finalOutputPath string
+	if videoRemux {
+		finalOutputPath = strings.TrimSuffix(outputPath, filepath.Ext(outputPath)) + originalExt
+		remuxAudioTempPath := filepath.Join(os.TempDir(), fmt.Sprintf("tnt_remux_audio_%d%s", time.Now().UnixNano(), ext))
+		tempFiles = append(tempFiles, remuxAudioTempPath)
+		outputPath = remuxAudioTempPath
+	} else {
+		finalOutputPath = outputPath
+	}
+
+	n.appLog.Write(fmt.Sprintf("Processing: %s, outputting to %s", filepath.Base(inputPath), finalOutputPath))
 
 	var measured map[string]string
 
@@ -1713,7 +1760,7 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 		var attenuatedPath string = workingPath
 		if cfg.DynamicsPreset == "Broadcast" {
 			// Quick peak check
-			cmd := ffmpeg.Command("-i", workingPath, "-af", "astats", "-f", "null", "-")
+			cmd := ffmpeg.Command("-i", workingPath, "-vn", "-af", "astats", "-f", "null", "-")
 
 			output, _ := cmd.CombinedOutput()
 
@@ -2050,6 +2097,31 @@ func (n *AudioNormalizer) processFile(inputPath string, cfg ProcessConfig) bool 
 		return false
 	}
 
+	if videoRemux {
+		// finalOutputPath can be identical to inputPath (output dir == source
+		// dir, no .normalized/.tagged suffix applied). Muxing straight into
+		// finalOutputPath would then truncate the file ffmpeg is still
+		// reading as input 1. Mux to a same-directory temp file and rename
+		// it into place once ffmpeg is done reading, instead.
+		remuxTempPath := strings.TrimSuffix(finalOutputPath, originalExt) + ".tnttmp" + originalExt
+		remuxArgs := []string{"-i", outputPath, "-i", inputPath, "-map", "0:a", "-map", "1:v", "-c", "copy", "-y", remuxTempPath}
+		n.logFile.Write(fmt.Sprintf("Remux command: ffmpeg %s", strings.Join(remuxArgs, " ")))
+		remuxOutput, remuxErr := ffmpeg.RunCmd(ffmpeg.Command(remuxArgs...))
+		n.logFile.Write(fmt.Sprintf("FFmpeg remux output: %s", string(remuxOutput)))
+		if remuxErr != nil {
+			n.appLog.Write(fmt.Sprintf("✗ Remux failed: %s - %v", filepath.Base(inputPath), remuxErr))
+			n.logFile.Write(fmt.Sprintf("Remux failed %s - %v", filepath.Base(inputPath), remuxErr))
+			os.Remove(remuxTempPath)
+			return false
+		}
+		if err := os.Rename(remuxTempPath, finalOutputPath); err != nil {
+			n.appLog.Write(fmt.Sprintf("✗ Remux failed: %s - could not finalize output: %v", filepath.Base(inputPath), err))
+			n.logFile.Write(fmt.Sprintf("Remux rename failed %s - %v", filepath.Base(inputPath), err))
+			os.Remove(remuxTempPath)
+			return false
+		}
+	}
+
 	if cfg.BitDepth != "" {
 		n.logFile.Write(fmt.Sprintf("cfg.Bitdepth= %s", cfg.BitDepth))
 	}
@@ -2131,6 +2203,7 @@ func (n *AudioNormalizer) measureLoudnessEbuR128(inputPath string) map[string]st
 	cmd := exec.Command(
 		ffmpegPath,
 		"-i", inputPath,
+		"-vn",
 		"-af", "ebur128=framelog=quiet:peak=true",
 		"-f", "null",
 		"-",
@@ -2157,6 +2230,17 @@ func isAudioFile(path string) bool {
 	}
 
 	return false
+}
+
+func isVideoFile(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	videoExts := []string{".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".mpg", ".mpeg", ".wmv", ".flv", ".ts", ".3gp"}
+
+	return slices.Contains(videoExts, ext)
+}
+
+func isMediaFile(path string) bool {
+	return isAudioFile(path) || isVideoFile(path)
 }
 
 func cleanupTempFiles(files []string) {

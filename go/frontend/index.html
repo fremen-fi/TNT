@@ -36,17 +36,24 @@
                     <button class="btn btn-sm" onclick="addMockFile('folder')">+ Folder</button>
                 </div>
                 <div class="file-list-wrap" id="file-list"></div>
+                <div class="video-action-row hidden" id="video-action-row">
+                    <span class="video-action-label">Video files:</span>
+                    <div class="video-action-toggle">
+                        <button id="video-action-drop" class="active" onclick="setVideoAction('drop')">Drop video</button>
+                        <button id="video-action-remux" onclick="setVideoAction('remux')">Keep video</button>
+                    </div>
+                </div>
                 <div class="left-footer">
                     <div class="output-row">
                         <span class="output-label">Output</span>
-                        <span class="output-path" id="output-path">~/Desktop/Exports</span>
+                        <span class="output-path" id="output-path">Not set</span>
                         <button class="btn btn-sm btn-fixed-sm" onclick="setOutput()">Set</button>
                     </div>
                     <div class="progress-track" id="progress-track">
                         <div class="progress-fill"></div>
                     </div>
                     <div class="action-row">
-                        <button class="btn btn-primary btn-process" id="btn-process" onclick="handleProcess()" disabled>Process</button>
+                        <button class="btn btn-primary btn-process" id="btn-process" onclick="confirmAndProcess()" disabled>Process</button>
                         <button class="btn btn-sm" id="btn-clear" onclick="clearFiles()" disabled>Clear</button>
                         <button class="btn btn-sm btn-fixed-sm" onclick="previewSize()">Size</button>
                     </div>
@@ -300,6 +307,12 @@
                     <input type="checkbox" id="prefs-phase">
                     <div class="check-text"><span class="check-label">Phase check</span></div>
                 </label>
+                <h3>Video remux container check</h3>
+                <p>When "Keep video" is on, blocks combinations ffmpeg is likely to reject — e.g. PCM audio muxed into an MP4. Enable this to mux any format into any container anyway.</p>
+                <label class="check-row">
+                    <input type="checkbox" id="prefs-allow-illegal-remux">
+                    <div class="check-text"><span class="check-label">Allow any format into any container</span></div>
+                </label>
             </div>
             <div class="dialog-pane" id="prefs-watch">
                 <p>Watch mode automatically processes files added to the input folder.</p>
@@ -374,6 +387,21 @@
             <div style="display:flex;gap:8px;justify-content:flex-end;">
                 <button class="btn" onclick="closeDialog('update-dialog')">Later</button>
                 <button class="btn btn-primary" id="update-dialog-download">Download</button>
+            </div>
+        </div>
+    </dialog>
+    <!-- ── Confirm output folder dialog ── -->
+    <dialog id="confirm-output-dialog" style="height:auto;min-height:0;">
+        <div class="dialog-header">
+            <h2>Confirm output folder</h2>
+            <button class="dialog-close" onclick="closeDialog('confirm-output-dialog')">&times;</button>
+        </div>
+        <div style="padding:18px 20px 20px;">
+            <p id="confirm-output-body" style="font-size:14px;color:var(--text-sec);line-height:1.6;margin:0 0 14px;"></p>
+            <div style="display:flex;gap:8px;justify-content:flex-end;">
+                <button class="btn" onclick="closeDialog('confirm-output-dialog')">Cancel</button>
+                <button class="btn" id="confirm-output-choose">Choose folder…</button>
+                <button class="btn btn-primary" id="confirm-output-go">Process here</button>
             </div>
         </div>
     </dialog>
