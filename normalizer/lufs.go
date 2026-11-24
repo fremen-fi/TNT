@@ -37,22 +37,13 @@ func MeasureLUFS(r io.Reader, sampleRate int, dataBytes int64) (LoudnessResult, 
 	step := sampleRate / 10         // 100 ms step
 	blockLen := 4 * sampleRate / 10 // 400 ms block = 4 steps
 
-	// Short-term block sizes for LRA.
-	stStep := sampleRate         // 1 s step
-	stBlockLen := 3 * sampleRate // 3 s block
-
 	// We accumulate a ring buffer of the last blockLen per-step mean-squares
 	// so we can form the 400 ms sliding window without re-reading samples.
 	stepEnergies := make([]float64, 0, 4096) // mean-square per 100 ms step
-	stStepEnergies := make([]float64, 0, 4096)
 
 	// Per-step accumulators (reset every `step` samples).
 	var stepSumSq float64
 	var stepSamples int
-
-	// Per-short-term-step (1 s) accumulators.
-	var stSumSq float64
-	var stSamples int
 
 	var samplePeak float64 // max |sample| (linear)
 
@@ -101,9 +92,6 @@ func MeasureLUFS(r io.Reader, sampleRate int, dataBytes int64) (LoudnessResult, 
 			ms := (kl*kl + kr*kr) * 0.5
 			stepSumSq += ms
 			stepSamples++
-
-			stSumSq += ms
-			stSamples++
 		}
 
 		// Emit a 100 ms block when full.
@@ -111,13 +99,6 @@ func MeasureLUFS(r io.Reader, sampleRate int, dataBytes int64) (LoudnessResult, 
 			stepEnergies = append(stepEnergies, stepSumSq/float64(stepSamples))
 			stepSumSq = 0
 			stepSamples = 0
-		}
-
-		// Emit a 1 s short-term block.
-		if stSamples >= stStep {
-			stStepEnergies = append(stStepEnergies, stSumSq/float64(stSamples))
-			stSumSq = 0
-			stSamples = 0
 		}
 
 		if err == io.EOF || err == io.ErrUnexpectedEOF {
@@ -132,12 +113,9 @@ func MeasureLUFS(r io.Reader, sampleRate int, dataBytes int64) (LoudnessResult, 
 	if stepSamples > 0 {
 		stepEnergies = append(stepEnergies, stepSumSq/float64(stepSamples))
 	}
-	if stSamples > 0 {
-		stStepEnergies = append(stStepEnergies, stSumSq/float64(stSamples))
-	}
 
 	intLUFS := integratedLoudness(stepEnergies, blockLen/step)
-	lra := loudnessRange(stStepEnergies, stBlockLen/stStep)
+	lra := loudnessRange(stepEnergies, stepsPerSTBlock)
 
 	var peakDB float64
 	if samplePeak > 0 {
@@ -208,18 +186,24 @@ func integratedLoudness(stepMSq []float64, stepsPerBlock int) float64 {
 	return -0.691 + 10*math.Log10(integratedMean)
 }
 
-// loudnessRange computes LRA from per-1s-step mean squares.
-// stepsPerSTBlock = 3 (3 s blocks with 1 s steps).
-func loudnessRange(stStepMSq []float64, stepsPerSTBlock int) float64 {
-	if len(stStepMSq) < stepsPerSTBlock {
+// stepsPerSTBlock is the number of 100 ms steps in one 3 s short-term block.
+// Blocks advance one step at a time, so short-term loudness is sampled at 10 Hz
+// as EBU Tech 3342 requires (at least 10 Hz).
+const stepsPerSTBlock = 30
+
+// loudnessRange computes LRA (EBU Tech 3342) from per-100 ms-step mean squares:
+// each short-term block is the mean of stepsPerSTBlock consecutive steps, and
+// the window slides by one step.
+func loudnessRange(stepMSq []float64, stepsPerSTBlock int) float64 {
+	if len(stepMSq) < stepsPerSTBlock {
 		return 0
 	}
 
-	stBlocks := make([]float64, 0, len(stStepMSq))
-	for i := 0; i+stepsPerSTBlock <= len(stStepMSq); i++ {
+	stBlocks := make([]float64, 0, len(stepMSq))
+	for i := 0; i+stepsPerSTBlock <= len(stepMSq); i++ {
 		var sum float64
 		for j := range stepsPerSTBlock {
-			sum += stStepMSq[i+j]
+			sum += stepMSq[i+j]
 		}
 		stBlocks = append(stBlocks, sum/float64(stepsPerSTBlock))
 	}

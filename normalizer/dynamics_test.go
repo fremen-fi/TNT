@@ -271,8 +271,12 @@ func convergeChain(t *testing.T, sr int, pcm []byte, targetLUFS, targetTP, targe
 // loudness range — downward compression alone buys only ~0.5-1 LU.
 func TestChainReducesLRA(t *testing.T) {
 	const sr = 44100
-	const seg = 3 * sr // 3 s segments
-	n := seg * 6       // alternating loud / quiet, 18 s
+	// Sections are 12 s, well over the 3 s short-term window, so each holds a
+	// steady short-term level (like the EBU Tech 3342 tone-step signals). With
+	// the 10 Hz hop, 3 s sections would mostly measure blocks straddling a level
+	// change, which blurs the loudness range.
+	const seg = 12 * sr
+	n := seg * 6 // alternating loud / quiet, 72 s
 	buf := make([]float32, n*2)
 	for i := 0; i < n; i++ {
 		amp := 0.3 // loud
