@@ -122,7 +122,7 @@ const (
 
 	// LRA short-term parameters (EBU Tech 3342).
 	lraBlockSizeSec = 3.0   // 3 s short-term window
-	lraHopSizeSec   = 0.75  // 750 ms hop → 75% overlap
+	lraHopSizeSec   = 0.1   // 100 ms hop (10 Hz) — EBU Tech 3342 requires ≥10 Hz short-term sampling
 	lraRelGate      = -20.0 // relative gate is −20 LU below the ungated mean
 )
 
@@ -359,7 +359,7 @@ func truePeakRange(samples []float64, start, end int) float64 {
 }
 
 // loudnessRange computes the Loudness Range (LRA) in LU per EBU Tech 3342:
-// 3 s short-term blocks at 75% overlap, K-weighted, absolute-gated at
+// 3 s short-term blocks at a 100 ms hop (10 Hz), K-weighted, absolute-gated at
 // −70 LUFS, relative-gated at −20 LU below the ungated mean, then
 // LRA = 95th percentile − 10th percentile of the surviving block loudnesses.
 func loudnessRange(left, right []float64, sampleRate float64) float64 {
@@ -376,11 +376,42 @@ func loudnessRange(left, right []float64, sampleRate float64) float64 {
 		return 0
 	}
 
+	// At a 10 Hz hop the blocks overlap ~97%, so summing squares per block from
+	// scratch would cost ~30 multiply-adds per sample. Instead, sum squares once
+	// per hop-sized chunk and build each block from its chunk sums. This needs the
+	// block to span a whole number of hops (true for 3 s / 0.1 s at any common
+	// rate); otherwise fall back to direct per-block computation.
+	var blockPower func(start int) float64
+	if blockSize%hopSize == 0 {
+		perBlock := blockSize / hopSize
+		nChunks := n / hopSize
+		chunkSum := make([]float64, nChunks) // Σ(L²+R²) per hop-sized chunk
+		for c := range nChunks {
+			var acc float64
+			for i := c * hopSize; i < (c+1)*hopSize; i++ {
+				acc += wL[i]*wL[i] + wR[i]*wR[i]
+			}
+			chunkSum[c] = acc
+		}
+		blockPower = func(start int) float64 {
+			var acc float64
+			for _, v := range chunkSum[start/hopSize : start/hopSize+perBlock] {
+				acc += v
+			}
+			// Sum of per-channel mean-squares, as in the direct form.
+			return acc / float64(blockSize)
+		}
+	} else {
+		blockPower = func(start int) float64 {
+			end := start + blockSize
+			return meanSquare(wL[start:end]) + meanSquare(wR[start:end])
+		}
+	}
+
 	var loudness []float64 // per-block LUFS that pass the absolute gate
 	var powers []float64   // matching summed mean-square powers
 	for start := 0; start+blockSize <= n; start += hopSize {
-		end := start + blockSize
-		p := meanSquare(wL[start:end]) + meanSquare(wR[start:end])
+		p := blockPower(start)
 		l := blockLUFS(p)
 		if l >= absGateLevel {
 			loudness = append(loudness, l)
