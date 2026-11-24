@@ -2,6 +2,7 @@ package audio
 
 import (
 	"math"
+	"sort"
 	"testing"
 )
 
@@ -205,4 +206,46 @@ func TestLRA_loudQuiet(t *testing.T) {
 		t.Errorf("loud/quiet LRA = %v LU, expected a wide range", lra)
 	}
 	t.Logf("loud(−14)/quiet(−35) sine → %.2f LU LRA", lra)
+}
+
+// TestLRA_shortTermRate guards EBU Tech 3342's requirement that short-term
+// loudness is sampled at ≥10 Hz.
+func TestLRA_shortTermRate(t *testing.T) {
+	if rate := 1 / lraHopSizeSec; rate < 10 {
+		t.Errorf("LRA short-term rate = %.2f Hz, want ≥ 10 Hz", rate)
+	}
+}
+
+// TestLRA_chunkedMatchesDirect checks the chunk-sum fast path against a
+// straightforward per-block computation on a loud/quiet signal.
+func TestLRA_chunkedMatchesDirect(t *testing.T) {
+	const sampleRate = 48000
+	seg := sampleRate * 8
+	loud := genSine(math.Pow(10, -14.0/20), 1000, sampleRate, seg)
+	quiet := genSine(math.Pow(10, -30.0/20), 1000, sampleRate, seg)
+	ch := append(append([]float64{}, loud...), quiet...)
+	got := loudnessRange(ch, ch, sampleRate)
+
+	w := kWeightChannel(ch, sampleRate)
+	block := int(lraBlockSizeSec * sampleRate)
+	hop := int(math.Round(lraHopSizeSec * sampleRate))
+	var l, pw []float64
+	for s := 0; s+block <= len(w); s += hop {
+		p := 2 * meanSquare(w[s:s+block])
+		if v := blockLUFS(p); v >= absGateLevel {
+			l, pw = append(l, v), append(pw, p)
+		}
+	}
+	th := blockLUFS(mean(pw)) + lraRelGate
+	var g []float64
+	for _, v := range l {
+		if v >= th {
+			g = append(g, v)
+		}
+	}
+	sort.Float64s(g)
+	want := percentile(g, 95) - percentile(g, 10)
+	if math.Abs(got-want) > 1e-6 {
+		t.Errorf("chunked LRA = %v, direct = %v", got, want)
+	}
 }
