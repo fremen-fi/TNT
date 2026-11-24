@@ -410,13 +410,10 @@ const dsWindowSeconds = 0.05 // DS RMS-peak EMA time constant (astats default)
 type measurer struct {
 	filters [2]channelFilter
 	step    int
-	stStep  int
 
 	stepSumSqL, stepSumSqR float64
 	stepN                  int
-	stSumSqL, stSumSqR     float64
-	stN                    int
-	stepE, stStepE         []float64
+	stepE                  []float64 // 100 ms mean-squares; feeds integrated loudness and LRA
 
 	tpL, tpR tpHist
 	maxTP    float64
@@ -431,9 +428,7 @@ func newMeasurer(sampleRate int) *measurer {
 	return &measurer{
 		filters: newKweightFilters(fs),
 		step:    sampleRate / 10,
-		stStep:  sampleRate,
 		stepE:   make([]float64, 0, 4096),
-		stStepE: make([]float64, 0, 4096),
 		dsAlpha: 1.0 - math.Exp(-1.0/(dsWindowSeconds*fs)),
 	}
 }
@@ -446,16 +441,9 @@ func (m *measurer) add(l, r float64) {
 	m.stepSumSqL += klSq
 	m.stepSumSqR += krSq
 	m.stepN++
-	m.stSumSqL += klSq
-	m.stSumSqR += krSq
-	m.stN++
 	if m.stepN >= m.step {
 		m.stepE = append(m.stepE, (m.stepSumSqL+m.stepSumSqR)/float64(m.stepN))
 		m.stepSumSqL, m.stepSumSqR, m.stepN = 0, 0, 0
-	}
-	if m.stN >= m.stStep {
-		m.stStepE = append(m.stStepE, (m.stSumSqL+m.stSumSqR)/float64(m.stN))
-		m.stSumSqL, m.stSumSqR, m.stN = 0, 0, 0
 	}
 
 	// True peak across both channels.
@@ -480,17 +468,13 @@ func (m *measurer) add(l, r float64) {
 
 func (m *measurer) result() ChainMeasurement {
 	stepE := m.stepE
-	stStepE := m.stStepE
 	if m.stepN > 0 {
 		stepE = append(stepE, (m.stepSumSqL+m.stepSumSqR)/float64(m.stepN))
 	}
-	if m.stN > 0 {
-		stStepE = append(stStepE, (m.stSumSqL+m.stSumSqR)/float64(m.stN))
-	}
 
 	res := ChainMeasurement{
-		IntegratedLUFS: integratedLoudness(stepE, 4), // 400 ms block / 100 ms step
-		LRA:            loudnessRange(stStepE, 3),    // 3 s block / 1 s step
+		IntegratedLUFS: integratedLoudness(stepE, 4),          // 400 ms block / 100 ms step
+		LRA:            loudnessRange(stepE, stepsPerSTBlock), // 3 s block, 100 ms hop (10 Hz)
 		TruePeakDB:     math.Inf(-1),
 		RMSLevelDB:     -100,
 		RMSPeakDB:      -100,
