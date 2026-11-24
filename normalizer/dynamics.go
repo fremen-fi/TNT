@@ -307,14 +307,95 @@ type conformanceLimiter struct {
 
 	histL, histR tpHist
 
-	pendL, pendR []float64 // frames pushed but not yet emitted (FIFO)
-	dqIdx        []int     // monotonic deque: indices, values increasing from front
-	dqVal        []float64
+	// Fixed-capacity (look+1) rings, allocated once at construction: at most
+	// look+1 frames are ever pending, and the deque is a subset of them.
+	pendL, pendR fifoF64   // frames pushed but not yet emitted
+	pendMx       fifoF64   // detector peak (interpMax) of each pending frame
+	dq           monoDeque // monotonic deque: values strictly increasing from front
 
 	gain    float64
 	inIdx   int
 	emitIdx int
 }
+
+// fifoF64 is a fixed-capacity FIFO ring; push must never exceed capacity.
+type fifoF64 struct {
+	buf     []float64
+	head, n int
+}
+
+func (f *fifoF64) push(x float64) {
+	pos := f.head + f.n
+	if pos >= len(f.buf) {
+		pos -= len(f.buf)
+	}
+	f.buf[pos] = x
+	f.n++
+}
+
+func (f *fifoF64) front() float64 { return f.buf[f.head] }
+
+func (f *fifoF64) at(k int) float64 {
+	pos := f.head + k
+	if pos >= len(f.buf) {
+		pos -= len(f.buf)
+	}
+	return f.buf[pos]
+}
+
+func (f *fifoF64) popFront() {
+	f.head++
+	if f.head == len(f.buf) {
+		f.head = 0
+	}
+	f.n--
+}
+
+func (f *fifoF64) reset() { f.head, f.n = 0, 0 }
+
+// monoDeque is a fixed-capacity double-ended ring of (index, value) pairs for the
+// sliding-window-minimum deque.
+type monoDeque struct {
+	idx     []int
+	val     []float64
+	head, n int
+}
+
+func newMonoDeque(capacity int) monoDeque {
+	return monoDeque{idx: make([]int, capacity), val: make([]float64, capacity)}
+}
+
+func (d *monoDeque) at(k int) int {
+	pos := d.head + k
+	if pos >= len(d.idx) {
+		pos -= len(d.idx)
+	}
+	return pos
+}
+
+func (d *monoDeque) empty() bool { return d.n == 0 }
+
+func (d *monoDeque) front() (int, float64) { return d.idx[d.head], d.val[d.head] }
+
+func (d *monoDeque) backVal() float64 { return d.val[d.at(d.n-1)] }
+
+func (d *monoDeque) pushBack(i int, v float64) {
+	pos := d.at(d.n)
+	d.idx[pos], d.val[pos] = i, v
+	d.n++
+}
+
+func (d *monoDeque) popBack() { d.n-- }
+
+func (d *monoDeque) popFront() {
+	d.head++
+	if d.head == len(d.idx) {
+		d.head = 0
+	}
+	d.n--
+}
+
+func (d *monoDeque) reset() { d.head, d.n = 0, 0 }
 
 func newConformanceLimiter(sampleRate, thresholdDb, lookaheadMs, releaseMs float64) *conformanceLimiter {
 	look := int(math.Round(lookaheadMs / 1000.0 * sampleRate))
@@ -325,7 +406,45 @@ func newConformanceLimiter(sampleRate, thresholdDb, lookaheadMs, releaseMs float
 		thresh:  dbToLin(thresholdDb),
 		look:    look,
 		relCoef: onePoleCoef(releaseMs, sampleRate),
+		pendL:   fifoF64{buf: make([]float64, look+1)},
+		pendR:   fifoF64{buf: make([]float64, look+1)},
+		pendMx:  fifoF64{buf: make([]float64, look+1)},
+		dq:      newMonoDeque(look + 1),
 		gain:    1.0,
+	}
+}
+
+// reset returns the limiter to its just-constructed state, keeping its settings.
+func (c *conformanceLimiter) reset() {
+	c.histL, c.histR = tpHist{}, tpHist{}
+	c.pendL.reset()
+	c.pendR.reset()
+	c.pendMx.reset()
+	c.dq.reset()
+	c.gain = 1.0
+	c.inIdx, c.emitIdx = 0, 0
+}
+
+// setThresh changes the ceiling mid-stream and re-derives the required gain of
+// every frame still in the lookahead against it (from the stored detector
+// peaks), so already-buffered audio is limited smoothly instead of being
+// hard-clamped to the new ceiling. Allocation-free.
+func (c *conformanceLimiter) setThresh(t float64) {
+	if t == c.thresh {
+		return // the rebuild is O(look); hosts may call SetCeiling every block
+	}
+	c.thresh = t
+	c.dq.reset()
+	for k := 0; k < c.pendMx.n; k++ {
+		mx := c.pendMx.at(k)
+		req := 1.0
+		if mx > t {
+			req = t / mx
+		}
+		for !c.dq.empty() && c.dq.backVal() >= req {
+			c.dq.popBack()
+		}
+		c.dq.pushBack(c.emitIdx+k, req)
 	}
 }
 
@@ -341,14 +460,13 @@ func (c *conformanceLimiter) push(l, r float64) (outL, outR float64, ok bool) {
 		req = c.thresh / mx
 	}
 
-	c.pendL = append(c.pendL, l)
-	c.pendR = append(c.pendR, r)
-	for len(c.dqVal) > 0 && c.dqVal[len(c.dqVal)-1] >= req {
-		c.dqVal = c.dqVal[:len(c.dqVal)-1]
-		c.dqIdx = c.dqIdx[:len(c.dqIdx)-1]
+	c.pendL.push(l)
+	c.pendR.push(r)
+	c.pendMx.push(mx)
+	for !c.dq.empty() && c.dq.backVal() >= req {
+		c.dq.popBack()
 	}
-	c.dqVal = append(c.dqVal, req)
-	c.dqIdx = append(c.dqIdx, i)
+	c.dq.pushBack(i, req)
 	c.inIdx++
 
 	if i-c.emitIdx >= c.look {
@@ -360,19 +478,19 @@ func (c *conformanceLimiter) push(l, r float64) (outL, outR float64, ok bool) {
 
 // emitFront emits the oldest buffered frame using the windowed-minimum gain.
 func (c *conformanceLimiter) emitFront() (float64, float64) {
-	winMin := c.dqVal[0]
+	dqi, winMin := c.dq.front()
 	if winMin < c.gain {
 		c.gain = winMin // instant attack — the conformance guarantee
 	} else {
 		c.gain = c.relCoef*c.gain + (1-c.relCoef)*winMin
 	}
-	oL := clampMag(c.pendL[0]*c.gain, c.thresh)
-	oR := clampMag(c.pendR[0]*c.gain, c.thresh)
-	c.pendL = c.pendL[1:]
-	c.pendR = c.pendR[1:]
-	if c.dqIdx[0] == c.emitIdx {
-		c.dqVal = c.dqVal[1:]
-		c.dqIdx = c.dqIdx[1:]
+	oL := clampMag(c.pendL.front()*c.gain, c.thresh)
+	oR := clampMag(c.pendR.front()*c.gain, c.thresh)
+	c.pendL.popFront()
+	c.pendR.popFront()
+	c.pendMx.popFront()
+	if dqi == c.emitIdx {
+		c.dq.popFront()
 	}
 	c.emitIdx++
 	return oL, oR
@@ -382,13 +500,20 @@ func (c *conformanceLimiter) emitFront() (float64, float64) {
 // end-of-stream), calling emit for each.
 func (c *conformanceLimiter) flush(emit func(l, r float64)) {
 	for c.emitIdx < c.inIdx {
-		for len(c.dqIdx) > 0 && c.dqIdx[0] < c.emitIdx {
-			c.dqVal = c.dqVal[1:]
-			c.dqIdx = c.dqIdx[1:]
-		}
-		oL, oR := c.emitFront()
-		emit(oL, oR)
+		emit(c.emitTail())
 	}
+}
+
+// emitTail emits the oldest frame after dropping deque entries that predate it;
+// used once no more input is coming (the window truncates at end-of-stream).
+func (c *conformanceLimiter) emitTail() (float64, float64) {
+	for !c.dq.empty() {
+		if i, _ := c.dq.front(); i >= c.emitIdx {
+			break
+		}
+		c.dq.popFront()
+	}
+	return c.emitFront()
 }
 
 // ── Measurement (single streaming pass) ─────────────────────────────────────
